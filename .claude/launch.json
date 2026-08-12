@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "worldgym-hosting",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "hosting", "run", "dev"],
+      "port": 1069
+    }
+  ]
+}

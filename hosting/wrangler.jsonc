@@ -1,0 +1,9 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "worldgym-web",
+  "compatibility_date": "2026-08-11",
+  "assets": {
+    "directory": "..",
+    "not_found_handling": "404-page"
+  }
+}

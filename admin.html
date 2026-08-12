@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 44'%3E%3Ctext x='22' y='19' text-anchor='middle' font-family='sans-serif' font-weight='900' font-size='16' fill='%23e8604c'%3E課表%3C/text%3E%3Ctext x='22' y='38' text-anchor='middle' font-family='sans-serif' font-weight='900' font-size='16' fill='%233a3a4a'%3E管理%3C/text%3E%3C/svg%3E">
+<title>⚡</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+<link rel="stylesheet" href="style.css?v=44">
+<style>
+  .admin-link-row{ display:flex; gap:6px; flex-wrap:wrap; margin-top:14px; }
+  .admin-link-btn{
+    display:inline-flex; align-items:center; box-sizing:border-box; gap:6px;
+    height:31px; padding:0 16px; border:1.5px solid var(--link-color); border-radius:999px;
+    text-decoration:none; background:var(--link-color); color:#fff;
+    font-weight:700; font-size:12.5px; white-space:nowrap;
+    transition:background-color .2s ease, color .2s ease, border-color .2s ease;
+  }
+  .admin-link-btn i{ font-size:13px; }
+  .pill-btn-solid{
+    gap:6px; background:var(--accent); border-color:var(--accent); color:#fff;
+  }
+  .pill-btn-solid:hover{ background:var(--accent); border-color:var(--accent); color:#fff; opacity:.85; }
+
+  .page{ max-width:1100px; }
+  .admin-layout{ display:grid; grid-template-columns:4fr 8fr; gap:20px; align-items:start; }
+  @media (max-width:640px){ .admin-layout{ grid-template-columns:1fr; } }
+  .admin-col{ margin-bottom:0; min-width:0; }
+  .terminal-panel{ display:flex; flex-direction:column; }
+  .terminal-log{
+    background:#1e1e2e; color:#d8dee9;
+    font-family:"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size:12.5px; line-height:1.7; padding:14px 16px; border-radius:12px;
+    height:420px; max-height:420px; overflow-y:auto; overflow-x:hidden; white-space:pre-wrap; word-break:break-word;
+    scrollbar-width:none; -ms-overflow-style:none;
+  }
+  .terminal-log::-webkit-scrollbar{ display:none; width:0; height:0; }
+  .terminal-log .term-line + .term-line{ margin-top:1px; }
+  .terminal-log .term-time{ color:#6c7a96; margin-right:6px; }
+  .terminal-log .term-ok{ color:#3fae8f; }
+  .terminal-log .term-err{ color:#e8604c; }
+  .terminal-log .term-empty{ color:#6c7a96; }
+</style>
+</head>
+<body>
+
+<div class="page">
+  <div class="hero">
+    <h1><span class="c1">課表</span><span class="c2">管理</span></h1>
+  </div>
+  <div class="stripe-bar">
+    <span class="s1"></span><span class="s2"></span><span class="s3"></span><span class="s4"></span><span class="s5"></span>
+  </div>
+
+  <div class="admin-layout">
+    <div class="sheet admin-col">
+      <div class="field-block" style="--accent:#f5820d">
+        <div class="admin-link-row" style="margin-top:0">
+          <button type="button" class="pill-btn pill-btn-solid" id="rescrapeAllCf"><i class="fa-solid fa-fw fa-cloud"></i>重抓所有分店</button>
+          <a class="admin-link-btn" data-log-text="🔗 已開啟 Cloudflare 資料庫" style="--link-color:#3fae8f" href="https://dash.cloudflare.com/3f6a1c826e260aabaab215af1f8e798a/workers/d1/databases/ca30eeae-ed11-4952-a2e1-c8c251dada71/metrics" target="_blank" rel="noopener"><i class="fa-solid fa-fw fa-database"></i>資料庫</a>
+          <a class="admin-link-btn" data-log-text="🔗 已開啟 Google Analytics" style="--link-color:#4285f4" href="https://analytics.google.com/analytics/web/?hl=zh-tw#/a404061385p549256263/reports/intelligenthome" target="_blank" rel="noopener"><i class="fa-solid fa-fw fa-chart-line"></i>GA4</a>
+          <button type="button" class="pill-btn pill-btn-solid" id="cleanupStaleBtn" style="--accent:var(--coral)"><i class="fa-solid fa-fw fa-trash-can"></i>刪除停用分店資料</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sheet admin-col terminal-panel">
+      <div class="terminal-log" id="terminalLog"><span class="term-empty">🤖 等待命令執行</span></div>
+    </div>
+  </div>
+</div>
+
+<div id="rescrapeModal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <button type="button" class="modal-close-btn" id="rescrapeCloseBtn" aria-label="取消"><i class="fa-solid fa-xmark"></i></button>
+    <p class="modal-text" id="rescrapeModalText">確定要重抓嗎？</p>
+    <div class="modal-actions">
+      <button type="button" class="modal-btn" id="rescrapeCancelBtn">取消</button>
+      <button type="button" class="modal-btn modal-btn-confirm" id="rescrapeConfirmBtn">確定</button>
+    </div>
+  </div>
+</div>
+
+<script src="admin.js?v=13"></script>
+</body>
+</html>

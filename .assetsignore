@@ -1,0 +1,8 @@
+node_modules
+.wrangler
+.git
+.dev.vars
+worker
+hosting
+.claude
+*.log

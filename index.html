@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-Q7NZN45T0D"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-Q7NZN45T0D');
+</script>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 44'%3E%3Ctext x='22' y='19' text-anchor='middle' font-family='sans-serif' font-weight='900' font-size='16' fill='%23e8604c'%3E課表%3C/text%3E%3Ctext x='22' y='38' text-anchor='middle' font-family='sans-serif' font-weight='900' font-size='16' fill='%233a3a4a'%3E查詢%3C/text%3E%3C/svg%3E">
+<title>💪</title>
+<meta name="description" content="課表查詢">
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+<link rel="stylesheet" href="style.css?v=44">
+<style>#loadingOverlay{position:fixed;top:0;left:0;width:100%;height:100%;background:#fff;z-index:9999;}</style>
+</head>
+<body>
+
+<div id="ptrIndicator" class="ptr-indicator"><i class="fa-solid fa-arrow-rotate-right"></i></div>
+
+<div id="loadingOverlay">
+  <div class="loading-box">
+    <div class="blocks"><span></span><span></span><span></span><span></span></div>
+  </div>
+</div>
+
+<div class="page">
+  <div class="hero">
+    <h1><span class="c1">課表</span><span class="c2">查詢</span></h1>
+  </div>
+  <div class="stripe-bar">
+    <span class="s1"></span><span class="s2"></span><span class="s3"></span><span class="s4"></span><span class="s5"></span>
+  </div>
+
+  <div class="sheet" id="favoriteSheet">
+    <div class="field-block" style="--accent:#e8604c">
+      <div class="pill-grid" id="favoriteGrid">
+        <span class="section-tag"><i class="fa-solid fa-fw fa-heart"></i></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="sheet">
+    <form id="filterForm">
+
+      <fieldset class="field-block" style="--accent:#3fae8f">
+        <div class="pill-grid" id="dayGrid">
+          <span class="section-tag"><i class="fa-solid fa-fw fa-calendar-day"></i></span>
+          <button type="button" class="pill-btn" id="todayShortcutBtn">今天</button>
+          <button type="button" class="pill-btn" id="tomorrowShortcutBtn">明天</button>
+          <span class="grid-break"></span>
+        </div>
+      </fieldset>
+
+      <fieldset class="field-block" style="--accent:#4a90d9">
+        <div class="section-head" id="branchSectionHead">
+          <span class="section-tag"><i class="fa-solid fa-fw fa-location-dot"></i></span>
+        </div>
+        <div class="pill-grid" id="branchGrid"><div class="empty-hint">讀取中…</div></div>
+      </fieldset>
+
+      <fieldset class="field-block" style="--accent:#f0a04b">
+        <div class="pill-grid" id="roomGrid">
+          <span class="section-tag"><i class="fa-solid fa-fw fa-store"></i></span>
+        </div>
+      </fieldset>
+
+      <fieldset class="field-block" style="--accent:#8a6fb3">
+        <div class="section-head">
+          <span class="section-tag"><i class="fa-solid fa-fw fa-face-smile"></i></span>
+        </div>
+        <div class="collapsible" id="courseWrap">
+          <div class="pill-grid" id="courseGrid"><div class="empty-hint">讀取中…</div></div>
+          <div class="fade-overlay"></div>
+        </div>
+        <div class="more-btn-row">
+          <button type="button" class="more-btn" data-target="courseWrap" aria-label="展開全部課程">
+            <i class="fa-solid fa-chevron-down"></i>
+          </button>
+        </div>
+      </fieldset>
+
+      <fieldset class="field-block" style="--accent:#c9922e">
+        <div class="section-head">
+          <span class="section-tag"><i class="fa-solid fa-fw fa-user"></i></span>
+        </div>
+        <div class="search-wrap">
+          <span class="search-icons"><i class="fa-solid fa-magnifying-glass"></i></span>
+          <input type="text" class="section-search" data-search-for="teacherGrid" data-collapsible="teacherWrap">
+          <button type="button" class="search-clear" aria-label="清除搜尋">&times;</button>
+        </div>
+        <div class="collapsible" id="teacherWrap">
+          <div class="pill-grid" id="teacherGrid"><div class="empty-hint">讀取中…</div></div>
+          <div class="fade-overlay"></div>
+        </div>
+        <div class="more-btn-row">
+          <button type="button" class="more-btn" data-target="teacherWrap" aria-label="展開全部老師">
+            <i class="fa-solid fa-chevron-down"></i>
+          </button>
+        </div>
+      </fieldset>
+
+      <div class="submit-btn-wrap" id="submitBtnWrap">
+        <button type="button" class="submit-btn gray-btn" id="resetFiltersBtn" aria-label="清除已選篩選"><i class="fa-solid fa-backward-step"></i></button>
+        <span class="tooltip-wrap" id="submitBtnTooltipWrap">
+          <span class="hint-tooltip" id="submitTooltip"></span>
+          <button type="submit" class="submit-btn" id="scheduleSubmitBtn" aria-label="查詢課表" disabled><i class="fa-solid fa-magnifying-glass"></i></button>
+        </span>
+        <button type="button" class="submit-btn orange-btn" id="mailBtn" aria-label="郵件"><i class="fa-solid fa-envelope"></i></button>
+      </div>
+    </form>
+
+    <div id="resultView" class="hidden">
+      <div class="active-filters" id="activeFiltersBox"></div>
+      <div class="result-count-info" id="resultCountInfo"></div>
+      <div id="resultArea"></div>
+    </div>
+
+    <div id="mailView" class="hidden">
+      <div class="section-head">
+        <span class="section-tag" style="--accent:#e8604c"><i class="fa-solid fa-fw fa-envelope"></i></span>
+        <span class="mail-title">留言給作者</span>
+      </div>
+      <div class="mail-textarea-wrap">
+        <textarea id="mailContent" class="mail-textarea" placeholder="在這裡輸入內容…"></textarea>
+        <div class="mail-sent-overlay hidden" id="mailSentOverlay">意見已送出</div>
+      </div>
+      <div class="modal-actions" style="margin-top:14px;">
+        <button type="button" class="modal-btn modal-btn-confirm" id="mailSendBtn" aria-label="送出"><i class="fa-solid fa-paper-plane"></i></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sheet hidden" id="mailDisclaimerSheet">
+    <div class="mail-disclaimer">
+      <span class="section-tag" id="scheduleHintIcon" style="--accent:#f0a04b"><i class="fa-solid fa-fw fa-circle-question"></i></span>
+      <span class="section-tag" id="iosInstallHintIcon" style="--accent:#e0629b"><i class="fa-solid fa-fw fa-mobile-screen"></i></span>
+    </div>
+  </div>
+
+  <div class="sheet" id="settingsSheet">
+    <div class="field-block" id="settingsBlock" style="--accent:#3a3a4a">
+      <div class="pill-grid" id="settingsGrid">
+        <span class="section-tag"><i class="fa-solid fa-fw fa-gear"></i></span>
+        <span class="tooltip-wrap" id="addFavoriteBtnWrap">
+          <span class="hint-tooltip" id="addFavoriteTooltip"></span>
+          <button type="button" class="section-btn" id="addFavoriteBtn" disabled><i class="fa-solid fa-heart"></i>加到最愛</button>
+        </span>
+        <button type="button" class="section-btn" id="clearMemoryBtn"><i class="fa-solid fa-trash"></i>清除記憶</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="submit-btn-wrap back-btn-wrap hidden" id="backBtnWrap">
+  <button type="button" class="submit-btn teal-btn" id="copyResultsBtn" aria-label="複製課表結果"><i class="fa-solid fa-copy"></i></button>
+  <button type="button" class="submit-btn" id="backBtn" aria-label="返回篩選條件"><i class="fa-solid fa-arrow-left"></i></button>
+  <button type="button" class="submit-btn blue-btn" id="shareUrlBtn" aria-label="分享網址"><i class="fa-solid fa-share-nodes"></i></button>
+</div>
+
+<div class="submit-btn-wrap back-btn-wrap hidden" id="mailBackBtnWrap">
+  <button type="button" class="submit-btn" id="mailBackBtn" aria-label="返回篩選條件"><i class="fa-solid fa-arrow-left"></i></button>
+</div>
+
+<div id="clearMemoryModal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <button type="button" class="modal-close-btn" id="clearMemoryCloseBtn" aria-label="取消"><i class="fa-solid fa-xmark"></i></button>
+    <p class="modal-text">確定要清除記憶嗎？<br>這會清除所有已儲存的最愛與設定。</p>
+    <div class="modal-actions">
+      <button type="button" class="modal-btn" id="clearMemoryCancelBtn">取消</button>
+      <button type="button" class="modal-btn modal-btn-confirm" id="clearMemoryConfirmBtn">確定</button>
+    </div>
+  </div>
+</div>
+
+<div id="addFavoriteModal" class="modal-overlay hidden">
+  <div class="modal-box fav-modal-box">
+    <button type="button" class="modal-close-btn" id="favModalCloseBtn" aria-label="取消"><i class="fa-solid fa-xmark"></i></button>
+    <p class="modal-text" style="padding-right:24px">新增最愛</p>
+
+    <div class="fav-modal-field">
+      <span class="fav-modal-label">圖示</span>
+      <div class="fav-icon-options">
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="star" id="favIcon-star" checked><label for="favIcon-star"><i class="fa-solid fa-star"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="heart" id="favIcon-heart"><label for="favIcon-heart"><i class="fa-solid fa-heart"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="bookmark" id="favIcon-bookmark"><label for="favIcon-bookmark"><i class="fa-solid fa-bookmark"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="flag" id="favIcon-flag"><label for="favIcon-flag"><i class="fa-solid fa-flag"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="thumbtack" id="favIcon-thumbtack"><label for="favIcon-thumbtack"><i class="fa-solid fa-thumbtack"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="bolt" id="favIcon-bolt"><label for="favIcon-bolt"><i class="fa-solid fa-bolt"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="hand-fist" id="favIcon-hand-fist"><label for="favIcon-hand-fist"><i class="fa-solid fa-hand-fist"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="bell" id="favIcon-bell"><label for="favIcon-bell"><i class="fa-solid fa-bell"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="dharmachakra" id="favIcon-dharmachakra"><label for="favIcon-dharmachakra"><i class="fa-solid fa-dharmachakra"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="dumbbell" id="favIcon-dumbbell"><label for="favIcon-dumbbell"><i class="fa-solid fa-dumbbell"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="sun" id="favIcon-sun"><label for="favIcon-sun"><i class="fa-solid fa-sun"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="moon" id="favIcon-moon"><label for="favIcon-moon"><i class="fa-solid fa-moon"></i></label></span>
+      </div>
+    </div>
+
+    <div class="fav-modal-field">
+      <span class="fav-modal-label">底色</span>
+      <div class="fav-color-options">
+        <span class="fav-color-pill"><input type="radio" name="favColor" value="#e8604c" id="favColor-coral" checked><label for="favColor-coral" style="background:#e8604c"></label></span>
+        <span class="fav-color-pill"><input type="radio" name="favColor" value="#2f816a" id="favColor-teal"><label for="favColor-teal" style="background:#2f816a"></label></span>
+        <span class="fav-color-pill"><input type="radio" name="favColor" value="#b33aa0" id="favColor-magenta"><label for="favColor-magenta" style="background:#b33aa0"></label></span>
+        <span class="fav-color-pill"><input type="radio" name="favColor" value="#ad600e" id="favColor-orange"><label for="favColor-orange" style="background:#ad600e"></label></span>
+        <span class="fav-color-pill"><input type="radio" name="favColor" value="#7cb342" id="favColor-lime"><label for="favColor-lime" style="background:#7cb342"></label></span>
+        <span class="fav-color-pill"><input type="radio" name="favColor" value="#2b2b2b" id="favColor-ink"><label for="favColor-ink" style="background:#2b2b2b"></label></span>
+        <span class="fav-color-pill"><input type="radio" name="favColor" value="#8a6fb3" id="favColor-purple"><label for="favColor-purple" style="background:#8a6fb3"></label></span>
+        <span class="fav-color-pill"><input type="radio" name="favColor" value="#4a90d9" id="favColor-blue"><label for="favColor-blue" style="background:#4a90d9"></label></span>
+        <span class="fav-color-pill"><input type="radio" name="favColor" value="#e0629b" id="favColor-pink"><label for="favColor-pink" style="background:#e0629b"></label></span>
+        <span class="fav-color-pill"><input type="radio" name="favColor" value="#c0392b" id="favColor-crimson"><label for="favColor-crimson" style="background:#c0392b"></label></span>
+        <span class="fav-color-pill"><input type="radio" name="favColor" value="#4f7942" id="favColor-forest"><label for="favColor-forest" style="background:#4f7942"></label></span>
+        <span class="fav-color-pill"><input type="radio" name="favColor" value="#a0714f" id="favColor-brown"><label for="favColor-brown" style="background:#a0714f"></label></span>
+        <span class="fav-color-pill"><input type="radio" name="favColor" value="#8c721e" id="favColor-gold"><label for="favColor-gold" style="background:#8c721e"></label></span>
+        <span class="fav-color-pill"><input type="radio" name="favColor" value="#207f8a" id="favColor-cyan"><label for="favColor-cyan" style="background:#207f8a"></label></span>
+      </div>
+    </div>
+
+    <div class="fav-modal-field">
+      <span class="fav-modal-label">名稱</span>
+      <div class="fav-name-row">
+        <input type="text" id="favNameInput" class="section-search" placeholder="幫這個最愛命名">
+        <button type="button" class="fav-name-random-btn" id="favNameRandomBtn" aria-label="隨機取名"><i class="fa-solid fa-dice"></i></button>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="modal-btn modal-btn-confirm" id="favModalSubmitBtn">送出</button>
+    </div>
+  </div>
+</div>
+
+<script src="script.js?v=60"></script>
+</body>
+</html>
