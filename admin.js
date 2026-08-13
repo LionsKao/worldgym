@@ -1,6 +1,107 @@
-// 跟 worker 的 MANUAL_SCRAPE_TOKEN secret 對應，只是擋掉不知道網址也不知道這個值的人，不是真的登入機制。
-const RESCRAPE_TOKEN = "worldgym-local-test-token";
 const WORKER_BASE = "https://worldgym-api.lions2100.workers.dev";
+const TOKEN_STORAGE_KEY = "worldgym_admin_token";
+
+// 密碼跟 worker 的 MANUAL_SCRAPE_TOKEN secret 對應。登入成功後存在 localStorage，
+// 之後每次操作都帶著送到後端驗證，密碼本身不會寫死在原始碼裡（repo 是公開的）。
+function getStoredToken(){ return localStorage.getItem(TOKEN_STORAGE_KEY) || ""; }
+function setStoredToken(token){ localStorage.setItem(TOKEN_STORAGE_KEY, token); }
+function clearStoredToken(){ localStorage.removeItem(TOKEN_STORAGE_KEY); }
+
+async function verifyToken(token){
+  const res = await fetch(`${WORKER_BASE}/verifyAdminToken`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  return res.ok;
+}
+
+const loginOverlay = document.getElementById("adminLoginOverlay");
+const adminPage = document.getElementById("adminPage");
+const adminBackBtnWrap = document.getElementById("adminBackBtnWrap");
+const adminLoginBackBtnWrap = document.getElementById("adminLoginBackBtnWrap");
+const passwordInput = document.getElementById("adminPasswordInput");
+const loginError = document.getElementById("adminLoginError");
+const loginBtn = document.getElementById("adminLoginBtn");
+
+function showAdminPage(){
+  loginOverlay.classList.add("hidden");
+  adminLoginBackBtnWrap.classList.add("hidden");
+  adminPage.classList.remove("hidden");
+  adminBackBtnWrap.classList.remove("hidden");
+}
+let loginErrorTimer = null;
+
+function showLoginOverlay(){
+  adminPage.classList.add("hidden");
+  adminBackBtnWrap.classList.add("hidden");
+  loginOverlay.classList.remove("hidden");
+  adminLoginBackBtnWrap.classList.remove("hidden");
+  passwordInput.value = "";
+  hideLoginError();
+  passwordInput.focus();
+}
+
+function logoutAndLeave(){
+  clearStoredToken();
+  window.location.href = "index.html";
+}
+
+// 密碼錯誤的提示用 tooltip 顯示在登入按鈕上方，顯示一陣子後自動消失，消失時順便清掉使用者打的字，
+// 讓使用者不用自己手動清空重打。
+function showLoginError(text){
+  if (loginErrorTimer) clearTimeout(loginErrorTimer);
+  loginError.textContent = text;
+  loginError.classList.add("visible");
+  loginErrorTimer = setTimeout(() => {
+    hideLoginError();
+    passwordInput.value = "";
+    passwordInput.focus();
+  }, 1600);
+}
+function hideLoginError(){
+  if (loginErrorTimer){ clearTimeout(loginErrorTimer); loginErrorTimer = null; }
+  loginError.classList.remove("visible");
+}
+
+async function attemptLogin(){
+  const token = passwordInput.value;
+  if (!token){ showLoginError("沒有輸入密碼"); return; }
+  loginBtn.disabled = true;
+  hideLoginError();
+  try{
+    const ok = await verifyToken(token);
+    if (ok){
+      setStoredToken(token);
+      showAdminPage();
+    } else {
+      showLoginError("密碼錯誤");
+    }
+  } catch(e){
+    console.error(e);
+    showLoginError("連線失敗，請稍後再試");
+  } finally {
+    loginBtn.disabled = false;
+  }
+}
+
+loginBtn.addEventListener("click", attemptLogin);
+passwordInput.addEventListener("keydown", (e) => { if (e.key === "Enter") attemptLogin(); });
+const adminBackBtn = document.getElementById("adminBackBtn");
+const adminBackTooltip = document.getElementById("adminBackTooltip");
+adminBackBtn.addEventListener("click", logoutAndLeave);
+adminBackBtn.addEventListener("mouseenter", () => adminBackTooltip.classList.add("visible"));
+adminBackBtn.addEventListener("mouseleave", () => adminBackTooltip.classList.remove("visible"));
+
+(async function initAuth(){
+  const stored = getStoredToken();
+  if (stored && await verifyToken(stored).catch(() => false)){
+    showAdminPage();
+  } else {
+    clearStoredToken();
+    showLoginOverlay();
+  }
+})();
 
 const modal = document.getElementById("rescrapeModal");
 const modalText = document.getElementById("rescrapeModalText");
@@ -40,7 +141,7 @@ function logToTerminal(text){
 // Cloudflare Worker 自己打官網。回應是 NDJSON 串流（每行一個 JSON 物件），
 // 邊讀邊把 type:"log" 的行丟給 onLog 即時顯示，最後一行是 type:"result" 或 type:"error"。
 async function rescrapeViaCloudflare(onLog){
-  const res = await fetch(`${WORKER_BASE}/scrapeManual?token=${encodeURIComponent(RESCRAPE_TOKEN)}`);
+  const res = await fetch(`${WORKER_BASE}/scrapeManual?token=${encodeURIComponent(getStoredToken())}`);
   if (!res.ok || !res.body){
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || `HTTP ${res.status}`);
@@ -75,7 +176,7 @@ async function cleanupStaleBranches(onLog){
   const res = await fetch(`${WORKER_BASE}/cleanupStaleBranches`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token: RESCRAPE_TOKEN }),
+    body: JSON.stringify({ token: getStoredToken() }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);

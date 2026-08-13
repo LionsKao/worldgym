@@ -1,5 +1,6 @@
 import { queryClasses } from "./queryClasses.js";
 import { runScrape, cleanupStaleBranches } from "./scrape.js";
+import { registerReminder, cancelReminder, listReminders, dispatchDueReminders } from "./reminders.js";
 
 // 網站是跨網域被呼叫，所以要自己開白名單。
 // 之後如果掛了自訂網域，把新網域加進這個陣列即可。
@@ -64,6 +65,15 @@ export default {
         return json({ classNames: JSON.parse(row.classNames), teacherNames: JSON.parse(row.teacherNames) }, 200, origin);
       }
 
+      // admin.html 登入用：只驗證 token 對不對，不做任何事，讓前端可以在跑真正動作前先確認密碼正確。
+      if (url.pathname === "/verifyAdminToken" && req.method === "POST") {
+        const body = await req.json().catch(() => ({}));
+        if (body?.token !== env.MANUAL_SCRAPE_TOKEN) {
+          return json({ error: "forbidden" }, 403, origin);
+        }
+        return json({ ok: true }, 200, origin);
+      }
+
       // 手動測試整站爬蟲：GET /scrapeManual?token=...
       // 回傳串流（NDJSON，每行一個 JSON 物件），讓 admin 頁面的終端機能即時顯示進度，
       // 不用等整輪 106 家分店都跑完才拿到結果。最後一行一定是 type:"result" 或 type:"error"。
@@ -124,6 +134,43 @@ export default {
         return json(result, 200, origin);
       }
 
+      // 課表通知(單次,上課前 30 分鐘):登記一顆課的 Web Push 通知。
+      if (url.pathname === "/registerReminder" && req.method === "POST") {
+        const body = await req.json().catch(() => ({}));
+        const { branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, pushSubscription } = body || {};
+        if (
+          typeof branchSlug !== "string" || !branchSlug ||
+          typeof branchName !== "string" || !branchName ||
+          typeof className !== "string" || !className ||
+          typeof teacherName !== "string" || !teacherName ||
+          typeof roomName !== "string" ||
+          !Number.isInteger(dayOfWeek) || dayOfWeek < 1 || dayOfWeek > 7 ||
+          typeof startTime !== "string" || !/^\d{4}$/.test(startTime) ||
+          !pushSubscription || typeof pushSubscription.endpoint !== "string" || !pushSubscription.endpoint
+        ) {
+          return json({ error: "invalid reminder" }, 400, origin);
+        }
+        const result = await registerReminder(env.DB, {
+          branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, pushSubscription,
+        });
+        return json(result, 200, origin);
+      }
+
+      // 取消一顆已登記的課表通知。
+      if (url.pathname === "/cancelReminder" && req.method === "POST") {
+        const body = await req.json().catch(() => ({}));
+        const result = await cancelReminder(env.DB, body || {});
+        return json(result, 200, origin);
+      }
+
+      // 某個 push subscription 底下所有還沒發送的通知清單(還原鈴鐺狀態/畫「通知」清單用)。
+      if (url.pathname === "/myReminders" && req.method === "GET") {
+        const endpoint = url.searchParams.get("endpoint") || "";
+        if (!endpoint) return json({ reminders: [] }, 200, origin);
+        const reminders = await listReminders(env.DB, endpoint);
+        return json({ reminders }, 200, origin);
+      }
+
       return json({ error: "not found" }, 404, origin);
     } catch (e) {
       console.error("worker error", e);
@@ -132,6 +179,8 @@ export default {
   },
 
   async scheduled(_event, env, ctx) {
-    ctx.waitUntil(runScrape(env.DB, {}));
+    // 爬蟲維持手動觸發(見上面 wrangler.toml 的說明,官網會擋 Worker 自動爬),
+    // 這個 cron 目前只用來每 5 分鐘掃一次課表通知。
+    ctx.waitUntil(dispatchDueReminders(env.DB, env));
   },
 };

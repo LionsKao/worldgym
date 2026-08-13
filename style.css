@@ -3,6 +3,7 @@
   --navy:#3a3a4a; --teal:#3fae8f; --cream:#f5e6a8; --orange:#f0a04b; --coral:#e8604c;
   --bg:#f7f5ef;
 }
+html{ overflow-y:scroll; }
 *{box-sizing:border-box;}
 ::selection{ background:#d0d0d0; color:var(--ink); }
 ::-moz-selection{ background:#d0d0d0; color:var(--ink); }
@@ -101,6 +102,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
   transition:background-color .2s ease, color .2s ease, border-color .2s ease;
 }
 #dayGrid .pill input:not(:checked) + label:hover,
+#timeGrid .pill input:not(:checked) + label:hover,
 #branchGrid .pill input:not(:checked) + label:hover,
 #roomGrid .pill input:not(:checked) + label:hover,
 #courseGrid .pill input:not(:checked) + label:hover,
@@ -130,6 +132,18 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 
 .empty-hint{ color:var(--sub); font-size:12px; padding:6px 2px; }
 .fav-empty-hint{ flex:1; min-width:0; font-size:12.5px; }
+
+.notify-hint{ padding:10px 2px; }
+.notify-hint-title{ color:var(--ink); font-size:13px; font-weight:700; margin-bottom:6px; }
+.notify-hint-tip{ display:flex; align-items:center; gap:6px; color:#d99a1b; font-size:12px; margin-bottom:8px; }
+.notify-hint-tip i{ font-size:12px; }
+.notify-hint-steps{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+.notify-hint-steps li{ display:flex; align-items:center; gap:6px; color:var(--sub); font-size:12px; line-height:1.5; }
+.notify-hint-steps i{ color:var(--accent,#e0629b); font-size:12px; }
+.notify-hint-num{
+  flex:none; width:16px; height:16px; border-radius:50%; background:var(--accent,#e0629b);
+  color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center;
+}
 
 .collapsible{
   position:relative; max-height:160px; overflow:hidden;
@@ -192,7 +206,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 .submit-btn.busy:disabled{
   background:var(--coral); color:#fff; cursor:wait; box-shadow:0 6px 16px rgba(232,96,76,0.45);
 }
-#scheduleSubmitBtn, #backBtn, #mailBackBtn{ width:80px; height:80px; font-size:28px; }
+#scheduleSubmitBtn, #backBtn, #mailBackBtn, #adminBackBtn, #adminLoginBackBtn{ width:80px; height:80px; font-size:28px; }
 .gray-btn{ background:#ccc; color:#999; box-shadow:none; }
 .reset-active{ background:#5aa9e6; box-shadow:0 6px 16px rgba(90,169,230,0.45); }
 .teal-btn{ background:var(--teal); box-shadow:0 6px 16px rgba(63,174,143,0.45); }
@@ -201,6 +215,8 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 .orange-btn{ background:var(--orange); box-shadow:0 6px 16px rgba(240,160,75,0.45); }
 .blue-btn{ background:#4a90d9; box-shadow:0 6px 16px rgba(74,144,217,0.45); }
 .hidden{ display:none; }
+#filterForm, #resultView, #mailView{ transition:opacity .2s ease; }
+#filterForm.view-fade-in, #resultView.view-fade-in, #mailView.view-fade-in{ opacity:0; }
 .tooltip-wrap{ position:relative; display:inline-flex; }
 .hint-tooltip, .pill-warn-tooltip{
   background:var(--ink); color:#fff; font-size:12.5px; font-weight:700;
@@ -212,7 +228,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 .hint-tooltip{ position:absolute; left:50%; bottom:100%; margin-bottom:10px; }
 .pill-warn-tooltip{ position:fixed; pointer-events:none; }
 .hint-tooltip::after, .pill-warn-tooltip::after{
-  content:""; position:absolute; top:100%; left:50%; transform:translateX(-50%);
+  content:""; position:absolute; top:100%; left:var(--arrow-left, 50%); transform:translateX(-50%);
   border-width:6px 6px 0 6px; border-style:solid; border-color:var(--ink) transparent transparent transparent;
 }
 .hint-tooltip.visible, .pill-warn-tooltip.visible{ opacity:1; visibility:visible; transform:translate(-50%, 0); }
@@ -281,7 +297,6 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 .fav-item i{ padding-right:6px; }
 
 .active-filters{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
-.result-count-info{ font-size:12px; font-weight:700; color:var(--sub); margin-bottom:8px; }
 .active-filter-tag{
   display:inline-flex; align-items:center; height:28px; padding:0 12px;
   border-radius:999px; background:var(--bg); border:1.5px solid var(--line);
@@ -293,17 +308,24 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
   color:var(--sub); font-size:14px; font-weight:600; line-height:1.6;
 }
 .mail-disclaimer .section-tag{ flex-shrink:0; cursor:default; }
+#githubLinkIcon, #adminLinkIcon, #adminLoginBackBtn{ cursor:pointer; text-decoration:none; }
 .mail-disclaimer span:last-child:not(.section-tag){ flex:1; min-width:0; }
 .result-row{
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
   padding:8px 14px; border:1.5px solid var(--line); border-radius:14px; margin-bottom:8px;
   font-size:13px; font-weight:700; color:#2b2b2b; background:var(--paper);
 }
+.result-row-content{ min-width:0; }
 .result-row.flagged{ border-color:var(--line); background:var(--paper); }
 .result-flag-icon{ color:#f0b400; padding-right:6px; }
 .teacher-link{
   color:#c9922e; cursor:pointer;
 }
 .teacher-link:hover{ color:#a3741a; }
+.branch-map-link{
+  color:#4a90d9; text-decoration:none; cursor:pointer;
+}
+.branch-map-link:hover{ text-decoration:underline; }
 
 .mail-title{ font-size:12.5px; color:var(--sub); }
 .mail-label{ margin:0 0 12px; font-size:13px; font-weight:700; color:var(--ink); }
@@ -340,6 +362,23 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 
 #loadingOverlay.fade-out{ opacity:0; transition:opacity .2s; }
 
+/* 課表通知：查詢結果列的鈴鐺(灰=未登記/黃=已登記)，跟「通知」清單區塊。 */
+.bell-icon{
+  flex-shrink:0; color:var(--sub); cursor:pointer; transition:color .2s ease, transform .1s ease;
+}
+.bell-icon:hover{ color:#f0b400; }
+.bell-icon.armed{ color:#f0b400; }
+.bell-icon.busy{ opacity:.5; pointer-events:none; }
+#reminderView{ transition:opacity .2s ease; margin-bottom:26px; }
+#reminderView.view-fade-in{ opacity:0; }
+.reminder-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; transition:opacity .25s ease; }
+.reminder-row.reminder-row-cancelled{ justify-content:center; color:var(--ink); }
+.reminder-row.fading-out{ opacity:0; }
+.reminder-text{ min-width:0; }
+.reminder-teacher{ color:#2b2b2b; }
+.reminder-notify-time{ font-size:11px; font-weight:500; color:var(--sub); margin-top:2px; }
+.reminder-cancel-bell{ color:#f0b400; cursor:pointer; padding-left:10px; flex-shrink:0; }
+.reminder-cancel-bell.busy{ opacity:.5; pointer-events:none; }
 
 @media (max-width:480px){
   body{ padding:20px 10px 100px; }

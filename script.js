@@ -3,6 +3,295 @@ const WORKER_BASE = "https://worldgym-api.lions2100.workers.dev";
 // 篩選後結果超過這個筆數就視為條件太寬鬆，不導到結果頁、只在查詢按鈕上提示使用者多加篩選。
 const RESULT_COUNT_WARN_LIMIT = 150;
 
+// 課表通知（Web Push）：VAPID public key，跟 worker/.dev.vars 的 VAPID_PUBLIC_KEY 是同一組 key pair。
+const VAPID_PUBLIC_KEY = "BCcFfPhUxaUYFMtosUu21nd24j5El9YcuYNndb3Ll0_rjC-SwSnT4YvQfi7nVTuQWYjIiDlZqG1jrZrwi7uuw4k";
+
+// 網址帶 ?pwa=1 等同貼 localStorage.setItem("wg_debug_force_pwa","1")，方便直接分享測試連結，不用開 Console。
+// 寫進 localStorage 才不會在查詢送出後被 buildShareUrl 換掉網址（只保留篩選參數）就失效。
+if (new URLSearchParams(location.search).get("pwa") === "1"){
+  localStorage.setItem("wg_debug_force_pwa", "1");
+}
+
+// 鈴鐺只在「已安裝成 standalone PWA」才顯示，不要求通知權限已授權（未授權按下去會先跳說明 modal）。
+// 除錯用旁路：正式環境使用者不會知道這個 localStorage key，只是方便開發時在一般分頁看到鈴鐺。
+function isPWAInstalled(){
+  if (localStorage.getItem("wg_debug_force_pwa") === "1") return true;
+  return window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+}
+
+if ("serviceWorker" in navigator){
+  navigator.serviceWorker.register("sw.js").catch((e) => console.error("service worker 註冊失敗", e));
+}
+
+function urlBase64ToUint8Array(base64String){
+  const padding = "=".repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+
+// 取得（或建立）目前裝置的 push subscription。權限已授權時 subscribe() 不會再跳提示。
+async function ensurePushSubscription(){
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub){
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+    });
+  }
+  return sub;
+}
+
+// 課表通知：登記狀態存這個 Map，key -> { id, classAt, remindAt, ... }（來自 /myReminders 或剛登記完的回應）。
+const registeredReminders = new Map();
+function reminderKeyFromFields(branchSlug, dayOfWeek, startTime, className, teacherName){
+  return [branchSlug, dayOfWeek, startTime, className, teacherName].join("|");
+}
+function reminderKeyFromBell(bell){
+  return reminderKeyFromFields(bell.dataset.branchSlug, bell.dataset.dayOfWeek, bell.dataset.startTime, bell.dataset.className, bell.dataset.teacherName);
+}
+// 查詢結果區的鈴鐺跟「通知」清單共用同一份 registeredReminders，其中一邊變動後呼叫這個同步畫面狀態。
+function syncResultBellsToRegistered(){
+  document.querySelectorAll("#resultArea .bell-icon").forEach((bell) => {
+    const existing = registeredReminders.get(reminderKeyFromBell(bell));
+    if (existing){
+      bell.classList.add("armed");
+      bell.dataset.reminderId = existing.id;
+    } else {
+      bell.classList.remove("armed");
+      delete bell.dataset.reminderId;
+    }
+  });
+}
+
+// remindAt 是 "YYYY-MM-DDTHH:mm:ss+08:00" 格式的字串，直接切字串取值，避免瀏覽器時區再轉一次。
+function formatReminderTime(iso){
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!m) return iso;
+  const [, year, month, date, hour, minute] = m;
+  const weekday = WEEKDAY_LABEL[weekdayOfIso(`${year}-${month}-${date}`)];
+  return `${month}/${date} 週${weekday} ${hour}:${minute}`;
+}
+
+// 推算「下一次符合 dayOfWeek/startTime 的上課時間」，跟 worker/src/reminders.js 的 computeNextOccurrence 同一套邏輯，
+// 用來在使用者按鈴鐺、還沒拿到後端回應前，先在 tooltip 顯示預測日期。
+function computeNextOccurrenceClient(dayOfWeek, startTime){
+  const startHour = parseInt(startTime.slice(0, 2), 10) || 0;
+  const startMinute = parseInt(startTime.slice(2, 4), 10) || 0;
+  const nowIso = todayIso();
+  const nowWeekday = weekdayOfIso(nowIso);
+  const nowParts = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Taipei", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date());
+  const nowHour = parseInt(nowParts.find((p) => p.type === "hour").value, 10);
+  const nowMinute = parseInt(nowParts.find((p) => p.type === "minute").value, 10);
+  let deltaDays = (dayOfWeek - nowWeekday + 7) % 7;
+  if (deltaDays === 0 && startHour * 60 + startMinute <= nowHour * 60 + nowMinute) deltaDays = 7;
+  return addDaysIso(nowIso, deltaDays);
+}
+function formatReminderTooltip(classDateIso, startTime){
+  const startHour = parseInt(startTime.slice(0, 2), 10) || 0;
+  const startMinute = parseInt(startTime.slice(2, 4), 10) || 0;
+  const d = new Date(classDateIso + "T00:00:00");
+  d.setHours(startHour, startMinute - 30, 0, 0);
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  const dateIso = `${d.getFullYear()}-${mm}-${dd}`;
+  return `在 ${mm}/${dd} 週${WEEKDAY_LABEL[weekdayOfIso(dateIso)]} ${hh}:${mi} 通知我`;
+}
+// 灰色(未登記):顯示預計通知時間,引導使用者按下去登記。黃色(已登記):直接顯示「取消通知」,說明再按一下的效果。
+function tooltipTextForBell(bell){
+  const existing = registeredReminders.get(reminderKeyFromBell(bell));
+  if (existing) return "取消通知";
+  const classDateIso = computeNextOccurrenceClient(parseInt(bell.dataset.dayOfWeek, 10), bell.dataset.startTime);
+  return formatReminderTooltip(classDateIso, bell.dataset.startTime);
+}
+
+let pendingReminderBell = null;
+async function registerReminderForBell(bell){
+  bell.classList.add("busy");
+  try{
+    const sub = await ensurePushSubscription();
+    const body = {
+      branchSlug: bell.dataset.branchSlug,
+      branchName: bell.dataset.branchName,
+      className: bell.dataset.className,
+      teacherName: bell.dataset.teacherName,
+      roomName: bell.dataset.roomName,
+      dayOfWeek: parseInt(bell.dataset.dayOfWeek, 10),
+      startTime: bell.dataset.startTime,
+      pushSubscription: sub.toJSON(),
+    };
+    const res = await fetch(`${WORKER_BASE}/registerReminder`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`registerReminder failed: ${res.status}`);
+    const data = await res.json();
+    registeredReminders.set(reminderKeyFromBell(bell), { ...body, id: data.id, classAt: data.classAt, remindAt: data.remindAt });
+    syncResultBellsToRegistered();
+    showPillWarning(bell, "已設定通知");
+    trackEvent("register_reminder", { class_name: bell.dataset.className, teacher_name: bell.dataset.teacherName });
+  } catch(e){
+    console.error(e);
+    showPillWarning(bell, "通知登記失敗，請稍後再試");
+  } finally {
+    bell.classList.remove("busy");
+  }
+}
+async function cancelReminderForBell(bell){
+  bell.classList.add("busy");
+  try{
+    const id = bell.dataset.reminderId;
+    await fetch(`${WORKER_BASE}/cancelReminder`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    registeredReminders.delete(reminderKeyFromBell(bell));
+    syncResultBellsToRegistered();
+    showPillWarning(bell, "已刪除通知");
+  } catch(e){
+    console.error(e);
+    showPillWarning(bell, "取消失敗，請稍後再試");
+  } finally {
+    bell.classList.remove("busy");
+  }
+}
+async function handleBellClick(bell){
+  if (bell.classList.contains("busy")) return;
+  if (bell.classList.contains("armed")){
+    await cancelReminderForBell(bell);
+    return;
+  }
+  if (Notification.permission !== "granted"){
+    pendingReminderBell = bell;
+    document.getElementById("notifyPermissionModal").classList.remove("hidden");
+    return;
+  }
+  await registerReminderForBell(bell);
+}
+
+// 「通知」清單：畫出目前這個 push subscription 底下所有已登記的通知。沒授權/沒訂閱就顯示空清單。
+async function renderReminderList(){
+  const grid = document.getElementById("reminderGrid");
+  if (!isPWAInstalled() || Notification.permission !== "granted"){
+    grid.innerHTML = `<div class="empty-hint notify-hint" id="reminderEmptyHint">
+      <div class="notify-hint-title">如何啟用通知功能</div>
+      <ol class="notify-hint-steps">
+        <li><span class="notify-hint-num">1</span>用 Safari 開啟本網站</li>
+        <li><span class="notify-hint-num">2</span>點擊螢幕下方 <i class="fa-solid fa-ellipsis"></i> 三個點，點 <i class="fa-solid fa-arrow-up-from-bracket"></i> 分享</li>
+        <li><span class="notify-hint-num">3</span>在裡面找到 <i class="fa-solid fa-square-plus"></i> 加入主畫面</li>
+        <li><span class="notify-hint-num">4</span>打開為網頁 APP 開啟，加入</li>
+        <li><span class="notify-hint-num">5</span>使用網頁 APP 查詢一些課，並按下小鈴鐺開啟通知</li>
+      </ol>
+    </div>`;
+    return;
+  }
+  let list = [];
+  try{
+    const sub = await ensurePushSubscription();
+    const res = await fetch(`${WORKER_BASE}/myReminders?endpoint=${encodeURIComponent(sub.endpoint)}`);
+    const data = await res.json();
+    list = data.reminders || [];
+  } catch(e){
+    console.error(e);
+  }
+  registeredReminders.clear();
+  list.forEach((r) => registeredReminders.set(reminderKeyFromFields(r.branchSlug, r.dayOfWeek, r.startTime, r.className, r.teacherName), r));
+  syncResultBellsToRegistered();
+
+  grid.innerHTML = "";
+  if (list.length === 0){
+    grid.insertAdjacentHTML("beforeend", '<div class="empty-hint" id="reminderEmptyHint">沒有通知</div>');
+    return;
+  }
+  list.forEach((r) => {
+    const row = document.createElement("div");
+    row.className = "result-row reminder-row";
+    row.dataset.reminderId = r.id;
+    const text = document.createElement("div");
+    text.className = "reminder-text";
+    const mainLine = document.createElement("div");
+    mainLine.appendChild(document.createTextNode(`${r.branchName} 週${WEEKDAY_LABEL[r.dayOfWeek]} ${r.startTime} ${r.className} `));
+    const teacherSpan = document.createElement("span");
+    teacherSpan.className = "reminder-teacher";
+    teacherSpan.textContent = r.teacherName;
+    mainLine.appendChild(teacherSpan);
+    text.appendChild(mainLine);
+    if (r.remindAt){
+      const notifyLine = document.createElement("div");
+      notifyLine.className = "reminder-notify-time";
+      notifyLine.textContent = `會在 ${formatReminderTime(r.remindAt)} 通知你`;
+      text.appendChild(notifyLine);
+    }
+    row.appendChild(text);
+    const bell = document.createElement("i");
+    bell.className = "fa-solid fa-bell reminder-cancel-bell";
+    bell.addEventListener("mouseenter", () => showHoverTooltip(bell, "取消通知", false));
+    bell.addEventListener("mouseleave", hideHoverTooltip);
+    row.appendChild(bell);
+    grid.appendChild(row);
+  });
+}
+document.getElementById("reminderGrid").addEventListener("click", async (e) => {
+  const bell = e.target.closest(".reminder-cancel-bell");
+  if (!bell) return;
+  const row = bell.closest(".reminder-row");
+  const id = row.dataset.reminderId;
+  bell.classList.add("busy");
+  try{
+    await fetch(`${WORKER_BASE}/cancelReminder`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    for (const [key, r] of registeredReminders){
+      if (r.id === id){ registeredReminders.delete(key); break; }
+    }
+    syncResultBellsToRegistered();
+    row.innerHTML = "";
+    row.classList.add("reminder-row-cancelled");
+    row.textContent = "已取消通知";
+    setTimeout(() => {
+      row.classList.add("fading-out");
+      setTimeout(() => {
+        row.remove();
+        if (document.getElementById("reminderGrid").children.length === 0){
+          document.getElementById("reminderGrid").innerHTML = '<div class="empty-hint" id="reminderEmptyHint">沒有通知</div>';
+        }
+      }, 250);
+    }, 1000);
+  } catch(e){
+    console.error(e);
+    bell.classList.remove("busy");
+  }
+});
+
+// 頁面載入時,如果通知權限已經授權過、也已經有 push subscription,先把已登記的通知讀回來,
+// 讓一開始查詢課表結果時鈴鐺就能正確顯示黃色,不用先跑去「通知」清單那邊才會同步。
+async function preloadRegisteredReminders(){
+  if (!isPWAInstalled() || Notification.permission !== "granted") return;
+  try{
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (!sub) return;
+    const res = await fetch(`${WORKER_BASE}/myReminders?endpoint=${encodeURIComponent(sub.endpoint)}`);
+    const data = await res.json();
+    (data.reminders || []).forEach((r) => registeredReminders.set(reminderKeyFromFields(r.branchSlug, r.dayOfWeek, r.startTime, r.className, r.teacherName), r));
+  } catch(e){
+    console.error(e);
+  }
+}
+
+// slug -> Google Maps 連結，從 branches.json 的 mapUrl 欄位讀進來（不是每間分店都有）。
+let BRANCH_MAP_URLS = {};
+// 分店 slug 在網址參數裡很長，選很多間會讓網址爆長，改用 branches.json 陣列的順序位置當短代碼。
+let BRANCH_URL_CODE = {};
+let BRANCH_URL_DECODE = {};
+
 function trackEvent(name, params){
   if (typeof gtag === "function") gtag("event", name, params);
 }
@@ -26,17 +315,34 @@ function trackTeacherEventOncePerSession(name, teacherName){
 // 下一次 search_schedule 事件的觸發來源；送出後會重置回 "manual"。
 let searchTriggerSource = "manual";
 
+// 用 Asia/Taipei 而不是使用者裝置的本地時區，跟後端 queryClasses.js 的 todayIsoTaipei() 對齊，
+// 不然裝置時區不是台灣時，「今天」在前後端會算出不同的星期幾。
 function todayIso(){
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei" }).format(new Date());
 }
 function addDaysIso(iso, days){
   const d = new Date(iso + "T00:00:00");
   d.setDate(d.getDate() + days);
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
+function weekdayOfIso(iso){
+  const jsDay = new Date(iso + "T00:00:00").getDay();
+  return jsDay === 0 ? 7 : jsDay;
+}
+// "today"/"tomorrow" 是相對值：存最愛、存分享網址時保留原始字串，
+// 只有在真的要送查詢給後端之前才 resolve 成當下的星期幾（見 resolveQueryState）。
+function resolveDayValue(v){
+  if (v === "today") return String(weekdayOfIso(todayIso()));
+  if (v === "tomorrow") return String(weekdayOfIso(addDaysIso(todayIso(), 1)));
+  return v;
+}
+function resolveQueryState(state){
+  return { ...state, day: [...new Set((state.day || []).map(resolveDayValue))] };
+}
 
 const DAY_OPTIONS = [
+  { name: "day", value: "today", label: "今天" },
+  { name: "day", value: "tomorrow", label: "明天" },
   { name: "day", value: "1", label: "一" },
   { name: "day", value: "2", label: "二" },
   { name: "day", value: "3", label: "三" },
@@ -49,6 +355,12 @@ const ROOM_OPTIONS = [
   { name: "room", value: "團體教室", label: "團體" },
   { name: "room", value: "飛輪教室", label: "飛輪" },
 ];
+const TIME_OPTIONS = [
+  { name: "time", value: "0600", label: "06 - 11" },
+  { name: "time", value: "1200", label: "12 - 17" },
+  { name: "time", value: "1800", label: "18 - 23" },
+];
+const TIME_LABEL = Object.fromEntries(TIME_OPTIONS.map(o => [o.value, o.label]));
 function makePill(name, value, label, checked){
   const wrap = document.createElement("span");
   wrap.className = "pill";
@@ -115,9 +427,9 @@ function incrementClickCount(key, value) {
   counts[value] = (counts[value] || 0) + 1;
   localStorage.setItem(key, JSON.stringify(counts));
 }
-function sortByClickCount(names, key) {
+function sortByClickCount(items, key, getValue = (x) => x) {
   const counts = getClickCounts(key);
-  return [...names].sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
+  return [...items].sort((a, b) => (counts[getValue(b)] || 0) - (counts[getValue(a)] || 0));
 }
 
 function renderBranchGrid(containerId, options) {
@@ -257,9 +569,10 @@ function hasTeacherSelected(){
 function updateSubmitState(){
   const branchCount = document.querySelectorAll('input[name="branch"]:checked').length;
   const dayCount = document.querySelectorAll('input[name="day"]:checked').length;
-  // 一開始（沒選老師/分店/星期）按鈕要是灰的，逼使用者至少縮小一個範圍再查詢。分店數量沒有上限。
+  // 查詢按鈕永遠可按：範圍太大（0 筆或超過上限）改由送出後的輕量查詢擋下並提示，見 runSearchAndShowResults。
+  // 加到最愛沒有這道輕量查詢把關，維持要先縮小範圍才能按。
   const valid = hasTeacherSelected() || branchCount > 0 || dayCount > 0;
-  document.getElementById("scheduleSubmitBtn").disabled = !valid;
+  document.getElementById("scheduleSubmitBtn").disabled = false;
   document.getElementById("addFavoriteBtn").disabled = !valid;
 }
 const pillWarnTooltip = document.createElement("div");
@@ -271,18 +584,27 @@ function showPillWarning(anchorEl, text){
   const rect = anchorEl.getBoundingClientRect();
   pillWarnTooltip.classList.remove("wrap");
   pillWarnTooltip.textContent = text;
+  pillWarnTooltip.style.removeProperty("--arrow-left");
   pillWarnTooltip.style.left = (rect.left + rect.width / 2) + "px";
   pillWarnTooltip.style.bottom = (window.innerHeight - rect.top + 10) + "px";
   pillWarnTooltip.classList.add("visible");
   clearTimeout(pillWarnTimer);
   pillWarnTimer = setTimeout(() => pillWarnTooltip.classList.remove("visible"), 1800);
 }
-function showHoverTooltip(anchorEl, text){
+function showHoverTooltip(anchorEl, text, wrap = true){
   const rect = anchorEl.getBoundingClientRect();
-  pillWarnTooltip.classList.add("wrap");
-  pillWarnTooltip.textContent = text;
-  pillWarnTooltip.style.left = (rect.left + rect.width / 2) + "px";
+  pillWarnTooltip.classList.toggle("wrap", wrap);
+  pillWarnTooltip.innerHTML = text;
+  // 靠右對齊的鈴鐺離螢幕邊緣很近，不夾住的話 tooltip 置中對齊錨點時會超出可視範圍被切掉。
+  const half = pillWarnTooltip.offsetWidth / 2;
+  const margin = 8;
+  const anchorCenterX = rect.left + rect.width / 2;
+  const centerX = Math.max(half + margin, Math.min(window.innerWidth - half - margin, anchorCenterX));
+  pillWarnTooltip.style.left = centerX + "px";
   pillWarnTooltip.style.bottom = (window.innerHeight - rect.top + 10) + "px";
+  // 箱體被夾住往左移的話，尖角要跟著留在原本錨點正下方，不然看起來會指向旁邊。
+  const arrowPct = half > 0 ? Math.max(10, Math.min(90, ((anchorCenterX - centerX) / (half * 2) + 0.5) * 100)) : 50;
+  pillWarnTooltip.style.setProperty("--arrow-left", arrowPct + "%");
   clearTimeout(pillWarnTimer);
   pillWarnTooltip.classList.add("visible");
 }
@@ -304,6 +626,14 @@ scheduleHintIcon.addEventListener("mouseleave", hideHoverTooltip);
 const iosInstallHintIcon = document.getElementById("iosInstallHintIcon");
 iosInstallHintIcon.addEventListener("mouseenter", () => showHoverTooltip(iosInstallHintIcon, "iOS 用 Safari 打開這個網站，點下方工具列的「分享」按鈕，選擇「加入主畫面」，就能像 App 一樣直接從手機桌面打開。"));
 iosInstallHintIcon.addEventListener("mouseleave", hideHoverTooltip);
+
+const githubLinkIcon = document.getElementById("githubLinkIcon");
+githubLinkIcon.addEventListener("mouseenter", () => showHoverTooltip(githubLinkIcon, "GitHub"));
+githubLinkIcon.addEventListener("mouseleave", hideHoverTooltip);
+
+const adminLinkIcon = document.getElementById("adminLinkIcon");
+adminLinkIcon.addEventListener("mouseenter", () => showHoverTooltip(adminLinkIcon, "管理者功能"));
+adminLinkIcon.addEventListener("mouseleave", hideHoverTooltip);
 
 // 星期／分店／課程／老師：勾選後記住選擇，下次打開頁面自動套用。
 function saveSelection(key, names){
@@ -329,20 +659,29 @@ function applySavedSelection(key, names){
   applyStateToInputs(state, names);
 }
 // 分享網址：把目前篩選條件編碼進網址 query string，讓別人打開網址時能直接重現同一個查詢結果。
+// room 的值（"團體教室"/"飛輪教室"）中文字很長，網址上用短代碼 1/2 表示。
+const ROOM_URL_CODE = { "團體教室": "1", "飛輪教室": "2" };
+const ROOM_URL_DECODE = { "1": "團體教室", "2": "飛輪教室" };
 function getUrlFilterState(){
   const params = new URLSearchParams(location.search);
   if ([...params.keys()].length === 0) return null;
   const state = {};
-  ["day", "branch", "room", "course", "teacher"].forEach(name => {
-    const values = params.getAll(name);
+  ["day", "time", "branch", "room", "course", "teacher"].forEach(name => {
+    let values = params.getAll(name);
+    if (name === "room") values = values.map(v => ROOM_URL_DECODE[v] || v);
+    // branch 的短代碼要等 branches.json 載入、BRANCH_URL_DECODE 填好後才解得開，
+    // 這裡先留原始代碼，實際解碼發生在 init() 裡 branches.json 抓回來之後。
     if (values.length) state[name] = values;
   });
   return Object.keys(state).length ? state : null;
 }
 function buildShareUrl(state){
   const params = new URLSearchParams();
-  ["day", "branch", "room", "course", "teacher"].forEach(name => {
-    (state[name] || []).forEach(v => params.append(name, v));
+  ["day", "time", "branch", "room", "course", "teacher"].forEach(name => {
+    (state[name] || []).forEach(v => {
+      const code = name === "room" ? (ROOM_URL_CODE[v] || v) : name === "branch" ? (BRANCH_URL_CODE[v] || v) : v;
+      params.append(name, code);
+    });
   });
   const url = new URL(location.href);
   url.search = params.toString();
@@ -350,7 +689,7 @@ function buildShareUrl(state){
 }
 function updateResetButtonState(){
   // room 一定會有預設值（團體教室），所以不算進「有沒有選篩選」的判斷，不然按鈕永遠不會變灰。
-  const hasSelection = ["day", "branch", "course", "teacher"].some(name =>
+  const hasSelection = ["day", "time", "branch", "course", "teacher"].some(name =>
     document.querySelector(`input[name="${name}"]:checked`)
   );
   const btn = document.getElementById("resetFiltersBtn");
@@ -358,26 +697,8 @@ function updateResetButtonState(){
   btn.classList.toggle("reset-active", hasSelection);
 }
 document.getElementById("dayGrid").addEventListener("change", () => { saveSelection("wg_selected_day", ["day"]); updateResetButtonState(); });
+document.getElementById("timeGrid").addEventListener("change", () => { saveSelection("wg_selected_time", ["time"]); updateResetButtonState(); });
 
-// 「今天」「明天」是快捷鍵，不是篩選條件本身：跟「台北全選」一樣，按下去只是幫忙勾星期幾，
-// 不會自己被記錄成篩選值，也不會取消其他已經勾的星期。
-function weekdayOfIso(iso){
-  const jsDay = new Date(iso + "T00:00:00").getDay();
-  return jsDay === 0 ? 7 : jsDay;
-}
-function checkDayShortcut(dayValue){
-  const input = document.querySelector(`input[name="day"][value="${dayValue}"]`);
-  if (!input) return;
-  input.checked = true;
-  saveSelection("wg_selected_day", ["day"]);
-  updateResetButtonState();
-}
-document.getElementById("todayShortcutBtn").addEventListener("click", () => {
-  checkDayShortcut(weekdayOfIso(todayIso()));
-});
-document.getElementById("tomorrowShortcutBtn").addEventListener("click", () => {
-  checkDayShortcut(weekdayOfIso(addDaysIso(todayIso(), 1)));
-});
 document.getElementById("roomGrid").addEventListener("change", () => { saveSelection("wg_selected_room", ["room"]); updateResetButtonState(); });
 document.getElementById("branchGrid").addEventListener("change", () => { saveSelection("wg_selected_branch", ["branch"]); updateResetButtonState(); });
 document.getElementById("courseGrid").addEventListener("change", (e) => {
@@ -393,10 +714,10 @@ document.getElementById("teacherGrid").addEventListener("change", (e) => {
 });
 
 document.getElementById("resetFiltersBtn").addEventListener("click", () => {
-  ["day", "branch", "room", "course", "teacher"].forEach(name => {
+  ["day", "time", "branch", "room", "course", "teacher"].forEach(name => {
     document.querySelectorAll(`input[name="${name}"]`).forEach(input => { input.checked = false; });
   });
-  ["wg_selected_day", "wg_selected_branch", "wg_selected_room", "wg_selected_course", "wg_selected_teacher"].forEach(key => {
+  ["wg_selected_day", "wg_selected_time", "wg_selected_branch", "wg_selected_room", "wg_selected_course", "wg_selected_teacher"].forEach(key => {
     localStorage.removeItem(key);
   });
   document.querySelectorAll("#filterForm .section-search").forEach(input => {
@@ -411,7 +732,7 @@ document.getElementById("resetFiltersBtn").addEventListener("click", () => {
 
 // 我的最愛：把目前勾選的篩選存成一組快照，之後可以一鍵套用。
 const FAVORITES_KEY = "wg_favorites";
-const FILTER_GROUPS = ["day", "branch", "room", "course", "teacher"];
+const FILTER_GROUPS = ["day", "time", "branch", "room", "course", "teacher"];
 
 function getFavorites(){
   try{ return JSON.parse(localStorage.getItem(FAVORITES_KEY)) || []; }
@@ -527,6 +848,24 @@ document.getElementById("clearMemoryConfirmBtn").addEventListener("click", () =>
   localStorage.clear();
   location.reload();
 });
+
+// 課表通知：第一次按灰色鈴鐺、還沒授權通知時彈出的說明 modal。
+const notifyPermissionModal = document.getElementById("notifyPermissionModal");
+function closeNotifyPermissionModal(){
+  notifyPermissionModal.classList.add("hidden");
+  pendingReminderBell = null;
+}
+document.getElementById("notifyPermissionCancelBtn").addEventListener("click", closeNotifyPermissionModal);
+document.getElementById("notifyPermissionCloseBtn").addEventListener("click", closeNotifyPermissionModal);
+document.getElementById("notifyPermissionConfirmBtn").addEventListener("click", async () => {
+  const bell = pendingReminderBell;
+  notifyPermissionModal.classList.add("hidden");
+  pendingReminderBell = null;
+  if (!bell) return;
+  const perm = await Notification.requestPermission();
+  if (perm === "granted") await registerReminderForBell(bell);
+});
+
 renderFavorites();
 
 // 分店排序：先依 World Gym 官方六大分區，區內再依這個地區順序排列。
@@ -561,7 +900,7 @@ const BRANCH_ORDER = [
   "new-taipei-beihsinzhuang", "new-taipei-hsindian", "new-taipei-tucheng", "new-taipei-tucheng-haishan",
   "taoyuan-fuxing", "taoyuan-dayou", "taoyuan-guoqiang", "taoyuan-taimall", "taoyuan-neili",
   "taoyuan-zhongli-zhongyuan", "taoyuan-pingzhen", "taoyuan-yangmei",
-  "hsinchu-zhongzheng", "hsinchu-zhulian", "hsinchu-zhonghua", "hsinchu-xiangshan", "hsinchu-zhubei-huaxing",
+  "hsinchu-zhongzheng", "hsinchu-zhonghua", "hsinchu-xiangshan", "hsinchu-zhubei-huaxing",
   "hsinchu-zhubei", "hsinchu-xinfeng", "miaoli-toufen", "miaoli-yuanli",
   "taichung-e-chung", "taichung-meicun", "taichung-chongde", "taichung-xuefu", "taichung-dongshan",
   "taichung-taiping", "taichung-xitun", "taichung-liming", "changhua-heping", "taichung-daya",
@@ -582,7 +921,7 @@ function branchRank(slug){
 }
 
 // 同頁查詢結果：按查詢後不換頁，改成隱藏篩選 pill、顯示結果，按返回再換回來。
-const WEEKDAY_LABEL = { 1: "一", 2: "二", 3: "三", 4: "四", 5: "五", 6: "六", 7: "日" };
+const WEEKDAY_LABEL = { today: "今天", tomorrow: "明天", 1: "一", 2: "二", 3: "三", 4: "四", 5: "五", 6: "六", 7: "日" };
 
 function branchSlugToName(slug){
   const input = document.querySelector(`input[name="branch"][value="${CSS.escape(slug)}"]`);
@@ -592,13 +931,14 @@ function renderActiveFilters(state){
   const box = document.getElementById("activeFiltersBox");
   const groups = [
     ["day", "fa-calendar-day", "天", 5],
+    ["time", "fa-clock", "個時段", 3],
     ["branch", "fa-location-dot", "間", 5],
     ["room", "fa-store", "種", 2],
     ["course", "fa-face-smile", "種", 3],
     ["teacher", "fa-user", "人", 3],
   ];
   const roomLabelMap = { "團體教室": "團體", "飛輪教室": "飛輪" };
-  const labelMaps = { day: WEEKDAY_LABEL, room: roomLabelMap };
+  const labelMaps = { day: WEEKDAY_LABEL, room: roomLabelMap, time: TIME_LABEL };
   box.innerHTML = "";
   let any = false;
   groups.forEach(([key, icon, unit, maxShown]) => {
@@ -608,12 +948,36 @@ function renderActiveFilters(state){
     const labels = key === "branch"
       ? values.map(branchSlugToName)
       : values.map(v => (labelMaps[key] && labelMaps[key][v]) || v);
-    const displayText = labels.length > maxShown
-      ? `${labels.slice(0, maxShown).join("、")} 等 ${labels.length} ${unit}`
-      : labels.join("、");
     const tag = document.createElement("span");
     tag.className = "active-filter-tag";
-    tag.innerHTML = `<i class="fa-solid ${icon}"></i>${displayText}`;
+    const iconEl = document.createElement("i");
+    iconEl.className = `fa-solid ${icon}`;
+    tag.appendChild(iconEl);
+    if (key === "branch"){
+      // 分店名稱裡，有 Google Maps 連結（branches.json 的 mapUrl）的就顯示成可點的藍字，沒有的維持一般文字。
+      values.slice(0, maxShown).forEach((slug, i) => {
+        if (i > 0) tag.appendChild(document.createTextNode("、"));
+        const mapUrl = BRANCH_MAP_URLS[slug];
+        const label = branchSlugToName(slug);
+        if (mapUrl){
+          const link = document.createElement("a");
+          link.className = "branch-map-link";
+          link.href = mapUrl;
+          link.target = "_blank";
+          link.rel = "noopener";
+          link.textContent = label;
+          tag.appendChild(link);
+        } else {
+          tag.appendChild(document.createTextNode(label));
+        }
+      });
+      if (values.length > maxShown) tag.appendChild(document.createTextNode(` 等 ${values.length} ${unit}`));
+    } else {
+      const displayText = labels.length > maxShown
+        ? `${labels.slice(0, maxShown).join("、")} 等 ${labels.length} ${unit}`
+        : labels.join("、");
+      tag.appendChild(document.createTextNode(displayText));
+    }
     if (labels.length > maxShown){
       const fullList = labels.join("、");
       tag.addEventListener("mouseenter", () => showHoverTooltip(tag, fullList));
@@ -687,10 +1051,6 @@ async function runScheduleCountQuery(state){
 
 let lastResultRows = [];
 let TEACHER_NAMES = [];
-function renderResultCountInfo(fetchedCount, displayedCount){
-  const box = document.getElementById("resultCountInfo");
-  box.textContent = `後台撈取 ${fetchedCount} 筆，篩選後顯示 ${displayedCount} 筆`;
-}
 function renderTeacherGrid(){
   const checked = new Set(Array.from(document.querySelectorAll('input[name="teacher"]:checked')).map(i => i.value));
   renderGrid("teacherGrid", "teacher", sortByClickCount(TEACHER_NAMES, "wg_teacher_clicks").map(n => ({ value: n, label: n, checked: checked.has(n) })));
@@ -707,26 +1067,51 @@ function renderScheduleResults(rows, onlyTeacher){
     const { c } = row;
     const line = document.createElement("div");
     line.className = "result-row" + (row.flagged ? " flagged" : "");
+    const content = document.createElement("span");
+    content.className = "result-row-content";
     if (row.flagged){
       const icon = document.createElement("i");
       icon.className = "fa-solid fa-triangle-exclamation result-flag-icon";
-      line.appendChild(icon);
-      line.appendChild(document.createTextNode(`${c.date.slice(5).replace("-", "/")} `));
+      content.appendChild(icon);
+      content.appendChild(document.createTextNode(`${c.date.slice(5).replace("-", "/")} `));
     }
-    line.appendChild(document.createTextNode(`${c.branchName} 週${WEEKDAY_LABEL[c.dayOfWeek]} ${c.startTime} ${c.className} `));
+    content.appendChild(document.createTextNode(`${c.branchName} 週${WEEKDAY_LABEL[c.dayOfWeek]} ${c.startTime} ${c.className} `));
     if (c.teacherName === onlyTeacher){
-      line.appendChild(document.createTextNode(c.teacherName));
+      content.appendChild(document.createTextNode(c.teacherName));
     } else {
       const teacherLink = document.createElement("span");
       teacherLink.className = "teacher-link";
       teacherLink.textContent = c.teacherName;
       teacherLink.dataset.teacher = c.teacherName;
-      line.appendChild(teacherLink);
+      content.appendChild(teacherLink);
+    }
+    line.appendChild(content);
+    if (isPWAInstalled()){
+      const bell = document.createElement("i");
+      const key = reminderKeyFromFields(c.branchSlug, c.dayOfWeek, c.startTime, c.className, c.teacherName);
+      const existing = registeredReminders.get(key);
+      bell.className = "fa-solid fa-bell bell-icon" + (existing ? " armed" : "");
+      bell.dataset.branchSlug = c.branchSlug;
+      bell.dataset.branchName = c.branchName;
+      bell.dataset.className = c.className;
+      bell.dataset.teacherName = c.teacherName;
+      bell.dataset.roomName = c.roomName;
+      bell.dataset.dayOfWeek = c.dayOfWeek;
+      bell.dataset.startTime = c.startTime;
+      if (existing) bell.dataset.reminderId = existing.id;
+      bell.addEventListener("mouseenter", () => showHoverTooltip(bell, tooltipTextForBell(bell), false));
+      bell.addEventListener("mouseleave", hideHoverTooltip);
+      line.appendChild(bell);
     }
     area.appendChild(line);
   });
 }
 document.getElementById("resultArea").addEventListener("click", (e) => {
+  const bell = e.target.closest(".bell-icon");
+  if (bell){
+    handleBellClick(bell);
+    return;
+  }
   const teacherLink = e.target.closest(".teacher-link");
   if (!teacherLink) return;
   const teacherName = teacherLink.dataset.teacher;
@@ -748,25 +1133,34 @@ function showResultView(){
   document.getElementById("settingsSheet").classList.add("hidden");
   document.getElementById("favoriteSheet").classList.add("hidden");
   document.getElementById("mailDisclaimerSheet").classList.add("hidden");
-  document.getElementById("resultView").classList.remove("hidden");
+  fadeInView(document.getElementById("resultView"));
   document.getElementById("backBtnWrap").classList.remove("hidden");
   window.scrollTo({ top: 0, behavior: "smooth" });
+}
+function fadeInView(el){
+  el.classList.remove("hidden");
+  el.classList.add("view-fade-in");
+  void el.offsetHeight; // 強制 reflow，讓 opacity:0 先套用再拿掉 class 觸發 transition
+  el.classList.remove("view-fade-in");
 }
 function showMailView(){
   document.getElementById("filterForm").classList.add("hidden");
   document.getElementById("settingsSheet").classList.add("hidden");
   document.getElementById("favoriteSheet").classList.add("hidden");
-  document.getElementById("mailView").classList.remove("hidden");
+  fadeInView(document.getElementById("reminderView"));
+  fadeInView(document.getElementById("mailView"));
   document.getElementById("mailDisclaimerSheet").classList.remove("hidden");
   document.getElementById("mailBackBtnWrap").classList.remove("hidden");
   document.getElementById("mailContent").disabled = false;
   document.getElementById("mailSentOverlay").classList.add("hidden");
   document.getElementById("mailSendBtn").disabled = false;
+  renderReminderList();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 function showFilterView(){
   document.getElementById("resultView").classList.add("hidden");
   document.getElementById("backBtnWrap").classList.add("hidden");
+  document.getElementById("reminderView").classList.add("hidden");
   document.getElementById("mailView").classList.add("hidden");
   document.getElementById("mailDisclaimerSheet").classList.add("hidden");
   document.getElementById("mailBackBtnWrap").classList.add("hidden");
@@ -774,7 +1168,7 @@ function showFilterView(){
   document.getElementById("mailContent").disabled = false;
   document.getElementById("mailSentOverlay").classList.add("hidden");
   document.getElementById("mailSendBtn").disabled = false;
-  document.getElementById("filterForm").classList.remove("hidden");
+  fadeInView(document.getElementById("filterForm"));
   document.getElementById("settingsSheet").classList.remove("hidden");
   document.getElementById("favoriteSheet").classList.remove("hidden");
   renderTeacherGrid();
@@ -819,20 +1213,24 @@ async function runSearchAndShowResults(state){
     trigger_source: searchTriggerSource,
   });
   const submitBtn = document.getElementById("scheduleSubmitBtn");
+  const submitIcon = submitBtn.querySelector("i");
   submitBtn.disabled = true;
   submitBtn.classList.add("busy");
+  submitIcon.className = "fa-solid fa-spinner fa-spin";
+  // state 本身保留 "today"/"tomorrow" 原始值（分享網址、篩選摘要都要看得到相對值）；
+  // 送給後端查詢時才 resolve 成實際星期幾，後端只認得 1-7 的數字。
+  const queryState = resolveQueryState(state);
   try{
-    const { displayedCount: precheckCount } = await runScheduleCountQuery(state);
+    const { displayedCount: precheckCount } = await runScheduleCountQuery(queryState);
     if (precheckCount === 0){
       showPillWarning(submitBtn, "查無符合條件的課程，請調整篩選條件");
     } else if (precheckCount > RESULT_COUNT_WARN_LIMIT){
       showPillWarning(submitBtn, "結果太多，請多選擇一些篩選條件");
     } else {
-      const { rows, fetchedCount, displayedCount } = await runScheduleQuery(state);
+      const { rows, fetchedCount, displayedCount } = await runScheduleQuery(queryState);
       showResultView();
       history.replaceState(null, "", buildShareUrl(state));
       renderActiveFilters(state);
-      renderResultCountInfo(fetchedCount, displayedCount);
       renderScheduleResults(rows, state.teacher.length === 1 ? state.teacher[0] : null);
     }
   } catch(err){
@@ -848,6 +1246,7 @@ async function runSearchAndShowResults(state){
     showPillWarning(submitBtn, message);
   } finally {
     submitBtn.classList.remove("busy");
+    submitIcon.className = "fa-solid fa-magnifying-glass";
     submitBtn.disabled = false;
     updateSubmitState();
   }
@@ -869,7 +1268,7 @@ function formatResultLine(row){
 document.getElementById("copyResultsBtn").addEventListener("click", () => {
   const text = lastResultRows.map(formatResultLine).join("\n");
   navigator.clipboard.writeText(text)
-    .then(() => showPillWarning(document.getElementById("copyResultsBtn"), "已複製到剪貼簿"))
+    .then(() => showPillWarning(document.getElementById("copyResultsBtn"), "已複製文字到剪貼簿"))
     .catch(() => showPillWarning(document.getElementById("copyResultsBtn"), "複製失敗，請手動選取"));
 });
 document.getElementById("shareUrlBtn").addEventListener("click", () => {
@@ -892,10 +1291,15 @@ document.getElementById("shareUrlBtn").addEventListener("click", () => {
 })();
 
 async function init(){
+  await preloadRegisteredReminders();
   const urlState = getUrlFilterState();
   renderGrid("dayGrid", "day", DAY_OPTIONS);
   if (urlState) applyStateToInputs(urlState, ["day"]);
   else applySavedSelection("wg_selected_day", ["day"]);
+
+  renderGrid("timeGrid", "time", TIME_OPTIONS);
+  if (urlState) applyStateToInputs(urlState, ["time"]);
+  else applySavedSelection("wg_selected_time", ["time"]);
 
   renderGrid("roomGrid", "room", ROOM_OPTIONS);
   if (urlState) applyStateToInputs(urlState, ["room"]);
@@ -906,6 +1310,9 @@ async function init(){
   }
   try{
     const branches = await withRetryTimeout(() => fetch("branches.json").then(r => r.json()), QUERY_RETRY_AFTER_MS, QUERY_GIVE_UP_AFTER_MS);
+    BRANCH_MAP_URLS = Object.fromEntries(branches.filter(b => b.mapUrl).map(b => [b.slug, b.mapUrl]));
+    BRANCH_URL_CODE = Object.fromEntries(branches.map((b, i) => [b.slug, String(i)]));
+    BRANCH_URL_DECODE = Object.fromEntries(branches.map((b, i) => [String(i), b.slug]));
     const branchClicks = getClickCounts("wg_branch_clicks");
     const branchOptions = branches
       .sort((a, b) => zoneRank(a.region) - zoneRank(b.region)
@@ -913,6 +1320,7 @@ async function init(){
         || branchRank(a.slug) - branchRank(b.slug) || regionRank(a.region) - regionRank(b.region))
       .map(b => ({ value: b.slug, label: b.name, region: ZONE_MAP[b.region] || b.region, cityName: b.region }));
     renderBranchGrid("branchGrid", branchOptions);
+    if (urlState && urlState.branch) urlState.branch = urlState.branch.map(v => BRANCH_URL_DECODE[v] || v);
     if (urlState) applyStateToInputs(urlState, ["branch"]);
     else applySavedSelection("wg_selected_branch", ["branch"]);
     updateSubmitState();

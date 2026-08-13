@@ -2,8 +2,8 @@
   "name": "worldgym-web",
   "private": true,
   "scripts": {
-    "dev": "wrangler dev --port 1069 --persist-to \"%TEMP%\\wrangler-state\\worldgym-web\"",
-    "deploy": "wrangler deploy"
+    "dev": "wrangler dev --port 1069 --persist-to \"$TMPDIR/wrangler-state/worldgym-web\"",
+    "deploy": "wrangler pages deploy .. --project-name worldgym --branch main"
   },
   "devDependencies": {
     "wrangler": "^4.120.1"

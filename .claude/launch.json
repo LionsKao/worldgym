@@ -3,9 +3,15 @@
   "configurations": [
     {
       "name": "worldgym-hosting",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "hosting", "run", "dev"],
+      "runtimeExecutable": "/bin/bash",
+      "runtimeArgs": ["-c", "export PATH=\"/Users/lions/.nvm/versions/node/v24.19.0/bin:$PATH\" && npm --prefix hosting run dev"],
       "port": 1069
+    },
+    {
+      "name": "worldgym-worker",
+      "runtimeExecutable": "/bin/bash",
+      "runtimeArgs": ["-c", "export PATH=\"/Users/lions/.nvm/versions/node/v24.19.0/bin:$PATH\" && npm --prefix worker run dev -- --port 8787"],
+      "port": 8787
     }
   ]
 }

@@ -44,11 +44,33 @@
   .terminal-log .term-ok{ color:#3fae8f; }
   .terminal-log .term-err{ color:#e8604c; }
   .terminal-log .term-empty{ color:#6c7a96; }
+  .login-box{ max-width:280px; }
+  .login-input{
+    width:100%; box-sizing:border-box; font-size:12.5px; padding:10px 16px;
+    border:1.5px solid var(--line); border-radius:999px; background:var(--paper);
+    font-family:inherit; font-weight:600; text-align:center;
+  }
+  #adminLoginBtnWrap{ display:block; width:100%; }
 </style>
 </head>
 <body>
 
-<div class="page">
+<div id="adminLoginOverlay" class="modal-overlay">
+  <div class="modal-box login-box">
+    <p class="modal-text">管理者功能</p>
+    <span class="tooltip-wrap" id="adminLoginBtnWrap">
+      <span class="hint-tooltip" id="adminLoginError">密碼錯誤</span>
+      <input type="password" id="adminPasswordInput" class="login-input" placeholder="密碼" autocomplete="current-password">
+    </span>
+    <button type="button" class="modal-btn modal-btn-confirm hidden" id="adminLoginBtn">登入</button>
+  </div>
+</div>
+
+<div class="submit-btn-wrap" id="adminLoginBackBtnWrap">
+  <a class="submit-btn" id="adminLoginBackBtn" href="index.html" aria-label="返回課表查詢"><i class="fa-solid fa-arrow-left"></i></a>
+</div>
+
+<div class="page hidden" id="adminPage">
   <div class="hero">
     <h1><span class="c1">課表</span><span class="c2">管理</span></h1>
   </div>
@@ -69,9 +91,16 @@
     </div>
 
     <div class="sheet admin-col terminal-panel">
-      <div class="terminal-log" id="terminalLog"><span class="term-empty">🤖 等待命令執行</span></div>
+      <div class="terminal-log" id="terminalLog"><span class="term-empty">👋 已成功登入</span><br><span class="term-empty">🤖 等待命令執行</span></div>
     </div>
   </div>
+</div>
+
+<div class="submit-btn-wrap hidden" id="adminBackBtnWrap">
+  <span class="tooltip-wrap">
+    <span class="hint-tooltip" id="adminBackTooltip">登出</span>
+    <button type="button" class="submit-btn" id="adminBackBtn" aria-label="返回並登出"><i class="fa-solid fa-arrow-left"></i></button>
+  </span>
 </div>
 
 <div id="rescrapeModal" class="modal-overlay hidden">
@@ -85,6 +114,6 @@
   </div>
 </div>
 
-<script src="admin.js?v=13"></script>
+<script src="admin.js?v=15"></script>
 </body>
 </html>

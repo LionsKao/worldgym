@@ -100,12 +100,14 @@ function transformRawClass(raw, branchSlug, branchName) {
   if (!className) return null;
 
   const teacherName = (raw.teacher_name || "").trim();
+  const teacherEmpNo = (raw.teacher_emp_no || "").trim();
   const startTime = (raw.class_stime || "").replace(":", "");
   const dateObj = new Date(raw.class_date);
   const date = formatDateIso(dateObj);
   const roomName = normalizeRoomName(raw.room_name);
 
-  const idSeed = `${branchSlug}|${date}|${startTime}|${className}|${teacherName}`;
+  // 員編才是唯一識別老師的欄位——同名老師（不同分店常見）用姓名當 id 種子會撞在一起。
+  const idSeed = `${branchSlug}|${date}|${startTime}|${className}|${teacherEmpNo || teacherName}`;
   const id = `${branchSlug}_${date}_${startTime || "0000"}_${fnv1aHex(idSeed)}`;
 
   return {
@@ -115,8 +117,10 @@ function transformRawClass(raw, branchSlug, branchName) {
     date,
     dayOfWeek: chineseWeekday(dateObj),
     startTime,
+    startHour: startTime.slice(0, 2),
     className,
     teacherName,
+    teacherEmpNo,
     roomName,
     isSubstitute: raw.is_sub === "Y" ? 1 : 0,
     scrapedAt: nowTaiwanIso(),
@@ -146,10 +150,10 @@ async function upsertClasses(db, transformed) {
     db
       .prepare(
         `INSERT OR REPLACE INTO classes
-          (id, branchSlug, branchName, date, dayOfWeek, startTime, className, teacherName, roomName, isSubstitute, scrapedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          (id, branchSlug, branchName, date, dayOfWeek, startTime, startHour, className, teacherName, teacherEmpNo, roomName, isSubstitute, scrapedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .bind(c.id, c.branchSlug, c.branchName, c.date, c.dayOfWeek, c.startTime, c.className, c.teacherName, c.roomName, c.isSubstitute, c.scrapedAt)
+      .bind(c.id, c.branchSlug, c.branchName, c.date, c.dayOfWeek, c.startTime, c.startHour, c.className, c.teacherName, c.teacherEmpNo, c.roomName, c.isSubstitute, c.scrapedAt)
   );
   await runBatched(db, stmts);
 }

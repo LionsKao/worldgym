@@ -7,6 +7,13 @@ const IN_LIMIT = 30;
 // 目前總共只有 106 家分店，不會真的卡到使用者。
 const BRANCH_LIMIT = 150;
 const ROOM_VALUES = new Set(["團體教室", "飛輪教室"]);
+// 時段篩選：值是起始時間的 HH 開頭（跟 startTime 存的 "HHMM" 格式一致），
+// 對應到該時段涵蓋的所有 HH。
+const TIME_SLOT_HOURS = {
+  "0600": ["06", "07", "08", "09", "10", "11"],
+  "1200": ["12", "13", "14", "15", "16", "17"],
+  "1800": ["18", "19", "20", "21", "22", "23"],
+};
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -43,11 +50,10 @@ function buildDisplayRows(rows) {
   });
   const out = [...normalMap.values()].map((c) => ({ c, flagged: false }))
     .concat(subRows.map((c) => ({ c, flagged: true })));
-  // 依「離今天最近的實際日期」排序，不是依星期幾（1=一...7=日）排序 —
-  // 不然不管今天星期幾，畫面永遠先列星期一的課，會讓人誤以為資料是從星期一開始抓的。
-  // normalMap 裡每筆固定班表存的是它最近一次出現的 date（rows 進來前已經照 date 排過），
-  // 所以直接照這個 date 排序就會是「最快要來的課排最前面」。
-  out.sort((a, b) => a.c.date.localeCompare(b.c.date) || a.c.startTime.localeCompare(b.c.startTime));
+  // 依星期幾（1=一...7=日）排序，再依開始時間、最後依分店名稱排序。
+  out.sort((a, b) => a.c.dayOfWeek - b.c.dayOfWeek
+    || a.c.startTime.localeCompare(b.c.startTime)
+    || a.c.branchName.localeCompare(b.c.branchName, "zh-Hant"));
   return out;
 }
 
@@ -66,6 +72,7 @@ async function queryClasses(db, rawState) {
   const course = sanitizeStringArray(rawState.course, IN_LIMIT);
   const teacher = sanitizeStringArray(rawState.teacher, IN_LIMIT);
   const room = sanitizeStringArray(rawState.room, 2).filter((v) => ROOM_VALUES.has(v));
+  const time = sanitizeStringArray(rawState.time, 3).filter((v) => TIME_SLOT_HOURS[v]);
   const day = sanitizeStringArray(rawState.day, 7)
     .map(Number)
     .filter((n) => Number.isInteger(n) && n >= 1 && n <= 7);
@@ -84,8 +91,12 @@ async function queryClasses(db, rawState) {
   if (teacher.length > 0) conditions.push(inClause("teacherName", teacher, params));
   if (day.length > 0) conditions.push(inClause("dayOfWeek", day, params));
   if (room.length > 0) conditions.push(inClause("roomName", room, params));
+  if (time.length > 0){
+    const hours = [...new Set(time.flatMap((v) => TIME_SLOT_HOURS[v]))];
+    conditions.push(inClause("startHour", hours, params));
+  }
 
-  const sql = `SELECT branchSlug, branchName, date, dayOfWeek, startTime, className, teacherName, roomName, isSubstitute
+  const sql = `SELECT id, branchSlug, branchName, date, dayOfWeek, startTime, className, teacherName, roomName, isSubstitute
     FROM classes WHERE ${conditions.map((c) => `(${c})`).join(" AND ")} ORDER BY date, startTime`;
 
   const { results } = await db.prepare(sql).bind(...params).all();
