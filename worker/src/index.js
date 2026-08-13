@@ -137,7 +137,7 @@ export default {
       // 課表通知(單次,上課前 30 分鐘):登記一顆課的 Web Push 通知。
       if (url.pathname === "/registerReminder" && req.method === "POST") {
         const body = await req.json().catch(() => ({}));
-        const { branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, pushSubscription } = body || {};
+        const { branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, pushSubscription, clickUrl } = body || {};
         if (
           typeof branchSlug !== "string" || !branchSlug ||
           typeof branchName !== "string" || !branchName ||
@@ -146,12 +146,13 @@ export default {
           typeof roomName !== "string" ||
           !Number.isInteger(dayOfWeek) || dayOfWeek < 1 || dayOfWeek > 7 ||
           typeof startTime !== "string" || !/^\d{4}$/.test(startTime) ||
-          !pushSubscription || typeof pushSubscription.endpoint !== "string" || !pushSubscription.endpoint
+          !pushSubscription || typeof pushSubscription.endpoint !== "string" || !pushSubscription.endpoint ||
+          (clickUrl !== undefined && (typeof clickUrl !== "string" || clickUrl.length > 500))
         ) {
           return json({ error: "invalid reminder" }, 400, origin);
         }
         const result = await registerReminder(env.DB, {
-          branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, pushSubscription,
+          branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, pushSubscription, clickUrl,
         });
         return json(result, 200, origin);
       }

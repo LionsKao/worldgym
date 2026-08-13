@@ -46,6 +46,16 @@ body{
   border-radius:20px; box-shadow:0 8px 24px rgba(0,0,0,0.08);
 }
 
+.ad-banner{
+  display:flex; align-items:center; gap:12px; text-decoration:none; cursor:pointer;
+}
+.ad-banner-tag{ flex-shrink:0; cursor:default; }
+.ad-banner-text{
+  color:var(--ink); font-size:13.5px; font-weight:700; line-height:1.5;
+  opacity:1; transform:translateY(0); transition:opacity .35s ease, transform .35s ease;
+}
+.ad-banner-text.fading{ opacity:0; transform:translateY(4px); }
+
 fieldset{ border:none; margin:0 0 26px; padding:0; }
 .row-pair{ display:flex; gap:24px; flex-wrap:wrap; }
 .row-pair fieldset{ flex:1 1 200px; }
@@ -139,9 +149,9 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 .notify-hint-tip i{ font-size:12px; }
 .notify-hint-steps{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
 .notify-hint-steps li{ display:flex; align-items:center; gap:6px; color:var(--sub); font-size:12px; line-height:1.5; }
-.notify-hint-steps i{ color:var(--accent,#e0629b); font-size:12px; }
+.notify-hint-steps i{ color:var(--accent); font-size:12px; }
 .notify-hint-num{
-  flex:none; width:16px; height:16px; border-radius:50%; background:var(--accent,#e0629b);
+  flex:none; width:16px; height:16px; border-radius:50%; background:var(--accent);
   color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center;
 }
 
@@ -322,6 +332,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
   color:#c9922e; cursor:pointer;
 }
 .teacher-link:hover{ color:#a3741a; }
+.teacher-link.busy{ opacity:.5; pointer-events:none; }
 .branch-map-link{
   color:#4a90d9; text-decoration:none; cursor:pointer;
 }
@@ -365,20 +376,27 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 /* 課表通知：查詢結果列的鈴鐺(灰=未登記/黃=已登記)，跟「通知」清單區塊。 */
 .bell-icon{
   flex-shrink:0; color:var(--sub); cursor:pointer; transition:color .2s ease, transform .1s ease;
+  padding:10px; margin:-10px; box-sizing:content-box;
 }
 .bell-icon:hover{ color:#f0b400; }
 .bell-icon.armed{ color:#f0b400; }
 .bell-icon.busy{ opacity:.5; pointer-events:none; }
 #reminderView{ transition:opacity .2s ease; margin-bottom:26px; }
 #reminderView.view-fade-in{ opacity:0; }
-.reminder-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; transition:opacity .25s ease; }
-.reminder-row.reminder-row-cancelled{ justify-content:center; color:var(--ink); }
+.reminder-row{ position:relative; display:flex; align-items:center; justify-content:space-between; gap:8px; transition:opacity .25s ease; }
 .reminder-row.fading-out{ opacity:0; }
 .reminder-text{ min-width:0; }
 .reminder-teacher{ color:#2b2b2b; }
 .reminder-notify-time{ font-size:11px; font-weight:500; color:var(--sub); margin-top:2px; }
 .reminder-cancel-bell{ color:#f0b400; cursor:pointer; padding-left:10px; flex-shrink:0; }
 .reminder-cancel-bell.busy{ opacity:.5; pointer-events:none; }
+.reminder-cancel-overlay{
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  background:rgba(255,255,255,.88); border-radius:14px;
+  font-size:13px; font-weight:800; color:var(--ink);
+  opacity:0; transition:opacity .2s ease; pointer-events:none;
+}
+.reminder-cancel-overlay.visible{ opacity:1; }
 
 @media (max-width:480px){
   body{ padding:20px 10px 100px; }

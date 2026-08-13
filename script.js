@@ -12,6 +12,29 @@ if (new URLSearchParams(location.search).get("pwa") === "1"){
   localStorage.setItem("wg_debug_force_pwa", "1");
 }
 
+// 廣告文案輪播：每隔幾秒淡出換字再淡入，動畫時間要跟 style.css 的 .ad-banner-text transition 對齊。
+const AD_BANNER_TEXTS = [
+  "📍 大安黃金地段 1 樓免爬樓！質感時尚裝潢與獨立衛浴，輕鬆享受便利生活！ ✨",
+  "🌿 坐落大安區四維路，兼具靜謐與便利的 1 樓時尚獨衛套房，質感生活隨時開啟！ 🛋️",
+  "🔑 台北大安區精緻 6 坪獨立衛浴套房，一樓出入順暢、機能滿分，優質租屋首選！ 💯",
+];
+(function initAdBannerCarousel(){
+  const el = document.getElementById("adBannerText");
+  if (!el || AD_BANNER_TEXTS.length < 2) return;
+  let index = 0;
+  setInterval(() => {
+    el.classList.add("fading");
+    setTimeout(() => {
+      index = (index + 1) % AD_BANNER_TEXTS.length;
+      el.textContent = AD_BANNER_TEXTS[index];
+      el.classList.remove("fading");
+    }, 350);
+  }, 4000);
+})();
+document.querySelector(".ad-banner")?.addEventListener("click", () => {
+  trackEvent("click_ad_banner", { ad_text: document.getElementById("adBannerText")?.textContent });
+});
+
 // 鈴鐺只在「已安裝成 standalone PWA」才顯示，不要求通知權限已授權（未授權按下去會先跳說明 modal）。
 // 除錯用旁路：正式環境使用者不會知道這個 localStorage key，只是方便開發時在一般分頁看到鈴鐺。
 function isPWAInstalled(){
@@ -62,7 +85,24 @@ function syncResultBellsToRegistered(){
       bell.classList.remove("armed");
       delete bell.dataset.reminderId;
     }
+    setResultRowNotifyLine(bell, existing && existing.remindAt);
   });
+}
+// 查詢結果列底下顯示「會在 mm/dd 週幾 hh:mm 通知你」，跟通知清單頁那行文字共用同一個 formatReminderTime。
+function setResultRowNotifyLine(bell, remindAt){
+  const content = bell.closest(".result-row")?.querySelector(".result-row-content");
+  if (!content) return;
+  let notifyLine = content.querySelector(".reminder-notify-time");
+  if (remindAt){
+    if (!notifyLine){
+      notifyLine = document.createElement("div");
+      notifyLine.className = "reminder-notify-time";
+      content.appendChild(notifyLine);
+    }
+    notifyLine.textContent = `會在 ${formatReminderTime(remindAt)} 通知你`;
+  } else if (notifyLine){
+    notifyLine.remove();
+  }
 }
 
 // remindAt 是 "YYYY-MM-DDTHH:mm:ss+08:00" 格式的字串，直接切字串取值，避免瀏覽器時區再轉一次。
@@ -122,6 +162,7 @@ async function registerReminderForBell(bell){
       dayOfWeek: parseInt(bell.dataset.dayOfWeek, 10),
       startTime: bell.dataset.startTime,
       pushSubscription: sub.toJSON(),
+      clickUrl: location.href,
     };
     const res = await fetch(`${WORKER_BASE}/registerReminder`, {
       method: "POST",
@@ -153,6 +194,7 @@ async function cancelReminderForBell(bell){
     registeredReminders.delete(reminderKeyFromBell(bell));
     syncResultBellsToRegistered();
     showPillWarning(bell, "已刪除通知");
+    trackEvent("cancel_reminder", { class_name: bell.dataset.className, teacher_name: bell.dataset.teacherName, source: "result_bell" });
   } catch(e){
     console.error(e);
     showPillWarning(bell, "取消失敗，請稍後再試");
@@ -169,6 +211,7 @@ async function handleBellClick(bell){
   if (Notification.permission !== "granted"){
     pendingReminderBell = bell;
     document.getElementById("notifyPermissionModal").classList.remove("hidden");
+    trackEvent("notify_permission_prompt", {});
     return;
   }
   await registerReminderForBell(bell);
@@ -229,7 +272,7 @@ async function renderReminderList(){
     }
     row.appendChild(text);
     const bell = document.createElement("i");
-    bell.className = "fa-solid fa-bell reminder-cancel-bell";
+    bell.className = "fa-solid fa-bell-slash reminder-cancel-bell";
     bell.addEventListener("mouseenter", () => showHoverTooltip(bell, "取消通知", false));
     bell.addEventListener("mouseleave", hideHoverTooltip);
     row.appendChild(bell);
@@ -239,6 +282,9 @@ async function renderReminderList(){
 document.getElementById("reminderGrid").addEventListener("click", async (e) => {
   const bell = e.target.closest(".reminder-cancel-bell");
   if (!bell) return;
+  // 手機用點觸發 mouseenter 顯示「取消通知」後，這一列馬上就會被蓋掉/移除，摸不到 mouseleave，
+  // 提示框會卡住不消失，所以點下去這裡就先強制關掉，不要等 hover 事件自己收尾。
+  hideHoverTooltip();
   const row = bell.closest(".reminder-row");
   const id = row.dataset.reminderId;
   bell.classList.add("busy");
@@ -248,13 +294,18 @@ document.getElementById("reminderGrid").addEventListener("click", async (e) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     });
+    let cancelledReminder = null;
     for (const [key, r] of registeredReminders){
-      if (r.id === id){ registeredReminders.delete(key); break; }
+      if (r.id === id){ cancelledReminder = r; registeredReminders.delete(key); break; }
     }
     syncResultBellsToRegistered();
-    row.innerHTML = "";
-    row.classList.add("reminder-row-cancelled");
-    row.textContent = "已取消通知";
+    trackEvent("cancel_reminder", { class_name: cancelledReminder?.className, teacher_name: cancelledReminder?.teacherName, source: "reminder_list" });
+    const overlay = document.createElement("div");
+    overlay.className = "reminder-cancel-overlay";
+    overlay.textContent = "通知已取消";
+    row.appendChild(overlay);
+    void overlay.offsetHeight;
+    overlay.classList.add("visible");
     setTimeout(() => {
       row.classList.add("fading-out");
       setTimeout(() => {
@@ -456,6 +507,7 @@ function renderBranchGrid(containerId, options) {
       saveSelection("wg_selected_branch", ["branch"]);
       updateResetButtonState();
       updateSubmitState();
+      trackEvent("select_all_branch", { city_name: cityName });
     });
     branchSectionHead.appendChild(selectAllBtn);
   });
@@ -580,22 +632,8 @@ pillWarnTooltip.id = "pillWarnTooltip";
 pillWarnTooltip.className = "pill-warn-tooltip";
 document.body.appendChild(pillWarnTooltip);
 let pillWarnTimer = null;
-function showPillWarning(anchorEl, text){
-  const rect = anchorEl.getBoundingClientRect();
-  pillWarnTooltip.classList.remove("wrap");
-  pillWarnTooltip.textContent = text;
-  pillWarnTooltip.style.removeProperty("--arrow-left");
-  pillWarnTooltip.style.left = (rect.left + rect.width / 2) + "px";
-  pillWarnTooltip.style.bottom = (window.innerHeight - rect.top + 10) + "px";
-  pillWarnTooltip.classList.add("visible");
-  clearTimeout(pillWarnTimer);
-  pillWarnTimer = setTimeout(() => pillWarnTooltip.classList.remove("visible"), 1800);
-}
-function showHoverTooltip(anchorEl, text, wrap = true){
-  const rect = anchorEl.getBoundingClientRect();
-  pillWarnTooltip.classList.toggle("wrap", wrap);
-  pillWarnTooltip.innerHTML = text;
-  // 靠右對齊的鈴鐺離螢幕邊緣很近，不夾住的話 tooltip 置中對齊錨點時會超出可視範圍被切掉。
+// 靠右對齊的鈴鐺離螢幕邊緣很近，不夾住的話 tooltip 置中對齊錨點時會超出可視範圍被切掉。
+function positionPillTooltip(rect){
   const half = pillWarnTooltip.offsetWidth / 2;
   const margin = 8;
   const anchorCenterX = rect.left + rect.width / 2;
@@ -605,6 +643,21 @@ function showHoverTooltip(anchorEl, text, wrap = true){
   // 箱體被夾住往左移的話，尖角要跟著留在原本錨點正下方，不然看起來會指向旁邊。
   const arrowPct = half > 0 ? Math.max(10, Math.min(90, ((anchorCenterX - centerX) / (half * 2) + 0.5) * 100)) : 50;
   pillWarnTooltip.style.setProperty("--arrow-left", arrowPct + "%");
+}
+function showPillWarning(anchorEl, text){
+  const rect = anchorEl.getBoundingClientRect();
+  pillWarnTooltip.classList.remove("wrap");
+  pillWarnTooltip.textContent = text;
+  positionPillTooltip(rect);
+  pillWarnTooltip.classList.add("visible");
+  clearTimeout(pillWarnTimer);
+  pillWarnTimer = setTimeout(() => pillWarnTooltip.classList.remove("visible"), 1800);
+}
+function showHoverTooltip(anchorEl, text, wrap = true){
+  const rect = anchorEl.getBoundingClientRect();
+  pillWarnTooltip.classList.toggle("wrap", wrap);
+  pillWarnTooltip.innerHTML = text;
+  positionPillTooltip(rect);
   clearTimeout(pillWarnTimer);
   pillWarnTooltip.classList.add("visible");
 }
@@ -618,14 +671,6 @@ document.getElementById("branchGrid").addEventListener("change", (e) => {
   if (input.matches('input[name="branch"]') && input.checked) incrementClickCount("wg_branch_clicks", input.value);
   updateSubmitState();
 });
-
-const scheduleHintIcon = document.getElementById("scheduleHintIcon");
-scheduleHintIcon.addEventListener("mouseenter", () => showHoverTooltip(scheduleHintIcon, "資料每天凌晨 3 點自動更新。如果分店臨時代課，課表可能會來不及更新，請以現場公告為準。"));
-scheduleHintIcon.addEventListener("mouseleave", hideHoverTooltip);
-
-const iosInstallHintIcon = document.getElementById("iosInstallHintIcon");
-iosInstallHintIcon.addEventListener("mouseenter", () => showHoverTooltip(iosInstallHintIcon, "iOS 用 Safari 打開這個網站，點下方工具列的「分享」按鈕，選擇「加入主畫面」，就能像 App 一樣直接從手機桌面打開。"));
-iosInstallHintIcon.addEventListener("mouseleave", hideHoverTooltip);
 
 const githubLinkIcon = document.getElementById("githubLinkIcon");
 githubLinkIcon.addEventListener("mouseenter", () => showHoverTooltip(githubLinkIcon, "GitHub"));
@@ -714,6 +759,7 @@ document.getElementById("teacherGrid").addEventListener("change", (e) => {
 });
 
 document.getElementById("resetFiltersBtn").addEventListener("click", () => {
+  trackEvent("reset_filters", {});
   ["day", "time", "branch", "room", "course", "teacher"].forEach(name => {
     document.querySelectorAll(`input[name="${name}"]`).forEach(input => { input.checked = false; });
   });
@@ -845,6 +891,7 @@ document.getElementById("clearMemoryCloseBtn").addEventListener("click", () => {
   clearMemoryModal.classList.add("hidden");
 });
 document.getElementById("clearMemoryConfirmBtn").addEventListener("click", () => {
+  trackEvent("clear_memory", {});
   localStorage.clear();
   location.reload();
 });
@@ -863,6 +910,7 @@ document.getElementById("notifyPermissionConfirmBtn").addEventListener("click", 
   pendingReminderBell = null;
   if (!bell) return;
   const perm = await Notification.requestPermission();
+  trackEvent("notify_permission_result", { result: perm });
   if (perm === "granted") await registerReminderForBell(bell);
 });
 
@@ -1102,18 +1150,19 @@ function renderScheduleResults(rows, onlyTeacher){
       bell.addEventListener("mouseenter", () => showHoverTooltip(bell, tooltipTextForBell(bell), false));
       bell.addEventListener("mouseleave", hideHoverTooltip);
       line.appendChild(bell);
+      setResultRowNotifyLine(bell, existing && existing.remindAt);
     }
     area.appendChild(line);
   });
 }
-document.getElementById("resultArea").addEventListener("click", (e) => {
+document.getElementById("resultArea").addEventListener("click", async (e) => {
   const bell = e.target.closest(".bell-icon");
   if (bell){
     handleBellClick(bell);
     return;
   }
   const teacherLink = e.target.closest(".teacher-link");
-  if (!teacherLink) return;
+  if (!teacherLink || teacherLink.classList.contains("busy")) return;
   const teacherName = teacherLink.dataset.teacher;
   applyFilterState({ teacher: [teacherName] });
   trackTeacherEventOncePerSession("filter_by_teacher", teacherName);
@@ -1125,7 +1174,15 @@ document.getElementById("resultArea").addEventListener("click", (e) => {
   updateResetButtonState();
   searchTriggerSource = "teacher_link";
   const submitBtn = document.getElementById("scheduleSubmitBtn");
-  if (!submitBtn.disabled) document.getElementById("filterForm").requestSubmit(submitBtn);
+  if (submitBtn.disabled) return;
+  // 這裡不用 requestSubmit：結果頁時 filterForm 是 hidden 的，submitBtn 的 spin 圖示使用者看不到，
+  // 改成讓結果頁本來就看得到的返回按鈕轉圈，查詢完換出第二層結果後再變回箭頭。
+  teacherLink.classList.add("busy");
+  const backBtnIcon = document.querySelector("#backBtn i");
+  backBtnIcon.className = "fa-solid fa-spinner fa-spin";
+  await runSearchAndShowResults(currentFilterState());
+  teacherLink.classList.remove("busy");
+  backBtnIcon.className = "fa-solid fa-arrow-left";
 });
 
 function showResultView(){
@@ -1144,6 +1201,7 @@ function fadeInView(el){
   el.classList.remove("view-fade-in");
 }
 function showMailView(){
+  trackEvent("open_reminder_list", {});
   document.getElementById("filterForm").classList.add("hidden");
   document.getElementById("settingsSheet").classList.add("hidden");
   document.getElementById("favoriteSheet").classList.add("hidden");
@@ -1267,11 +1325,13 @@ function formatResultLine(row){
 }
 document.getElementById("copyResultsBtn").addEventListener("click", () => {
   const text = lastResultRows.map(formatResultLine).join("\n");
+  trackEvent("copy_results", { result_count: lastResultRows.length });
   navigator.clipboard.writeText(text)
     .then(() => showPillWarning(document.getElementById("copyResultsBtn"), "已複製文字到剪貼簿"))
     .catch(() => showPillWarning(document.getElementById("copyResultsBtn"), "複製失敗，請手動選取"));
 });
 document.getElementById("shareUrlBtn").addEventListener("click", () => {
+  trackEvent("share_url", {});
   navigator.clipboard.writeText(location.href)
     .then(() => showPillWarning(document.getElementById("shareUrlBtn"), "已複製網址到剪貼簿"))
     .catch(() => showPillWarning(document.getElementById("shareUrlBtn"), "複製失敗，請手動選取"));

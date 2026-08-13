@@ -84,7 +84,7 @@ function computeNextOccurrence(dayOfWeek, startTime) {
 }
 
 async function registerReminder(db, params) {
-  const { branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, pushSubscription } = params;
+  const { branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, pushSubscription, clickUrl } = params;
   const subscriptionEndpoint = pushSubscription?.endpoint || "";
   if (!subscriptionEndpoint) throw new Error("missing push subscription endpoint");
 
@@ -94,8 +94,8 @@ async function registerReminder(db, params) {
   await db
     .prepare(
       `INSERT OR REPLACE INTO reminders
-        (id, branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, classAt, remindAt, subscriptionEndpoint, pushSubscription, sent, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`
+        (id, branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, classAt, remindAt, subscriptionEndpoint, pushSubscription, clickUrl, sent, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`
     )
     .bind(
       id,
@@ -110,6 +110,7 @@ async function registerReminder(db, params) {
       remindAt,
       subscriptionEndpoint,
       JSON.stringify(pushSubscription),
+      clickUrl || "",
       nowTaiwanIso()
     )
     .run();
@@ -161,7 +162,7 @@ async function dispatchDueReminders(db, env) {
       const subscription = JSON.parse(r.pushSubscription);
       const title = `${r.branchName} ${r.className}`;
       const body = `週${WEEKDAY_LABEL[r.dayOfWeek]} ${formatHHmm(r.startTime)} ${r.teacherName} 老師 · ${r.roomName}`;
-      const message = { data: JSON.stringify({ title, body }), options: { ttl: 3600 } };
+      const message = { data: JSON.stringify({ title, body, url: r.clickUrl || "/" }), options: { ttl: 3600 } };
       const payload = await buildPushPayload(message, subscription, vapid);
       const res = await fetch(subscription.endpoint, payload);
       if (!res.ok) {

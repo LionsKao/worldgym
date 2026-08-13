@@ -18,7 +18,7 @@ self.addEventListener("push", (event) => {
       body: payload.body,
       icon: "icons/icon-192.png",
       badge: "icons/icon-192.png",
-      data: { url: "/" },
+      data: { url: payload.url || "/" },
     })
   );
 });
@@ -29,7 +29,8 @@ self.addEventListener("notificationclick", (event) => {
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientsArr) => {
       const existing = clientsArr.find((c) => "focus" in c);
-      if (existing) return existing.focus();
+      // 已開著的分頁要導到登記通知當下那個查詢頁,不然只 focus 會停在原本畫面。
+      if (existing) return ("navigate" in existing ? existing.navigate(targetUrl) : Promise.resolve(existing)).then((c) => c.focus());
       return self.clients.openWindow(targetUrl);
     })
   );

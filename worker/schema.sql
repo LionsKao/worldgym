@@ -59,6 +59,7 @@ CREATE TABLE reminders (
   remindAt TEXT NOT NULL,
   subscriptionEndpoint TEXT NOT NULL,
   pushSubscription TEXT NOT NULL,
+  clickUrl TEXT NOT NULL DEFAULT '',
   sent INTEGER NOT NULL DEFAULT 0,
   createdAt TEXT NOT NULL
 );
