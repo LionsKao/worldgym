@@ -3,7 +3,7 @@ const SUBSTITUTE_DAYS_AHEAD = 14;
 // course/teacher 走 SQL IN 子句，D1 每個查詢的綁定參數上限是 100，
 // course+teacher 兩個 IN 子句（30*2=60）加上 day(7)+room(2)+日期範圍(4) = 73，還有餘裕。
 const IN_LIMIT = 30;
-// branch 不透過 IN 子句下推（見下方 queryClasses 裡的說明），只是防濫用的天花板，
+// branch 選很多間時不會下推進 SQL（見下方 queryClasses 裡的說明），這裡只是防濫用的天花板，
 // 目前總共只有 106 家分店，不會真的卡到使用者。
 const BRANCH_LIMIT = 150;
 const ROOM_VALUES = new Set(["團體教室", "飛輪教室"]);
@@ -63,10 +63,17 @@ function inClause(column, values, params) {
 }
 
 // SQL 的 IN 子句沒有 Firestore 那種「一次查詢只能一個 in」的限制，
-// 所以課程/老師/星期/教室可以全部一起下條件。分店例外：前端不再限制分店選幾間，
-// 選很多間時全部塞進一個 IN 子句可能逼近 D1 每查詢 100 個綁定參數的上限，
-// 所以分店改成撈完日期範圍＋其他篩選後，在這裡用 JS 過濾——反正 classes 全表也才幾千筆，
-// 不下推分店條件對讀取量影響可忽略。
+// 所以課程/老師/星期/教室可以全部一起下條件。
+// 分店選不多時（最常見的情境，包含前端「單一縣市全選」「兩個縣市全選」按鈕）把
+// branchSlug 也下推進 IN 子句，讓 D1 用 idx_classes_branch 索引直接 seek，不用把
+// 所有分店的資料都讀出來再用 JS 丟掉；選到接近全部分店時 IN 子句幫助不大（篩不掉
+// 什麼，還要對索引做很多次個別 seek，不見得比一次日期範圍掃描划算），且會逼近 D1
+// 每查詢 100 個綁定參數的上限，這種情況才退回「撈完日期範圍＋其他篩選後在 JS 過濾」
+// 的做法。
+// 目前最大縣市（台北）有 21 間、兩個縣市全選（台北+新北）約 38 間，上限訂在 40
+// 讓這兩種常見操作都能吃到下推優化。
+const BRANCH_PUSHDOWN_LIMIT = 40;
+const D1_PARAM_SAFETY_LIMIT = 95; // D1 上限是 100，留一點餘裕避免卡在邊界
 async function queryClasses(db, rawState) {
   const branch = sanitizeStringArray(rawState.branch, BRANCH_LIMIT);
   const course = sanitizeStringArray(rawState.course, IN_LIMIT);
@@ -96,12 +103,17 @@ async function queryClasses(db, rawState) {
     conditions.push(inClause("startHour", hours, params));
   }
 
+  const branchPushedDown = branch.length > 0
+    && branch.length <= BRANCH_PUSHDOWN_LIMIT
+    && params.length + branch.length <= D1_PARAM_SAFETY_LIMIT;
+  if (branchPushedDown) conditions.push(inClause("branchSlug", branch, params));
+
   const sql = `SELECT id, branchSlug, branchName, date, dayOfWeek, startTime, className, teacherName, roomName, isSubstitute
     FROM classes WHERE ${conditions.map((c) => `(${c})`).join(" AND ")} ORDER BY date, startTime`;
 
   const { results } = await db.prepare(sql).bind(...params).all();
   let docs = results.map((r) => ({ ...r, isSubstitute: r.isSubstitute === 1 }));
-  if (branch.length > 0) {
+  if (branch.length > 0 && !branchPushedDown) {
     const branchSet = new Set(branch);
     docs = docs.filter((c) => branchSet.has(c.branchSlug));
   }

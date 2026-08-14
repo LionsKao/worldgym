@@ -160,8 +160,8 @@ async function dispatchDueReminders(db, env) {
   for (const r of results) {
     try {
       const subscription = JSON.parse(r.pushSubscription);
-      const title = `${r.branchName} ${r.className}`;
-      const body = `週${WEEKDAY_LABEL[r.dayOfWeek]} ${formatHHmm(r.startTime)} ${r.teacherName} 老師 · ${r.roomName}`;
+      const title = `${r.className} ${r.teacherName}`;
+      const body = `${r.branchName} 週${WEEKDAY_LABEL[r.dayOfWeek]} ${formatHHmm(r.startTime)}`;
       const message = { data: JSON.stringify({ title, body, url: r.clickUrl || "/" }), options: { ttl: 3600 } };
       const payload = await buildPushPayload(message, subscription, vapid);
       const res = await fetch(subscription.endpoint, payload);

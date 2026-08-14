@@ -33,6 +33,12 @@ function json(data, status, origin) {
 
 export default {
   async fetch(req, env, ctx) {
+    // 只開放台灣 IP：cf.country 沒有值(如本機開發)就放行，避免擋掉自己測試。
+    const country = req.cf?.country;
+    if (country && country !== "TW") {
+      return new Response("Forbidden", { status: 403 });
+    }
+
     const origin = req.headers.get("Origin") || "";
     const url = new URL(req.url);
 
@@ -47,12 +53,13 @@ export default {
         return json(result, 200, origin);
       }
 
-      // 查詢前先只要筆數：前端拿 count 判斷要不要顯示「太多/沒有結果」提示，
-      // 筆數在合理範圍才會真的呼叫 /queryClasses 把完整資料抓回去畫結果頁。
-      if (url.pathname === "/classesCount" && req.method === "POST") {
-        const body = await req.json().catch(() => ({}));
-        const { fetchedCount, displayedCount } = await queryClasses(env.DB, body || {});
-        return json({ fetchedCount, displayedCount }, 200, origin);
+      // 首頁廣告輪播：只回傳目前在上下架時間內、且 enabled=1 的廣告，順序照 sortOrder。
+      if (url.pathname === "/ads" && req.method === "GET") {
+        const now = new Date().toISOString();
+        const { results } = await env.DB.prepare(
+          "SELECT text, url FROM ads WHERE enabled = 1 AND startAt <= ? AND endAt >= ? ORDER BY sortOrder"
+        ).bind(now, now).all();
+        return json({ ads: results }, 200, origin);
       }
 
       // 讀 meta_filter_options 快取（一列資料），不用每次頁面載入都對 classes 全表重新 GROUP BY。

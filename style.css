@@ -42,7 +42,7 @@ body{
 .stripe-bar .s5{ background:var(--coral); flex-grow:2; }
 
 .sheet{
-  background:var(--paper); padding:24px 22px 26px; margin-bottom:20px;
+  background:var(--paper); padding:24px 22px 26px; margin-bottom:15px;
   border-radius:20px; box-shadow:0 8px 24px rgba(0,0,0,0.08);
 }
 
@@ -50,9 +50,14 @@ body{
   display:flex; align-items:center; gap:12px; text-decoration:none; cursor:pointer;
 }
 .ad-banner-tag{ flex-shrink:0; cursor:default; }
+.ad-banner-text-wrap{
+  display:flex; flex-direction:column; justify-content:center;
+  min-height:calc(13.5px * 1.5 * 3); width:100%;
+}
 .ad-banner-text{
   color:var(--ink); font-size:13.5px; font-weight:700; line-height:1.5;
   opacity:1; transform:translateY(0); transition:opacity .35s ease, transform .35s ease;
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden;
 }
 .ad-banner-text.fading{ opacity:0; transform:translateY(4px); }
 
@@ -319,6 +324,10 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 }
 .mail-disclaimer .section-tag{ flex-shrink:0; cursor:default; }
 #githubLinkIcon, #adminLinkIcon, #adminLoginBackBtn{ cursor:pointer; text-decoration:none; }
+#qrCodeBtn, #copyUrlBtn{ border:none; font-family:inherit; cursor:pointer; }
+.qr-tooltip{ padding:10px; background:#fff; }
+.qr-tooltip img{ display:block; width:132px; height:132px; }
+.qr-tooltip::after{ border-color:#fff transparent transparent transparent; }
 .mail-disclaimer span:last-child:not(.section-tag){ flex:1; min-width:0; }
 .result-row{
   display:flex; align-items:center; justify-content:space-between; gap:8px;

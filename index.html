@@ -24,7 +24,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
-<link rel="stylesheet" href="style.css?v=47">
+<link rel="stylesheet" href="style.css?v=49">
 <style>#loadingOverlay{position:fixed;top:0;left:0;width:100%;height:100%;background:#fff;z-index:9999;}</style>
 </head>
 <body>
@@ -45,9 +45,11 @@
     <span class="s1"></span><span class="s2"></span><span class="s3"></span><span class="s4"></span><span class="s5"></span>
   </div>
 
-  <a class="sheet ad-banner" href="https://www.dd-room.com/object/wkx02awwk4xntjhk" target="_blank" rel="noopener sponsored">
+  <a class="sheet ad-banner" id="adBanner" href="https://www.dd-room.com/object/wkx02awwk4xntjhk" target="_blank" rel="noopener sponsored">
     <span class="section-tag ad-banner-tag" style="--accent:#3a3a4a">廣告</span>
-    <span class="ad-banner-text" id="adBannerText">📍 大安黃金地段 1 樓免爬樓！質感時尚裝潢與獨立衛浴，輕鬆享受便利生活！ ✨</span>
+    <span class="ad-banner-text-wrap">
+      <span class="ad-banner-text" id="adBannerText">📍 大安黃金地段 1 樓免爬樓！質感時尚裝潢與獨立衛浴，輕鬆享受便利生活！ ✨</span>
+    </span>
   </a>
 
   <div class="sheet" id="favoriteSheet">
@@ -125,9 +127,9 @@
         <button type="button" class="submit-btn gray-btn" id="resetFiltersBtn" aria-label="清除已選篩選"><i class="fa-solid fa-backward-step"></i></button>
         <span class="tooltip-wrap" id="submitBtnTooltipWrap">
           <span class="hint-tooltip" id="submitTooltip"></span>
-          <button type="submit" class="submit-btn" id="scheduleSubmitBtn" aria-label="查詢課表" disabled><i class="fa-solid fa-magnifying-glass"></i></button>
+          <button type="submit" class="submit-btn" id="scheduleSubmitBtn" aria-label="查詢課表"><i class="fa-solid fa-magnifying-glass"></i></button>
         </span>
-        <button type="button" class="submit-btn orange-btn" id="mailBtn" aria-label="郵件"><i class="fa-solid fa-bell"></i></button>
+        <button type="button" class="submit-btn orange-btn" id="notifyBtn" aria-label="通知"><i class="fa-solid fa-bell"></i></button>
       </div>
     </form>
 
@@ -161,6 +163,11 @@
 
   <div class="sheet hidden" id="mailDisclaimerSheet">
     <div class="mail-disclaimer">
+      <button type="button" class="section-tag" id="copyUrlBtn" aria-label="複製網站網址" style="--accent:#4a90d9"><i class="fa-solid fa-fw fa-link"></i></button>
+      <span class="tooltip-wrap" id="qrCodeBtnWrap">
+        <span class="hint-tooltip qr-tooltip" id="qrCodeTooltip"><img src="icons/qrcode.png" width="132" height="132" alt="網站 QR Code" loading="lazy"></span>
+        <button type="button" class="section-tag" id="qrCodeBtn" aria-label="分享 QR Code" style="--accent:#2f8f5b"><i class="fa-solid fa-fw fa-qrcode"></i></button>
+      </span>
       <a class="section-tag" id="githubLinkIcon" href="https://github.com/LionsKao/worldgym" target="_blank" rel="noopener" aria-label="GitHub 原始碼" style="--accent:#181717"><i class="fa-brands fa-fw fa-github"></i></a>
       <a class="section-tag" id="adminLinkIcon" href="admin.html" aria-label="管理者功能" style="--accent:#5b3cc4"><i class="fa-solid fa-fw fa-right-to-bracket"></i></a>
     </div>
@@ -204,10 +211,21 @@
 <div id="notifyPermissionModal" class="modal-overlay hidden">
   <div class="modal-box">
     <button type="button" class="modal-close-btn" id="notifyPermissionCloseBtn" aria-label="取消"><i class="fa-solid fa-xmark"></i></button>
-    <p class="modal-text">開啟通知，課前 30 分鐘不怕錯過！<br>需要允許通知權限。</p>
+    <p class="modal-text" id="notifyPermissionText">開啟通知，課前 30 分鐘不怕錯過！<br>需要允許通知權限。</p>
     <div class="modal-actions">
       <button type="button" class="modal-btn" id="notifyPermissionCancelBtn">取消</button>
       <button type="button" class="modal-btn modal-btn-confirm" id="notifyPermissionConfirmBtn">確定</button>
+    </div>
+  </div>
+</div>
+
+<div id="geoPermissionModal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <button type="button" class="modal-close-btn" id="geoPermissionCloseBtn" aria-label="取消"><i class="fa-solid fa-xmark"></i></button>
+    <p class="modal-text" id="geoPermissionText">依目前位置篩選分店，<br>需要允許定位權限。</p>
+    <div class="modal-actions">
+      <button type="button" class="modal-btn" id="geoPermissionCancelBtn">取消</button>
+      <button type="button" class="modal-btn modal-btn-confirm" id="geoPermissionConfirmBtn">確定</button>
     </div>
   </div>
 </div>
@@ -269,6 +287,6 @@
   </div>
 </div>
 
-<script src="script.js?v=69"></script>
+<script src="script.js?v=74"></script>
 </body>
 </html>
