@@ -51,14 +51,16 @@ function buildReminderId(subscriptionEndpoint, branchSlug, dayOfWeek, startTime,
   return `rem_${fnv1aHex(seed)}`;
 }
 
-// 找出「下一次符合 dayOfWeek/startTime 的上課時間」:今天符合但時間已過就跳到下週同一天。
+// 找出「下一次符合 dayOfWeek/startTime 的上課時間」:今天符合但「課前提醒時間」已過就跳到下週同一天，
+// 不能只看上課時間本身有沒有過——否則會登記到一個 remindAt 已經是過去式的提醒（課前 30 分早就過了）。
 function computeNextOccurrence(dayOfWeek, startTime) {
   const now = currentTaiwanParts();
   const startHour = parseInt(startTime.slice(0, 2), 10) || 0;
   const startMinute = parseInt(startTime.slice(2, 4), 10) || 0;
 
   let deltaDays = (dayOfWeek - now.weekday + 7) % 7;
-  if (deltaDays === 0 && startHour * 60 + startMinute <= now.hours * 60 + now.minutes) {
+  const remindMinutesOfDay = startHour * 60 + startMinute - REMIND_MINUTES_BEFORE;
+  if (deltaDays === 0 && remindMinutesOfDay <= now.hours * 60 + now.minutes) {
     deltaDays = 7;
   }
 

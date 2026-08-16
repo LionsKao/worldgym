@@ -2,6 +2,8 @@
 
 查詢 World Gym 台灣各分店團體課表的網站,前端是純靜態頁面,後端用 Cloudflare Worker + D1 資料庫。
 
+![課表查詢畫面截圖](docs/screenshot.png)
+
 線上版本:
 - Hosting: https://worldgym.pages.dev
 - API: https://worldgym-api.lions2100.workers.dev
@@ -29,6 +31,18 @@
 前端呼叫 `worker/` 部署出來的 API(`/queryClasses` 等端點),API 讀寫 Cloudflare D1(`worldgym-schedule` 資料庫)。爬蟲沒有排程,重抓要透過 `admin.html` 手動觸發;`worker/wrangler.toml` 裡的 `[triggers]` cron(`*/5 * * * *`)只用來每 5 分鐘掃描是否有課前推播提醒到期,跟爬蟲無關。
 
 前端另外有埋 GA4 事件(篩選、查詢、登記/取消提醒等),用來看使用行為。
+
+## 資料表總覽
+
+D1(`worldgym-schedule`)裡的 table,完整欄位定義以 [`worker/schema.sql`](worker/schema.sql) 為準:
+
+| Table | 用途 |
+| --- | --- |
+| `classes` | 爬蟲抓下來的課表(分店、日期、課程、老師、教室等) |
+| `branches` | 分店清單(slug、名稱、地區) |
+| `meta_filter_options` | 篩選用的課程名稱/老師名稱清單快取 |
+| `reminders` | 課前推播提醒的登記紀錄與發送狀態 |
+| `ads` | 首頁廣告輪播內容與上下架時間 |
 
 ## 推播提醒(PWA)
 

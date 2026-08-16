@@ -469,26 +469,7 @@ function renderBranchGrid(containerId, options) {
   }
   const branchSectionHead = document.getElementById("branchSectionHead");
   branchSectionHead.querySelectorAll(".pill-btn").forEach(el => el.remove());
-  ["台北", "新北"].forEach(cityName => {
-    const citySlugs = options.filter(opt => opt.cityName === cityName).map(opt => opt.value);
-    if (citySlugs.length === 0) return;
-    const selectAllBtn = document.createElement("button");
-    selectAllBtn.type = "button";
-    selectAllBtn.className = "pill-btn";
-    selectAllBtn.textContent = `${cityName}全選`;
-    selectAllBtn.addEventListener("click", () => {
-      const citySlugSet = new Set(citySlugs);
-      document.querySelectorAll('input[name="branch"]').forEach(input => {
-        if (citySlugSet.has(input.value)) input.checked = true;
-      });
-      saveSelection("wg_selected_branch", ["branch"]);
-      updateResetButtonState();
-      updateSubmitState();
-      trackEvent("select_all_branch", { city_name: cityName });
-    });
-    branchSectionHead.appendChild(selectAllBtn);
-  });
-
+  const zoneToggles = {};
   if (navigator.geolocation) {
     [1, 3, 5].forEach(radiusKm => {
       const geoBtn = document.createElement("button");
@@ -499,6 +480,63 @@ function renderBranchGrid(containerId, options) {
       branchSectionHead.appendChild(geoBtn);
     });
   }
+
+  ["台北", "新北"].forEach(cityName => {
+    const citySlugs = options.filter(opt => opt.cityName === cityName).map(opt => opt.value);
+    if (citySlugs.length === 0) return;
+    const selectAllBtn = document.createElement("button");
+    selectAllBtn.type = "button";
+    selectAllBtn.className = "pill-btn";
+    selectAllBtn.textContent = cityName;
+    selectAllBtn.addEventListener("click", () => {
+      const citySlugSet = new Set(citySlugs);
+      document.querySelectorAll('input[name="branch"]').forEach(input => {
+        if (citySlugSet.has(input.value)) input.checked = true;
+      });
+      saveSelection("wg_selected_branch", ["branch"]);
+      updateResetButtonState();
+      updateSubmitState();
+      trackEvent("select_all_branch", { city_name: cityName });
+
+      const zoneName = ZONE_MAP[cityName] || cityName;
+      const zoneToggle = zoneToggles[zoneName];
+      if (zoneToggle && !zoneToggle.toggle.classList.contains("expanded")) {
+        zoneToggle.toggle.click();
+      }
+    });
+    branchSectionHead.appendChild(selectAllBtn);
+  });
+
+  [
+    { label: "桃園", zoneName: "桃園區" },
+    { label: "新竹", zoneName: "新竹區" },
+    { label: "台中", zoneName: "台中區" },
+    { label: "台南", zoneName: "台南區" },
+    { label: "高屏", zoneName: "高屏區" },
+  ].forEach(({ label, zoneName }) => {
+    const zoneSlugs = options.filter(opt => opt.region === zoneName).map(opt => opt.value);
+    if (zoneSlugs.length === 0) return;
+    const selectAllBtn = document.createElement("button");
+    selectAllBtn.type = "button";
+    selectAllBtn.className = "pill-btn";
+    selectAllBtn.textContent = label;
+    selectAllBtn.addEventListener("click", () => {
+      const zoneSlugSet = new Set(zoneSlugs);
+      document.querySelectorAll('input[name="branch"]').forEach(input => {
+        if (zoneSlugSet.has(input.value)) input.checked = true;
+      });
+      saveSelection("wg_selected_branch", ["branch"]);
+      updateResetButtonState();
+      updateSubmitState();
+      trackEvent("select_all_branch", { city_name: label });
+
+      const zoneToggle = zoneToggles[zoneName];
+      if (zoneToggle && !zoneToggle.toggle.classList.contains("expanded")) {
+        zoneToggle.toggle.click();
+      }
+    });
+    branchSectionHead.appendChild(selectAllBtn);
+  });
 
   let lastZone = undefined;
   let currentGroup = null;
@@ -520,6 +558,7 @@ function renderBranchGrid(containerId, options) {
       toggle.className = isExpanded ? "zone-toggle expanded" : "zone-toggle";
       toggle.innerHTML = `${zoneLabel} <i class="fa-solid fa-chevron-down"></i>`;
       grid.appendChild(toggle);
+      zoneToggles[zoneName] = { toggle };
 
       toggle.addEventListener("click", () => {
         const group = toggle.nextElementSibling;
@@ -564,6 +603,7 @@ document.querySelectorAll(".section-btn").forEach(btn => {
 });
 
 document.querySelectorAll(".section-search").forEach(input => {
+  if (!input.dataset.searchFor) return;
   const clearBtn = input.closest(".search-wrap")?.querySelector(".search-clear");
   input.addEventListener("input", () => {
     const grid = document.getElementById(input.dataset.searchFor);
@@ -625,6 +665,7 @@ pillWarnTooltip.id = "pillWarnTooltip";
 pillWarnTooltip.className = "pill-warn-tooltip";
 document.body.appendChild(pillWarnTooltip);
 let pillWarnTimer = null;
+let activeTooltipAnchor = null;
 // 靠右對齊的鈴鐺離螢幕邊緣很近，不夾住的話 tooltip 置中對齊錨點時會超出可視範圍被切掉。
 function positionPillTooltip(rect){
   const half = pillWarnTooltip.offsetWidth / 2;
@@ -657,7 +698,14 @@ function showHoverTooltip(anchorEl, text, wrap = true){
 function hideHoverTooltip(){
   clearTimeout(pillWarnTimer);
   pillWarnTooltip.classList.remove("visible");
+  activeTooltipAnchor = null;
 }
+// 手機沒有 hover，改成點擊開關；點 tooltip 或錨點以外的地方要能收起。
+document.addEventListener("click", (e) => {
+  if (activeTooltipAnchor && !activeTooltipAnchor.contains(e.target) && !pillWarnTooltip.contains(e.target)){
+    hideHoverTooltip();
+  }
+});
 
 document.getElementById("branchGrid").addEventListener("change", (e) => {
   const input = e.target;
@@ -666,13 +714,9 @@ document.getElementById("branchGrid").addEventListener("change", (e) => {
 });
 
 const githubLinkIcon = document.getElementById("githubLinkIcon");
-githubLinkIcon.addEventListener("mouseenter", () => showHoverTooltip(githubLinkIcon, "GitHub"));
-githubLinkIcon.addEventListener("mouseleave", hideHoverTooltip);
 githubLinkIcon.addEventListener("click", () => trackEvent("click_github_icon", {}));
 
 const adminLinkIcon = document.getElementById("adminLinkIcon");
-adminLinkIcon.addEventListener("mouseenter", () => showHoverTooltip(adminLinkIcon, "管理者功能"));
-adminLinkIcon.addEventListener("mouseleave", hideHoverTooltip);
 adminLinkIcon.addEventListener("click", () => trackEvent("click_admin_icon", {}));
 
 const copyUrlBtn = document.getElementById("copyUrlBtn");
@@ -1129,8 +1173,16 @@ function renderActiveFilters(state){
     }
     if (labels.length > maxShown){
       const fullList = labels.join("、");
-      tag.addEventListener("mouseenter", () => showHoverTooltip(tag, fullList));
-      tag.addEventListener("mouseleave", hideHoverTooltip);
+      tag.classList.add("has-tooltip");
+      tag.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (activeTooltipAnchor === tag){
+          hideHoverTooltip();
+        } else {
+          showHoverTooltip(tag, fullList);
+          activeTooltipAnchor = tag;
+        }
+      });
     }
     box.appendChild(tag);
   });
