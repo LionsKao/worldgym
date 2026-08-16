@@ -1,0 +1,93 @@
+/*!
+ * 只包含本站實際用到的 Font Awesome 6.5.2 圖示（自訂子集，減少下載體積）
+ * 來源：https://fontawesome.com  License: SIL OFL 1.1 (fonts) / MIT (code)
+ */
+@font-face{
+  font-family:'Font Awesome 6 Free';
+  font-style:normal;
+  font-weight:900;
+  font-display:block;
+  src:url('fa-solid-900.woff2') format('woff2');
+}
+@font-face{
+  font-family:'Font Awesome 6 Brands';
+  font-style:normal;
+  font-weight:400;
+  font-display:block;
+  src:url('fa-brands-400.woff2') format('woff2');
+}
+.fa-solid{
+  font-family:'Font Awesome 6 Free';
+  font-weight:900;
+}
+.fa-brands{
+  font-family:'Font Awesome 6 Brands';
+  font-weight:400;
+}
+.fa-solid, .fa-brands{
+  display:var(--fa-display,inline-block);
+  font-style:normal;
+  font-variant:normal;
+  line-height:1;
+  text-rendering:auto;
+}
+.fa-solid::before, .fa-brands::before{
+  content:var(--fa-content);
+}
+.fa-fw{
+  text-align:center;
+  width:1.25em;
+}
+.fa-spin{
+  animation:fa-spin 2s infinite linear;
+}
+@keyframes fa-spin{
+  0%{ transform:rotate(0deg); }
+  100%{ transform:rotate(360deg); }
+}
+.fa-arrow-left{ --fa-content:"\f060"; }
+.fa-arrow-rotate-right{ --fa-content:"\f01e"; }
+.fa-arrow-up-from-bracket{ --fa-content:"\e09a"; }
+.fa-backward-step{ --fa-content:"\f048"; }
+.fa-bell{ --fa-content:"\f0f3"; }
+.fa-bell-slash{ --fa-content:"\f1f6"; }
+.fa-bolt{ --fa-content:"\f0e7"; }
+.fa-bookmark{ --fa-content:"\f02e"; }
+.fa-calendar-day{ --fa-content:"\f783"; }
+.fa-chart-line{ --fa-content:"\f201"; }
+.fa-chevron-down{ --fa-content:"\f078"; }
+.fa-clock{ --fa-content:"\f017"; }
+.fa-cloud{ --fa-content:"\f0c2"; }
+.fa-copy{ --fa-content:"\f0c5"; }
+.fa-database{ --fa-content:"\f1c0"; }
+.fa-dharmachakra{ --fa-content:"\f655"; }
+.fa-dice{ --fa-content:"\f522"; }
+.fa-dumbbell{ --fa-content:"\f44b"; }
+.fa-ellipsis{ --fa-content:"\f141"; }
+.fa-envelope{ --fa-content:"\f0e0"; }
+.fa-face-smile{ --fa-content:"\f118"; }
+.fa-flag{ --fa-content:"\f024"; }
+.fa-gear{ --fa-content:"\f013"; }
+.fa-hand-fist{ --fa-content:"\f6de"; }
+.fa-heart{ --fa-content:"\f004"; }
+.fa-link{ --fa-content:"\f0c1"; }
+.fa-location-dot{ --fa-content:"\f3c5"; }
+.fa-magnifying-glass{ --fa-content:"\f002"; }
+.fa-moon{ --fa-content:"\f186"; }
+.fa-paper-plane{ --fa-content:"\f1d8"; }
+.fa-qrcode{ --fa-content:"\f029"; }
+.fa-right-to-bracket{ --fa-content:"\f2f6"; }
+.fa-share-nodes{ --fa-content:"\f1e0"; }
+.fa-spinner{ --fa-content:"\f110"; }
+.fa-square-plus{ --fa-content:"\f0fe"; }
+.fa-star{ --fa-content:"\f005"; }
+.fa-store{ --fa-content:"\f54e"; }
+.fa-sun{ --fa-content:"\f185"; }
+.fa-thumbtack{ --fa-content:"\f08d"; }
+.fa-trash{ --fa-content:"\f1f8"; }
+.fa-trash-can{ --fa-content:"\f2ed"; }
+.fa-triangle-exclamation{ --fa-content:"\f071"; }
+.fa-user{ --fa-content:"\f007"; }
+.fa-xmark{ --fa-content:"\f00d"; }
+.fa-rectangle-ad{ --fa-content:"\f641"; }
+.fa-github{ --fa-content:"\f09b"; }
