@@ -324,7 +324,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
   color:var(--sub); font-size:14px; font-weight:600; line-height:1.6;
 }
 .mail-disclaimer .section-tag{ flex-shrink:0; cursor:default; }
-#githubLinkIcon, #adminLinkIcon, #adminLoginBackBtn{ cursor:pointer; text-decoration:none; }
+#githubLinkIcon, #adminLinkIcon, #adminLoginBackBtn, #officialSiteLink{ cursor:pointer; text-decoration:none; }
 #qrCodeBtn, #copyUrlBtn{ border:none; font-family:inherit; cursor:pointer; }
 .qr-tooltip{ padding:10px; background:#fff; }
 .qr-tooltip img{ display:block; width:132px; height:132px; }
