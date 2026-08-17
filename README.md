@@ -2,7 +2,7 @@
 
 查詢 World Gym 台灣各分店團體課表的網站,前端是純靜態頁面,後端用 Cloudflare Worker + D1 資料庫。
 
-![課表查詢畫面截圖](docs/screenshot.png)
+<img src="docs/screenshot.png" alt="課表查詢畫面截圖" width="320">
 
 線上版本:
 - Hosting: https://worldgym.pages.dev
@@ -14,9 +14,11 @@
 .
 ├── index.html / script.js / style.css   # 前端:課表查詢頁(含首頁廣告輪播)
 ├── manifest.json / sw.js / icons/       # PWA 設定與 Service Worker(推播提醒用)
+│   └── icons/fontawesome/               # 自打包的 Font Awesome 子集(只含用到的圖示,取代 cdnjs 全量載入)
 ├── admin.html / admin.js                # 後台:手動觸發重抓、查看爬蟲紀錄
 ├── branches.json                        # 分店清單快取(前端用)
 ├── functions/_middleware.js             # Cloudflare Pages Functions:只放行台灣 IP
+├── _headers                             # 靜態資源快取設定(script.js/style.css/icons 走長效快取)
 ├── hosting/                             # Cloudflare Workers 靜態託管設定(wrangler)
 └── worker/                              # Cloudflare Worker API
     ├── src/index.js                     # 路由 / CORS / 入口 / cron scheduled()
@@ -67,6 +69,12 @@ npx wrangler d1 execute worldgym-schedule --remote --command="UPDATE ads SET ena
 ```
 
 新增/修改 ads table 結構的話,`worker/schema.sql` 是重建整個資料庫用的完整版本(會 `DROP TABLE` 掉所有表,只在建立全新資料庫時執行);要對既有正式資料庫追加改動,改寫或新增 `worker/migrations/` 底下的檔案,用 `wrangler d1 execute ... --remote --file=migrations/xxx.sql` 執行,才不會把 `classes`/`reminders` 等其他表的資料一起清掉。
+
+## 靜態資源快取
+
+`script.js` / `style.css` / `icons/` 走 `_headers` 設定的長效快取(`Cache-Control: max-age=...`),搭配 `index.html`/`admin.html` 裡既有的 `?v=` 版號機制:內容有改的話記得同步更新版號,不然使用者會吃到快取住的舊檔案。
+
+圖示改用自己打包的 Font Awesome 子集(`icons/fontawesome/`,只含實際用到的圖示),不再從 cdnjs 載入完整套件;要新增圖示的話得重新產生子集檔案,不能直接在 HTML 裡加新的 `fa-` class 就以為會動。
 
 ## 本機開發
 
