@@ -97,11 +97,57 @@ adminBackBtn.addEventListener("mouseleave", () => adminBackTooltip.classList.rem
   const stored = getStoredToken();
   if (stored && await verifyToken(stored).catch(() => false)){
     showAdminPage();
+    loadAdStats();
   } else {
     clearStoredToken();
     showLoginOverlay();
   }
 })();
+
+// --- 廣告統計面板：一次抓全部廣告（含已下架）+ 累計曝光/點擊，下拉選單切換不用重打 API ---
+let AD_STATS = [];
+const adStatsSelect = document.getElementById("adStatsSelect");
+const adStatsDetail = document.getElementById("adStatsDetail");
+
+function escapeHtml(str){
+  return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function renderAdStatsDetail(adId){
+  const ad = AD_STATS.find((a) => a.id === adId);
+  if (!ad){ adStatsDetail.textContent = ""; return; }
+  adStatsDetail.innerHTML = `
+    <span class="ad-stat-text">${escapeHtml(ad.text)}</span>
+    <div>連結：<a href="${escapeHtml(ad.url)}" target="_blank" rel="noopener">${escapeHtml(ad.url)}</a></div>
+    <div>上架期間：${escapeHtml(ad.startAt)} ~ ${escapeHtml(ad.endAt)}</div>
+    <div class="ad-stat-row">
+      <span>曝光次數：<span class="ad-stat-num">${ad.impressions}</span></span>
+      <span>點擊次數：<span class="ad-stat-num">${ad.clicks}</span></span>
+    </div>
+  `;
+}
+
+async function loadAdStats(){
+  try{
+    const res = await fetch(`${WORKER_BASE}/adStats?token=${encodeURIComponent(getStoredToken())}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    AD_STATS = Array.isArray(data.ads) ? data.ads : [];
+    adStatsSelect.innerHTML = AD_STATS
+      .map((ad) => `<option value="${escapeHtml(ad.id)}">${ad.enabled ? "✅" : "🚫"} ${escapeHtml(ad.text.slice(0, 20))}...</option>`)
+      .join("");
+    if (AD_STATS.length){
+      adStatsSelect.value = AD_STATS[0].id;
+      renderAdStatsDetail(AD_STATS[0].id);
+    } else {
+      adStatsDetail.textContent = "目前沒有任何廣告資料";
+    }
+  } catch(e){
+    console.error(e);
+    adStatsDetail.textContent = "載入失敗，請重新登入";
+  }
+}
+adStatsSelect.addEventListener("change", () => renderAdStatsDetail(adStatsSelect.value));
 
 const modal = document.getElementById("rescrapeModal");
 const modalText = document.getElementById("rescrapeModalText");

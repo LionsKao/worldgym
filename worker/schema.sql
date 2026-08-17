@@ -87,3 +87,15 @@ INSERT INTO ads (id, text, url, startAt, endAt, enabled, sortOrder) VALUES
   ('ad-2', '🌿 坐落大安區四維路，兼具靜謐與便利的 1 樓時尚獨衛套房，質感生活隨時開啟！ 🛋️', 'https://www.dd-room.com/object/wkx02awwk4xntjhk', '2026-01-01T00:00:00Z', '2027-12-31T23:59:59Z', 1, 1),
   ('ad-3', '🔑 台北大安區精緻 6 坪獨立衛浴套房，一樓出入順暢、機能滿分，優質租屋首選！ 💯', 'https://www.dd-room.com/object/wkx02awwk4xntjhk', '2026-01-01T00:00:00Z', '2027-12-31T23:59:59Z', 1, 2),
   ('ad-4', '🏋️‍♂️ 健身｜黝黑｜陽光生活 🏡 新莊公園旁｜質感自住獨立空間 💫 保持開放心態，探索各種關係的無限可能 ✨ 📩 DMs are open, 歡迎私訊聊天！💬', 'https://www.instagram.com/e713300', '2026-01-01T00:00:00Z', '2027-12-31T23:59:59Z', 1, 3);
+
+-- 廣告曝光/點擊事件記錄。每次曝光或點擊各寫一列，不做聚合，
+-- 方便未來要依時間區間篩選時直接 WHERE createdAt BETWEEN ...，不用改 schema。
+CREATE TABLE ad_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  adId TEXT NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('impression', 'click')),
+  createdAt TEXT NOT NULL
+);
+
+CREATE INDEX idx_ad_events_adId_type ON ad_events(adId, type);
+CREATE INDEX idx_ad_events_createdAt ON ad_events(createdAt);

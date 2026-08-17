@@ -17,6 +17,16 @@ if (new URLSearchParams(location.search).get("pwa") === "1"){
 // style.css 的 .ad-banner-text transition 對齊。每則廣告各自帶自己的連結，
 // 切換文字時同步換掉外層 <a> 的 href。
 let AD_BANNERS = [];
+let currentAdIndex = 0;
+// 廣告曝光/點擊落地存進 D1（跟 GA4 的 trackEvent 分開），失敗靜默吞掉，不影響前台體驗、不重試。
+function trackAdEvent(adId, type){
+  if (!adId) return;
+  fetch(`${WORKER_BASE}/trackAdEvent`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ adId, type }),
+  }).catch(() => {});
+}
 function initAdBannerCarousel(){
   const banner = document.getElementById("adBanner");
   const el = document.getElementById("adBannerText");
@@ -25,17 +35,19 @@ function initAdBannerCarousel(){
     banner.classList.add("hidden");
     return;
   }
-  let index = 0;
+  currentAdIndex = 0;
   el.textContent = AD_BANNERS[0].text;
   banner.href = AD_BANNERS[0].url;
+  trackAdEvent(AD_BANNERS[0].id, "impression");
   if (AD_BANNERS.length < 2) return;
   setInterval(() => {
     el.classList.add("fading");
     setTimeout(() => {
-      index = (index + 1) % AD_BANNERS.length;
-      el.textContent = AD_BANNERS[index].text;
-      banner.href = AD_BANNERS[index].url;
+      currentAdIndex = (currentAdIndex + 1) % AD_BANNERS.length;
+      el.textContent = AD_BANNERS[currentAdIndex].text;
+      banner.href = AD_BANNERS[currentAdIndex].url;
       el.classList.remove("fading");
+      trackAdEvent(AD_BANNERS[currentAdIndex].id, "impression");
     }, 350);
   }, 5000);
 }
@@ -46,6 +58,7 @@ fetch(`${WORKER_BASE}/ads`)
   .finally(initAdBannerCarousel);
 document.querySelector(".ad-banner")?.addEventListener("click", () => {
   trackEvent("click_ad_banner", { ad_text: document.getElementById("adBannerText")?.textContent });
+  trackAdEvent(AD_BANNERS[currentAdIndex]?.id, "click");
 });
 
 // 鈴鐺只在「已安裝成 standalone PWA」才顯示，不要求通知權限已授權（未授權按下去會先跳說明 modal）。

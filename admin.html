@@ -52,6 +52,11 @@
   }
   #adminLoginBtnWrap{ display:block; width:100%; }
   #adminLoginBackBtnWrap{ z-index:1500; }
+
+  #adStatsDetail{ font-size:12.5px; line-height:1.7; color:var(--sub); }
+  #adStatsDetail .ad-stat-text{ display:block; color:var(--ink); font-weight:700; margin-bottom:8px; }
+  #adStatsDetail .ad-stat-row{ display:flex; gap:16px; flex-wrap:wrap; margin-top:6px; }
+  #adStatsDetail .ad-stat-num{ font-weight:800; color:var(--ink); }
 </style>
 </head>
 <body>
@@ -91,6 +96,16 @@
       </div>
     </div>
 
+    <div class="sheet admin-col">
+      <div class="field-block" style="--accent:#4285f4">
+        <div class="section-head">
+          <span class="section-tag"><i class="fa-solid fa-fw fa-chart-simple"></i>廣告統計</span>
+        </div>
+        <select id="adStatsSelect" class="section-search"></select>
+        <div id="adStatsDetail"></div>
+      </div>
+    </div>
+
     <div class="sheet admin-col terminal-panel">
       <div class="terminal-log" id="terminalLog"><span class="term-empty">👋 已成功登入</span><br><span class="term-empty">🤖 等待命令執行</span></div>
     </div>
@@ -115,6 +130,6 @@
   </div>
 </div>
 
-<script src="admin.js?v=15"></script>
+<script src="admin.js?v=16"></script>
 </body>
 </html>

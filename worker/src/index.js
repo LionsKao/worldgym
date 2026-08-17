@@ -54,11 +54,48 @@ export default {
       }
 
       // 首頁廣告輪播：只回傳目前在上下架時間內、且 enabled=1 的廣告，順序照 sortOrder。
+      // id 要回傳出去，前端輪播才能標記「目前顯示的是哪一則廣告」，用來打曝光/點擊事件。
       if (url.pathname === "/ads" && req.method === "GET") {
         const now = new Date().toISOString();
         const { results } = await env.DB.prepare(
-          "SELECT text, url FROM ads WHERE enabled = 1 AND startAt <= ? AND endAt >= ? ORDER BY sortOrder"
+          "SELECT id, text, url FROM ads WHERE enabled = 1 AND startAt <= ? AND endAt >= ? ORDER BY sortOrder"
         ).bind(now, now).all();
+        return json({ ads: results }, 200, origin);
+      }
+
+      // 廣告曝光/點擊打點：訪客觸發的公開動作，不做身分驗證，只驗證 adId 真的存在、type 合法，
+      // 避免寫入垃圾資料污染統計。
+      if (url.pathname === "/trackAdEvent" && req.method === "POST") {
+        const body = await req.json().catch(() => ({}));
+        const { adId, type } = body || {};
+        if (type !== "impression" && type !== "click") {
+          return json({ error: "invalid type" }, 400, origin);
+        }
+        const ad = await env.DB.prepare("SELECT 1 FROM ads WHERE id = ?").bind(adId).first();
+        if (!ad) {
+          return json({ error: "unknown adId" }, 400, origin);
+        }
+        await env.DB.prepare("INSERT INTO ad_events (adId, type, createdAt) VALUES (?, ?, ?)")
+          .bind(adId, type, new Date().toISOString())
+          .run();
+        return json({ ok: true }, 200, origin);
+      }
+
+      // admin.html 廣告統計面板：一次回傳全部廣告（含已下架）+ 累計曝光/點擊數字。
+      if (url.pathname === "/adStats" && req.method === "GET") {
+        if (url.searchParams.get("token") !== env.MANUAL_SCRAPE_TOKEN) {
+          return json({ error: "forbidden" }, 403, origin);
+        }
+        const { results } = await env.DB.prepare(`
+          SELECT
+            a.id, a.text, a.url, a.startAt, a.endAt, a.enabled, a.sortOrder,
+            COALESCE(imp.cnt, 0) AS impressions,
+            COALESCE(clk.cnt, 0) AS clicks
+          FROM ads a
+          LEFT JOIN (SELECT adId, COUNT(*) cnt FROM ad_events WHERE type='impression' GROUP BY adId) imp ON imp.adId = a.id
+          LEFT JOIN (SELECT adId, COUNT(*) cnt FROM ad_events WHERE type='click' GROUP BY adId) clk ON clk.adId = a.id
+          ORDER BY a.sortOrder
+        `).all();
         return json({ ads: results }, 200, origin);
       }
 
