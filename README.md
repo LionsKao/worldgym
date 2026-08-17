@@ -1,4 +1,4 @@
-# World Gym 課表查詢
+# 🏋️ World Gym 課表查詢
 
 查詢 World Gym 台灣各分店團體課表的網站,前端是純靜態頁面,後端用 Cloudflare Worker + D1 資料庫。
 
@@ -8,7 +8,7 @@
 - Hosting: https://worldgym.pages.dev
 - API: https://worldgym-api.lions2100.workers.dev
 
-## 架構
+## 🏗️ 架構
 
 ```
 .
@@ -34,7 +34,7 @@
 
 前端另外有埋 GA4 事件(篩選、查詢、登記/取消提醒等),用來看使用行為。
 
-## 資料表總覽
+## 🗄️ 資料表總覽
 
 D1(`worldgym-schedule`)裡的 table,完整欄位定義以 [`worker/schema.sql`](worker/schema.sql) 為準:
 
@@ -46,7 +46,7 @@ D1(`worldgym-schedule`)裡的 table,完整欄位定義以 [`worker/schema.sql`](
 | `reminders` | 課前推播提醒的登記紀錄與發送狀態 |
 | `ads` | 首頁廣告輪播內容與上下架時間 |
 
-## 推播提醒(PWA)
+## 🔔 推播提醒(PWA)
 
 課表查詢頁需要先加到主畫面成為 PWA 才能顯示鈴鐺按鈕(見 `script.js` 的 `isPWAInstalled()`,判斷 `display-mode: standalone`)。使用者對某堂課按鈴鐺登記提醒後:
 
@@ -57,7 +57,7 @@ D1(`worldgym-schedule`)裡的 table,完整欄位定義以 [`worker/schema.sql`](
 
 本機測試可以在網址加上 `?pwa=1`(等同 `localStorage.setItem("wg_debug_force_pwa","1")`),讓 `isPWAInstalled()` 直接回傳 true,不用真的安裝成 PWA 就能看到鈴鐺按鈕。
 
-## 首頁廣告
+## 📢 首頁廣告
 
 首頁上方的廣告輪播內容存在 D1 的 `ads` table(`text` / `url` / `startAt` / `endAt` / `enabled` / `sortOrder`),前端載入時打 `worker` 的 `GET /ads`,只會拿回目前在上下架時間內、且 `enabled = 1` 的廣告;拿不到任何廣告時整條廣告列會自動隱藏。
 
@@ -70,13 +70,13 @@ npx wrangler d1 execute worldgym-schedule --remote --command="UPDATE ads SET ena
 
 新增/修改 ads table 結構的話,`worker/schema.sql` 是重建整個資料庫用的完整版本(會 `DROP TABLE` 掉所有表,只在建立全新資料庫時執行);要對既有正式資料庫追加改動,改寫或新增 `worker/migrations/` 底下的檔案,用 `wrangler d1 execute ... --remote --file=migrations/xxx.sql` 執行,才不會把 `classes`/`reminders` 等其他表的資料一起清掉。
 
-## 靜態資源快取
+## ⚡ 靜態資源快取
 
 `script.js` / `style.css` / `icons/` 走 `_headers` 設定的長效快取(`Cache-Control: max-age=...`),搭配 `index.html`/`admin.html` 裡既有的 `?v=` 版號機制:內容有改的話記得同步更新版號,不然使用者會吃到快取住的舊檔案。
 
 圖示改用自己打包的 Font Awesome 子集(`icons/fontawesome/`,只含實際用到的圖示),不再從 cdnjs 載入完整套件;要新增圖示的話得重新產生子集檔案,不能直接在 HTML 裡加新的 `fa-` class 就以為會動。
 
-## 本機開發
+## 🛠️ 本機開發
 
 需要 Node.js 與 [wrangler](https://developers.cloudflare.com/workers/wrangler/)(已在各自的 `package.json` 裡列為 devDependency)。
 
@@ -133,6 +133,6 @@ cd hosting && npm run deploy
 cd worker && npx wrangler secret put VAPID_PRIVATE_KEY
 ```
 
-## 授權
+## 📄 授權
 
 [MIT License](LICENSE)
