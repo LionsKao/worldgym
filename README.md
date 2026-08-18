@@ -30,7 +30,7 @@
     └── migrations/                      # 針對既有正式資料庫的單張 table migration(不動其他表)
 ```
 
-前端呼叫 `worker/` 部署出來的 API(`/queryClasses` 等端點),API 讀寫 Cloudflare D1(`worldgym-schedule` 資料庫)。爬蟲沒有排程,重抓要透過 `admin.html` 手動觸發;`worker/wrangler.toml` 裡的 `[triggers]` cron(`*/5 * * * *`)只用來每 5 分鐘掃描是否有課前推播提醒到期,跟爬蟲無關。
+前端呼叫 `worker/` 部署出來的 API(`/queryClasses` 等端點),API 讀寫 Cloudflare D1(`worldgym-schedule` 資料庫)。`worker/wrangler.toml` 裡的 `[triggers]` cron 有三個:`*/5 * * * *` 每 5 分鐘掃描是否有課前推播提醒到期,跟爬蟲無關;`0 19 * * *`、`0 9 * * *` 是台灣時間 03:00、17:00 各自動重抓一次全部分店(需要 Workers Paid 方案,單次執行 subrequest 上限 1000,才跑得完 104 家分店)。也可以透過 `admin.html` 手動觸發重抓。
 
 前端另外有埋 GA4 事件(篩選、查詢、登記/取消提醒等),用來看使用行為。
 

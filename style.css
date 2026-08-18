@@ -147,6 +147,13 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 .pill.hidden{ display:none; }
 
 .empty-hint{ color:var(--sub); font-size:12px; padding:6px 2px; }
+
+.branch-stats-filter-row{ display:flex; gap:8px; margin-bottom:14px; }
+.branch-stats-select{
+  flex:1; min-width:0; height:31px; padding:0 10px; border:1.5px solid var(--line); border-radius:999px;
+  font-family:inherit; font-size:12.5px; font-weight:700; color:var(--ink); background:var(--paper); cursor:pointer;
+}
+.branch-stats-wrap{ font-size:12.5px; overflow:hidden; }
 .fav-empty-hint{ flex:1; min-width:0; font-size:12.5px; }
 
 .notify-hint{ padding:10px 2px; }
@@ -322,7 +329,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 .active-filter-tag i{ padding-right:7px; font-size:12px; }
 .active-filter-tag.has-tooltip{ cursor:pointer; }
 .mail-disclaimer{
-  display:flex; align-items:center; justify-content:center; gap:12px;
+  display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-start; gap:12px;
   color:var(--sub); font-size:14px; font-weight:600; line-height:1.6;
 }
 .mail-disclaimer .section-tag{ flex-shrink:0; cursor:default; }

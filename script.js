@@ -1513,6 +1513,9 @@ function showMailView(){
   document.getElementById("favoriteSheet").classList.add("hidden");
   fadeInView(document.getElementById("reminderView"));
   fadeInView(document.getElementById("mailView"));
+  document.getElementById("branchStatsSheet").classList.remove("hidden");
+  document.getElementById("courseStatsSheet").classList.remove("hidden");
+  document.getElementById("teacherStatsSheet").classList.remove("hidden");
   document.getElementById("mailDisclaimerSheet").classList.remove("hidden");
   document.getElementById("quickLinksSheet").classList.remove("hidden");
   document.getElementById("mailBackBtnWrap").classList.remove("hidden");
@@ -1527,6 +1530,9 @@ function showFilterView(){
   document.getElementById("backBtnWrap").classList.add("hidden");
   document.getElementById("reminderView").classList.add("hidden");
   document.getElementById("mailView").classList.add("hidden");
+  document.getElementById("branchStatsSheet").classList.add("hidden");
+  document.getElementById("courseStatsSheet").classList.add("hidden");
+  document.getElementById("teacherStatsSheet").classList.add("hidden");
   document.getElementById("mailDisclaimerSheet").classList.add("hidden");
   document.getElementById("quickLinksSheet").classList.add("hidden");
   document.getElementById("mailBackBtnWrap").classList.add("hidden");
@@ -1753,6 +1759,130 @@ document.addEventListener("visibilitychange", () => {
   if (!cachedQueryToken || cachedQueryToken.exp <= Date.now() + 60000){
     fetchFreshQueryToken().catch(e => console.error("visibilitychange token 刷新失敗", e));
   }
+});
+
+// 首頁的公開排行報表（分店查詢排行、課程查詢排行）：資料來自不需管理密鑰的公開端點，
+// Chart.js 體積不小，等區塊真的進入畫面才動態載入，避免拖慢首屏。
+function loadChartJs(){
+  if (window.Chart) return Promise.resolve();
+  if (!loadChartJs._promise){
+    loadChartJs._promise = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "vendor/chart.umd.min.js";
+      script.onload = resolve;
+      script.onerror = reject;
+      document.body.appendChild(script);
+    });
+  }
+  return loadChartJs._promise;
+}
+
+function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint, itemsKey, barColor, ariaLabel }){
+  const wrapEl = document.getElementById(wrapId);
+  const yearSelect = document.getElementById(yearSelectId);
+  const monthSelect = document.getElementById(monthSelectId);
+  if (!wrapEl || !yearSelect || !monthSelect) return;
+
+  const THEME_INK = "#2b2b2b", THEME_SUB = "#7a7a7a", THEME_LINE = "#ececec";
+  const ROW_H = 28, MIN_H = 60;
+  let chartInstance = null;
+
+  function renderChart(items){
+    if (chartInstance){ chartInstance.destroy(); chartInstance = null; }
+    if (!items.length){
+      wrapEl.style.height = "";
+      wrapEl.textContent = "這個月沒有查詢紀錄";
+      return;
+    }
+    wrapEl.style.height = `${Math.max(MIN_H, items.length * ROW_H)}px`;
+    wrapEl.innerHTML = "<canvas></canvas>";
+    const canvas = wrapEl.querySelector("canvas");
+    canvas.setAttribute("role", "img");
+    canvas.setAttribute("aria-label", ariaLabel);
+    chartInstance = new Chart(canvas, {
+      type: "bar",
+      data: {
+        labels: items.map((t) => t.name),
+        datasets: [{ data: items.map((t) => t.count), backgroundColor: barColor, borderRadius: 4, barThickness: ROW_H * 0.55 }],
+      },
+      options: {
+        indexAxis: "y",
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 280 },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: THEME_INK, titleColor: "#fff", bodyColor: "#fff",
+            titleFont: { size: 11, weight: "700" }, bodyFont: { size: 11 },
+            padding: 8, cornerRadius: 8, displayColors: false,
+          },
+        },
+        scales: {
+          x: { beginAtZero: true, grid: { color: THEME_LINE }, ticks: { color: THEME_SUB, font: { size: 10 }, precision: 0 } },
+          y: { grid: { display: false }, ticks: { color: THEME_INK, font: { size: 12, weight: "600" } } },
+        },
+      },
+    });
+  }
+
+  function populateMonthOptions(selected){
+    monthSelect.innerHTML = Array.from({ length: 12 }, (_, i) => {
+      const m = String(i + 1).padStart(2, "0");
+      return `<option value="${m}">${i + 1} 月</option>`;
+    }).join("");
+    monthSelect.value = selected;
+  }
+
+  async function load(){
+    const now = new Date();
+    const year = yearSelect.value || String(now.getFullYear());
+    const month = monthSelect.value || String(now.getMonth() + 1).padStart(2, "0");
+    try{
+      await loadChartJs();
+      const res = await fetch(`${WORKER_BASE}/${endpoint}?year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      const years = Array.isArray(data.years) && data.years.length ? data.years : [String(now.getFullYear())];
+      if (!yearSelect.value){
+        yearSelect.innerHTML = years.map((y) => `<option value="${y}">${y} 年</option>`).join("");
+        yearSelect.value = years.includes(year) ? year : years[0];
+        populateMonthOptions(month);
+        if (yearSelect.value !== year){
+          load();
+          return;
+        }
+      }
+      renderChart(Array.isArray(data[itemsKey]) ? data[itemsKey] : []);
+    } catch(e){
+      console.error(e);
+      wrapEl.textContent = "載入失敗，請稍後再試";
+    }
+  }
+
+  yearSelect.addEventListener("change", load);
+  monthSelect.addEventListener("change", load);
+
+  const observer = new IntersectionObserver((entries) => {
+    if (entries.some((e) => e.isIntersecting)){
+      observer.disconnect();
+      load();
+    }
+  }, { rootMargin: "200px" });
+  observer.observe(wrapEl);
+}
+
+setupPublicRankingStats({
+  wrapId: "branchStatsWrap", yearSelectId: "branchStatsYear", monthSelectId: "branchStatsMonth",
+  endpoint: "publicBranchStats", itemsKey: "branches", barColor: "#4a90d9", ariaLabel: "分店查詢次數排行",
+});
+setupPublicRankingStats({
+  wrapId: "courseStatsWrap", yearSelectId: "courseStatsYear", monthSelectId: "courseStatsMonth",
+  endpoint: "publicCourseStats", itemsKey: "courses", barColor: "#8a6fb3", ariaLabel: "課程查詢次數排行",
+});
+setupPublicRankingStats({
+  wrapId: "teacherStatsWrap", yearSelectId: "teacherStatsYear", monthSelectId: "teacherStatsMonth",
+  endpoint: "publicTeacherStats", itemsKey: "teachers", barColor: "#c9922e", ariaLabel: "老師查詢次數排行",
 });
 
 // iOS「加入主畫面」後是獨立模式，沒有瀏覽器原生的下拉重新整理，補一個簡易版本。

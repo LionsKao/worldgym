@@ -268,8 +268,8 @@ function createDualLineChart(canvas, { data, keyA, labelA, colorA, keyB, labelB,
       },
       scales: {
         x: { grid: { display: false }, ticks: { color: THEME_SUB, font: { size: 9 } } },
-        yA: { position: "left", beginAtZero: true, ticks: { color: colorA, font: { size: 9 }, count: 5, precision: 0 }, grid: { color: THEME_LINE } },
-        yB: { position: "right", beginAtZero: true, ticks: { color: colorB, font: { size: 9 }, count: 5, precision: 0 }, grid: { display: false } },
+        yA: { position: "left", beginAtZero: true, ticks: { color: colorA, font: { size: 9 }, count: 5, precision: 0, callback: (v) => Math.round(v) }, grid: { color: THEME_LINE } },
+        yB: { position: "right", beginAtZero: true, ticks: { color: colorB, font: { size: 9 }, count: 5, precision: 0, callback: (v) => Math.round(v) }, grid: { display: false } },
       },
     },
   });
@@ -467,17 +467,17 @@ function setupRankingStatsPanel({ yearSelectId, monthSelectId, wrapId, endpoint,
 const loadTeacherStats = setupRankingStatsPanel({
   yearSelectId: "teacherYearSelect", monthSelectId: "teacherMonthSelect", wrapId: "teacherStatsWrap",
   endpoint: "teacherStats", itemsKey: "teachers",
-  barColor: "#34a853", emptyText: "這個月沒有查詢紀錄", ariaLabel: "老師查詢次數排行",
+  barColor: "#c9922e", emptyText: "這個月沒有查詢紀錄", ariaLabel: "老師查詢次數排行",
 });
 const loadCourseStats = setupRankingStatsPanel({
   yearSelectId: "courseYearSelect", monthSelectId: "courseMonthSelect", wrapId: "courseStatsWrap",
   endpoint: "courseStats", itemsKey: "courses",
-  barColor: "#f0a04b", emptyText: "這個月沒有查詢紀錄", ariaLabel: "課程查詢次數排行",
+  barColor: "#8a6fb3", emptyText: "這個月沒有查詢紀錄", ariaLabel: "課程查詢次數排行",
 });
 const loadBranchStats = setupRankingStatsPanel({
   yearSelectId: "branchYearSelect", monthSelectId: "branchMonthSelect", wrapId: "branchStatsWrap",
   endpoint: "branchStats", itemsKey: "branches",
-  barColor: "#3fae8f", emptyText: "這個月沒有查詢紀錄", ariaLabel: "分店查詢次數排行",
+  barColor: "#4a90d9", emptyText: "這個月沒有查詢紀錄", ariaLabel: "分店查詢次數排行",
 });
 
 // --- 查詢量趨勢：近 12 個月每月「查詢次數」與「查詢結果數」，跟廣告曝光/點擊折線圖同一套雙 Y 軸座標系統，

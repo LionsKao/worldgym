@@ -24,7 +24,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
-<link rel="stylesheet" href="style.css?v=59">
+<link rel="stylesheet" href="style.css?v=61">
 <style>#loadingOverlay{position:fixed;top:0;left:0;width:100%;height:100%;background:#fff;z-index:9999;}</style>
 </head>
 <body>
@@ -129,7 +129,7 @@
           <span class="hint-tooltip" id="submitTooltip"></span>
           <button type="submit" class="submit-btn" id="scheduleSubmitBtn" aria-label="查詢課表"><i class="fa-solid fa-magnifying-glass"></i></button>
         </span>
-        <button type="button" class="submit-btn orange-btn" id="notifyBtn" aria-label="通知"><i class="fa-solid fa-bell"></i></button>
+        <button type="button" class="submit-btn orange-btn" id="notifyBtn" aria-label="通知"><i class="fa-solid fa-ellipsis-vertical"></i></button>
       </div>
     </form>
 
@@ -140,16 +140,49 @@
 
   </div>
 
+  <div class="sheet hidden" id="branchStatsSheet">
+    <div class="section-head">
+      <span class="section-tag" aria-label="分店查詢排行" style="--accent:#4a90d9"><i class="fa-solid fa-chart-line"></i><i class="fa-solid fa-fw fa-location-dot"></i></span>
+    </div>
+    <div class="branch-stats-filter-row">
+      <select id="branchStatsYear" class="branch-stats-select" aria-label="年"></select>
+      <select id="branchStatsMonth" class="branch-stats-select" aria-label="月"></select>
+    </div>
+    <div id="branchStatsWrap" class="branch-stats-wrap"><div class="empty-hint">讀取中…</div></div>
+  </div>
+
+  <div class="sheet hidden" id="courseStatsSheet">
+    <div class="section-head">
+      <span class="section-tag" aria-label="課程查詢排行" style="--accent:#8a6fb3"><i class="fa-solid fa-chart-line"></i><i class="fa-solid fa-fw fa-dumbbell"></i></span>
+    </div>
+    <div class="branch-stats-filter-row">
+      <select id="courseStatsYear" class="branch-stats-select" aria-label="年"></select>
+      <select id="courseStatsMonth" class="branch-stats-select" aria-label="月"></select>
+    </div>
+    <div id="courseStatsWrap" class="branch-stats-wrap"><div class="empty-hint">讀取中…</div></div>
+  </div>
+
+  <div class="sheet hidden" id="teacherStatsSheet">
+    <div class="section-head">
+      <span class="section-tag" aria-label="老師查詢排行" style="--accent:#c9922e"><i class="fa-solid fa-chart-line"></i><i class="fa-solid fa-fw fa-user"></i></span>
+    </div>
+    <div class="branch-stats-filter-row">
+      <select id="teacherStatsYear" class="branch-stats-select" aria-label="年"></select>
+      <select id="teacherStatsMonth" class="branch-stats-select" aria-label="月"></select>
+    </div>
+    <div id="teacherStatsWrap" class="branch-stats-wrap"><div class="empty-hint">讀取中…</div></div>
+  </div>
+
   <div id="reminderView" class="sheet hidden">
     <div class="section-head">
-      <span class="section-tag" style="--accent:#d99a1b"><i class="fa-solid fa-fw fa-bell"></i>通知</span>
+      <span class="section-tag" aria-label="通知" style="--accent:#d99a1b"><i class="fa-solid fa-fw fa-bell"></i></span>
     </div>
     <div class="pill-grid" id="reminderGrid" style="display:block; --accent:#d99a1b;"></div>
   </div>
 
   <div id="mailView" class="sheet hidden">
     <div class="section-head">
-      <span class="section-tag" style="--accent:#e8604c"><i class="fa-solid fa-fw fa-envelope"></i>留言</span>
+      <span class="section-tag" aria-label="留言" style="--accent:#e8604c"><i class="fa-solid fa-fw fa-envelope"></i></span>
     </div>
     <div class="mail-textarea-wrap">
       <textarea id="mailContent" class="mail-textarea" placeholder="有新開的分店沒有列在上面嗎？有什麼想要的功能嗎？都歡迎在這裡留言～"></textarea>
@@ -162,7 +195,7 @@
 
   <div class="sheet hidden" id="mailDisclaimerSheet">
     <div class="section-head">
-      <span class="section-tag" style="--accent:#e0629b"><i class="fa-solid fa-fw fa-share-nodes"></i>分享</span>
+      <span class="section-tag" aria-label="分享" style="--accent:#e0629b"><i class="fa-solid fa-fw fa-share-nodes"></i></span>
       <button type="button" class="section-tag" id="copyUrlBtn" aria-label="複製網站網址" style="--accent:#4a90d9"><i class="fa-solid fa-fw fa-link"></i></button>
       <span class="tooltip-wrap" id="qrCodeBtnWrap">
         <span class="hint-tooltip qr-tooltip" id="qrCodeTooltip"><img src="icons/qrcode.png" width="132" height="132" alt="網站 QR Code" loading="lazy"></span>
@@ -173,13 +206,13 @@
 
   <div class="sheet hidden" id="quickLinksSheet">
     <div class="mail-disclaimer">
-      <a href="https://www.worldgymtaiwan.com" target="_blank" rel="noopener" class="section-tag" id="officialSiteLink" aria-label="前往 World Gym 官網" style="--accent:#e8604c"><i class="fa-solid fa-fw fa-globe"></i></a>
+      <a href="https://www.worldgymtaiwan.com" target="_blank" rel="noopener" class="section-tag" id="officialSiteLink" aria-label="前往 World Gym 官網" style="--accent:#e8604c"><i class="fa-solid fa-fw fa-globe"></i>世界健身中心官網</a>
       <span class="tooltip-wrap" id="privacyBtnWrap">
         <span class="hint-tooltip wrap" id="privacyTooltip">僅做匿名使用統計，不收集個人資料。課表資料來自 World Gym 官網，僅供參考；本站為非官方工具，正確課表請以官網為準。</span>
-        <button type="button" class="section-tag" id="privacyBtn" aria-label="隱私說明" style="--accent:#127a76"><i class="fa-solid fa-fw fa-shield-halved"></i></button>
+        <button type="button" class="section-tag" id="privacyBtn" aria-label="隱私說明" style="--accent:#127a76"><i class="fa-solid fa-fw fa-shield-halved"></i>隱私說明</button>
       </span>
-      <a class="section-tag" id="githubLinkIcon" href="https://github.com/LionsKao/worldgym" target="_blank" rel="noopener" aria-label="GitHub 原始碼" style="--accent:#181717"><i class="fa-brands fa-fw fa-github"></i></a>
-      <a class="section-tag" id="adminLinkIcon" href="admin.html" aria-label="管理者功能" style="--accent:#5b3cc4"><i class="fa-solid fa-fw fa-lock"></i></a>
+      <a class="section-tag" id="githubLinkIcon" href="https://github.com/LionsKao/worldgym" target="_blank" rel="noopener" aria-label="GitHub 原始碼" style="--accent:#3a3a4a"><i class="fa-brands fa-fw fa-github"></i>GitHub</a>
+      <a class="section-tag" id="adminLinkIcon" href="admin.html" aria-label="管理者功能" style="--accent:#5b3cc4"><i class="fa-solid fa-fw fa-lock"></i>管理者登入</a>
     </div>
   </div>
 
@@ -297,6 +330,6 @@
   </div>
 </div>
 
-<script src="script.js?v=76"></script>
+<script src="script.js?v=80"></script>
 </body>
 </html>

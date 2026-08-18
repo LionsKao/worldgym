@@ -335,6 +335,78 @@ export default {
         }, 200, origin);
       }
 
+      // index.html 公開版老師查詢排行，邏輯跟 /teacherStats 一樣，但不驗證 token（老師名字本來就是課表上的公開資訊）。
+      if (url.pathname === "/publicTeacherStats" && req.method === "GET") {
+        const now = new Date();
+        const year = url.searchParams.get("year") || String(now.getUTCFullYear());
+        const month = (url.searchParams.get("month") || String(now.getUTCMonth() + 1).padStart(2, "0")).padStart(2, "0");
+        const monthKey = `${year}-${month}`;
+
+        const [{ results: years }, { results: teachers }] = await Promise.all([
+          env.DB.prepare("SELECT DISTINCT substr(createdAt, 1, 4) AS y FROM teacher_search_events ORDER BY y DESC").all(),
+          env.DB.prepare(`
+            SELECT teacherName, COUNT(*) AS cnt
+            FROM teacher_search_events
+            WHERE substr(createdAt, 1, 7) = ?
+            GROUP BY teacherName
+            ORDER BY cnt DESC
+            LIMIT 15
+          `).bind(monthKey).all(),
+        ]);
+        return json({
+          years: years.map((r) => r.y),
+          teachers: teachers.map((r) => ({ name: r.teacherName, count: r.cnt })),
+        }, 200, origin);
+      }
+
+      // index.html 公開版課程查詢排行，邏輯跟 /courseStats 一樣，但不驗證 token（僅回傳聚合次數，不含個資）。
+      if (url.pathname === "/publicCourseStats" && req.method === "GET") {
+        const now = new Date();
+        const year = url.searchParams.get("year") || String(now.getUTCFullYear());
+        const month = (url.searchParams.get("month") || String(now.getUTCMonth() + 1).padStart(2, "0")).padStart(2, "0");
+        const monthKey = `${year}-${month}`;
+
+        const [{ results: years }, { results: courses }] = await Promise.all([
+          env.DB.prepare("SELECT DISTINCT substr(createdAt, 1, 4) AS y FROM course_search_events ORDER BY y DESC").all(),
+          env.DB.prepare(`
+            SELECT courseName, COUNT(*) AS cnt
+            FROM course_search_events
+            WHERE substr(createdAt, 1, 7) = ?
+            GROUP BY courseName
+            ORDER BY cnt DESC
+            LIMIT 15
+          `).bind(monthKey).all(),
+        ]);
+        return json({
+          years: years.map((r) => r.y),
+          courses: courses.map((r) => ({ name: r.courseName, count: r.cnt })),
+        }, 200, origin);
+      }
+
+      // index.html 公開版分店查詢排行，邏輯跟 /branchStats 一樣，但不驗證 token（僅回傳聚合次數，不含個資）。
+      if (url.pathname === "/publicBranchStats" && req.method === "GET") {
+        const now = new Date();
+        const year = url.searchParams.get("year") || String(now.getUTCFullYear());
+        const month = (url.searchParams.get("month") || String(now.getUTCMonth() + 1).padStart(2, "0")).padStart(2, "0");
+        const monthKey = `${year}-${month}`;
+
+        const [{ results: years }, { results: branches }] = await Promise.all([
+          env.DB.prepare("SELECT DISTINCT substr(createdAt, 1, 4) AS y FROM branch_search_events ORDER BY y DESC").all(),
+          env.DB.prepare(`
+            SELECT branchName, COUNT(*) AS cnt
+            FROM branch_search_events
+            WHERE substr(createdAt, 1, 7) = ?
+            GROUP BY branchName
+            ORDER BY cnt DESC
+            LIMIT 15
+          `).bind(monthKey).all(),
+        ]);
+        return json({
+          years: years.map((r) => r.y),
+          branches: branches.map((r) => ({ name: r.branchName, count: r.cnt })),
+        }, 200, origin);
+      }
+
       // admin.html 查詢量趨勢折線圖：依月分組回傳全部歷史的查詢次數，前端只取最近 12 個月畫圖。
       if (url.pathname === "/searchStats" && req.method === "GET") {
         if (url.searchParams.get("token") !== env.MANUAL_SCRAPE_TOKEN) {
@@ -503,9 +575,15 @@ export default {
     }
   },
 
-  async scheduled(_event, env, ctx) {
-    // 爬蟲維持手動觸發(見上面 wrangler.toml 的說明,官網會擋 Worker 自動爬),
-    // 這個 cron 目前只用來每 5 分鐘掃一次課表通知。
+  async scheduled(event, env, ctx) {
+    // 每天台灣時間 03:00、17:00（UTC 19:00、09:00）各自動重抓一次全部分店，見 wrangler.toml 的 cron 設定。
+    // 這支爬蟲對 104 家分店逐一發出 subrequest，「單次執行」就用掉 104 個，
+    // 需要 Workers Paid 方案（單次執行 subrequest 上限 1000）才跑得完；免費方案單次執行上限只有 50，會在跑到一半時失敗。
+    if (event.cron === "0 19 * * *" || event.cron === "0 9 * * *") {
+      ctx.waitUntil(runScrape(env.DB));
+      return;
+    }
+    // 其餘（每 5 分鐘）用來掃一次課表通知。
     ctx.waitUntil(dispatchDueReminders(env.DB, env));
   },
 };

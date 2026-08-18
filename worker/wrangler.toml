@@ -14,13 +14,16 @@ database_id = "ca30eeae-ed11-4952-a2e1-c8c251dada71"
 binding = "QUERY_RATE_LIMIT"
 id = "27ad85dc0a2f411fbe0bd4f31451fad3"
 
-# 不再用 Firebase Function 排程爬蟲。目前沒有自動每日爬蟲機制，只能靠 admin.html
-# 手動重抓（Cloudflare Worker 自己打官網，過去測試會被官網擋 HTTP 530，實際狀況要重新測）。
-# 爬蟲本身仍然維持手動觸發，不掛在下面這個 cron 上——下面的 cron 只用來每 5 分鐘掃描
-# 課表通知（reminders）有沒有到期，見 src/index.js 的 scheduled()。
+# 不再用 Firebase Function 排程爬蟲。原本沒有自動每日爬蟲機制，只能靠 admin.html 手動重抓——
+# 104 家分店依序發出 104 次 subrequest，超過 Workers 免費方案「每次執行 50 個 subrequest」的上限，
+# 不是官網真的擋 Worker（升級 Workers Paid，US$5/月，「每次執行」的 subrequest 上限從 50 拉高到 1000 就能跑）。
+# 2026-08-18 帳號升級後，加回每天固定時間自動爬一次。
+# "*/5 * * * *" 每 5 分鐘掃描課表通知（reminders）有沒有到期；
+# "0 19 * * *" / "0 9 * * *" 是每天台灣時間 03:00 / 17:00（UTC+8，換算 UTC 19:00 / 09:00）
+# 各自動重抓一次全部分店。見 src/index.js 的 scheduled()。
 
 [triggers]
-crons = ["*/5 * * * *"]
+crons = ["*/5 * * * *", "0 19 * * *", "0 9 * * *"]
 
 [vars]
 VAPID_SUBJECT = "mailto:l-kao@jptip.co.jp"

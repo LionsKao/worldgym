@@ -237,7 +237,8 @@ async function finalizeFilterOptions(db) {
   return { classNames: classNames.length, teacherNames: teacherNames.length, skipped: false };
 }
 
-// 每次一定跑全部分店：Worker 自己打官網抓資料，目前會被官網擋掉（HTTP 530）。
+// 每次一定跑全部分店：104 家分店逐一發出 subrequest，「單次執行」就用掉 104 個，
+// 需要 Workers Paid 方案（單次執行 subrequest 上限 1000）才跑得完。
 // 由每日排程（scheduled）跟手動的 /scrapeManual 呼叫。不再支援只重抓單一分店。
 // onProgress(text) 是選用的即時進度回報（給 /scrapeManual 串流給前端終端機用），跟 logger 是分開的兩條輸出。
 async function runScrape(db, { logger = console, onProgress = () => {} } = {}) {
