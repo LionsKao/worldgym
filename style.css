@@ -66,8 +66,9 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 .row-pair fieldset{ flex:1 1 200px; }
 .field-block{ --accent:#000; }
 .section-head{ display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
+#mailDisclaimerSheet .section-head{ margin-bottom:0; }
 .section-tag{
-  display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box;
+  display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; gap:6px;
   height:31px; padding:0 16px; font-size:13px; font-weight:800; border-radius:999px;
   background:var(--accent); color:#fff;
 }
@@ -241,6 +242,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
   transition:opacity .15s ease, transform .15s ease, visibility .15s ease;
 }
 .hint-tooltip{ position:absolute; left:50%; bottom:100%; margin-bottom:10px; }
+.hint-tooltip.wrap{ white-space:normal; width:220px; text-align:center; line-height:1.5; }
 .pill-warn-tooltip{ position:fixed; pointer-events:none; }
 .hint-tooltip::after, .pill-warn-tooltip::after{
   content:""; position:absolute; top:100%; left:var(--arrow-left, 50%); transform:translateX(-50%);
@@ -325,7 +327,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 }
 .mail-disclaimer .section-tag{ flex-shrink:0; cursor:default; }
 #githubLinkIcon, #adminLinkIcon, #adminLoginBackBtn, #officialSiteLink{ cursor:pointer; text-decoration:none; }
-#qrCodeBtn, #copyUrlBtn{ border:none; font-family:inherit; cursor:pointer; }
+#qrCodeBtn, #copyUrlBtn, #privacyBtn{ border:none; font-family:inherit; cursor:pointer; }
 .qr-tooltip{ padding:10px; background:#fff; }
 .qr-tooltip img{ display:block; width:132px; height:132px; }
 .qr-tooltip::after{ border-color:#fff transparent transparent transparent; }
@@ -348,10 +350,9 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 }
 .branch-map-link:hover{ text-decoration:underline; }
 
-.mail-title{ font-size:12.5px; color:var(--sub); }
 .mail-label{ margin:0 0 12px; font-size:13px; font-weight:700; color:var(--ink); }
 .mail-textarea{
-  width:100%; min-height:160px; font-size:12.5px; padding:14px; resize:none;
+  width:100%; min-height:100px; font-size:12.5px; padding:14px; resize:none;
   border:1.5px solid var(--line); border-radius:16px; background:var(--paper);
   font-family:inherit; font-weight:600; color:var(--sub);
 }
@@ -391,7 +392,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 .bell-icon:hover{ color:#f0b400; }
 .bell-icon.armed{ color:#f0b400; }
 .bell-icon.busy{ opacity:.5; pointer-events:none; }
-#reminderView{ transition:opacity .2s ease; margin-bottom:26px; }
+#reminderView{ transition:opacity .2s ease; }
 #reminderView.view-fade-in{ opacity:0; }
 .reminder-row{ position:relative; display:flex; align-items:center; justify-content:space-between; gap:8px; transition:opacity .25s ease; }
 .reminder-row.fading-out{ opacity:0; }

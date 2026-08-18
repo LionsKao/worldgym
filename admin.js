@@ -98,33 +98,267 @@ adminBackBtn.addEventListener("mouseleave", () => adminBackTooltip.classList.rem
   if (stored && await verifyToken(stored).catch(() => false)){
     showAdminPage();
     loadAdStats();
+    loadSearchTrend();
+    loadTeacherStats();
+    loadCourseStats();
+    loadBranchStats();
+    loadFavoriteStats();
   } else {
     clearStoredToken();
     showLoginOverlay();
   }
 })();
 
-// --- 廣告統計面板：一次抓全部廣告（含已下架）+ 累計曝光/點擊，下拉選單切換不用重打 API ---
-let AD_STATS = [];
-const adStatsSelect = document.getElementById("adStatsSelect");
-const adStatsDetail = document.getElementById("adStatsDetail");
-
 function escapeHtml(str){
   return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+// 自製下拉選單：外觀跟 .section-search 一致，但不用原生 <select>（原生下拉的箭頭位置/樣式沒辦法客製）。
+// root 是 .custom-select 容器，內含 .custom-select-trigger 按鈕跟 .custom-select-menu 選項列表。
+// 用 root.value（getter/setter）+ root.addEventListener("change", ...) 模擬原生 select 的介面，
+// 呼叫端程式碼幾乎不用改。root.setOptions(options, selectedValue) 用來動態換選項（廣告清單用）。
+function enhanceCustomSelect(root){
+  const trigger = root.querySelector(".custom-select-trigger");
+  const label = root.querySelector(".custom-select-label");
+  const menu = root.querySelector(".custom-select-menu");
+
+  function close(){ root.classList.remove("open"); }
+  function open(){ root.classList.add("open"); }
+
+  function selectOption(optionEl, { silent = false } = {}){
+    menu.querySelectorAll(".custom-select-option").forEach((o) => o.classList.toggle("selected", o === optionEl));
+    label.innerHTML = optionEl.innerHTML;
+    root.dataset.value = optionEl.dataset.value;
+    close();
+    if (!silent) root.dispatchEvent(new Event("change"));
+  }
+
+  trigger.addEventListener("click", (e) => {
+    e.stopPropagation();
+    root.classList.contains("open") ? close() : open();
+  });
+  menu.addEventListener("click", (e) => {
+    const opt = e.target.closest(".custom-select-option");
+    if (opt) selectOption(opt);
+  });
+  document.addEventListener("click", (e) => {
+    if (!root.contains(e.target)) close();
+  });
+
+  Object.defineProperty(root, "value", {
+    get(){ return root.dataset.value || ""; },
+    set(v){
+      const opt = menu.querySelector(`.custom-select-option[data-value="${CSS.escape(String(v))}"]`);
+      if (opt) selectOption(opt, { silent: true });
+    },
+  });
+
+  root.setOptions = function(options, selectedValue){
+    menu.innerHTML = options
+      .map((o) => `<div class="custom-select-option${o.value === selectedValue ? " selected" : ""}" data-value="${escapeHtml(o.value)}">${o.html}</div>`)
+      .join("");
+    const sel = options.find((o) => o.value === selectedValue) || options[0];
+    label.innerHTML = sel ? sel.html : "";
+    root.dataset.value = sel ? sel.value : "";
+  };
+}
+
+// --- 廣告統計面板：一次抓全部廣告（含已下架）+ 累計曝光/點擊，下拉選單切換不用重打 API ---
+let AD_STATS = [];
+const adStatsSelect = document.getElementById("adStatsSelect");
+const adStatsDetail = document.getElementById("adStatsDetail");
+const adStatusFilter = document.getElementById("adStatusFilter");
+enhanceCustomSelect(adStatsSelect);
+enhanceCustomSelect(adStatusFilter);
+
+let currentFilteredAds = [];
+
+// 「全部」是加總目前篩選出的所有廣告（依 adStatusFilter），逐月把曝光/點擊加起來變成一條總計折線；
+// 選單裡選到特定廣告則單獨顯示那則廣告的曝光/點擊。
+function buildAggregateAd(ads){
+  if (!ads.length) return null;
+  const monthly = {};
+  for (const ad of ads){
+    for (const [m, v] of Object.entries(ad.monthly || {})){
+      const bucket = (monthly[m] ??= { impressions: 0, clicks: 0 });
+      bucket.impressions += v.impressions || 0;
+      bucket.clicks += v.clicks || 0;
+    }
+  }
+  const startAt = ads.reduce((min, ad) => (ad.startAt < min ? ad.startAt : min), ads[0].startAt);
+  return { id: "__all__", startAt, monthly };
+}
+
 function renderAdStatsDetail(adId){
-  const ad = AD_STATS.find((a) => a.id === adId);
-  if (!ad){ adStatsDetail.textContent = ""; return; }
-  adStatsDetail.innerHTML = `
-    <span class="ad-stat-text">${escapeHtml(ad.text)}</span>
-    <div>連結：<a href="${escapeHtml(ad.url)}" target="_blank" rel="noopener">${escapeHtml(ad.url)}</a></div>
-    <div>上架期間：${escapeHtml(ad.startAt)} ~ ${escapeHtml(ad.endAt)}</div>
-    <div class="ad-stat-row">
-      <span>曝光次數：<span class="ad-stat-num">${ad.impressions}</span></span>
-      <span>點擊次數：<span class="ad-stat-num">${ad.clicks}</span></span>
-    </div>
-  `;
+  const ad = adId === "__all__" ? buildAggregateAd(currentFilteredAds) : AD_STATS.find((a) => a.id === adId);
+  showAdChart(ad || null);
+}
+
+// --- 廣告曝光/點擊折線圖：近 6 個月，最右邊固定是「這個月」，左右箭頭切換月份視窗 ---
+const adChartPrevBtn = document.getElementById("adChartPrevBtn");
+const adChartNextBtn = document.getElementById("adChartNextBtn");
+const adChartViewport = document.getElementById("adChartViewport");
+const CHART_W = 560, CHART_H = 210;
+const CHART_MONTHS = 12;
+
+let chartEndMonth = null;
+let currentChartAd = null;
+
+function currentMonthKey(){ return new Date().toISOString().slice(0, 7); }
+
+function addMonths(monthStr, delta){
+  const [y, m] = monthStr.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthLabel(monthStr){ return monthStr; }
+
+function buildChartWindow(ad, endMonth){
+  const months = [];
+  for (let i = CHART_MONTHS - 1; i >= 0; i--) months.push(addMonths(endMonth, -i));
+  return months.map((m) => ({
+    month: m,
+    impressions: ad.monthly?.[m]?.impressions || 0,
+    clicks: ad.monthly?.[m]?.clicks || 0,
+  }));
+}
+
+// --- Chart.js 共用設定：跟站內字體/配色風格一致，雙折線圖(曝光/點擊、查詢次數/結果數)共用同一套工廠函式 ---
+Chart.defaults.font.family = "Nunito, sans-serif";
+Chart.defaults.font.weight = "600";
+const THEME_INK = "#2b2b2b", THEME_SUB = "#7a7a7a", THEME_LINE = "#ececec";
+
+function monthTickLabel(d){
+  const [yyyy, mm] = d.month.split("-");
+  return [yyyy, mm];
+}
+
+// 雙 Y 軸折線圖工廠：曝光/點擊、查詢次數/結果數圖都用這個，用左右各自獨立座標軸避免量級差太大時
+// 其中一條線貼著 0 看不出變化。ticks.count 固定成一樣的格線數，讓左右座標的刻度對齊同一條水平格線。
+function createDualLineChart(canvas, { data, keyA, labelA, colorA, keyB, labelB, colorB, ariaLabel }){
+  canvas.setAttribute("role", "img");
+  canvas.setAttribute("aria-label", ariaLabel);
+  const chart = new Chart(canvas, {
+    type: "line",
+    data: {
+      labels: data.map(monthTickLabel),
+      datasets: [
+        { label: labelA, data: data.map((d) => d[keyA]), borderColor: colorA, backgroundColor: colorA, yAxisID: "yA", tension: 0.3, pointRadius: 4, pointHoverRadius: 5, borderWidth: 3 },
+        { label: labelB, data: data.map((d) => d[keyB]), borderColor: colorB, backgroundColor: colorB, yAxisID: "yB", tension: 0.3, pointRadius: 4, pointHoverRadius: 5, borderWidth: 3 },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      aspectRatio: CHART_W / CHART_H,
+      animation: { duration: 280 },
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: THEME_INK, titleColor: "#fff", bodyColor: "#fff",
+          titleFont: { size: 11, weight: "700" }, bodyFont: { size: 11 },
+          padding: 8, cornerRadius: 8, displayColors: false,
+          callbacks: {
+            title: (items) => items[0].chart.wgData[items[0].dataIndex].month,
+            label: (item) => `${item.dataset.label} ${item.formattedValue}`,
+          },
+        },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: THEME_SUB, font: { size: 9 } } },
+        yA: { position: "left", beginAtZero: true, ticks: { color: colorA, font: { size: 9 }, count: 5, precision: 0 }, grid: { color: THEME_LINE } },
+        yB: { position: "right", beginAtZero: true, ticks: { color: colorB, font: { size: 9 }, count: 5, precision: 0 }, grid: { display: false } },
+      },
+    },
+  });
+  chart.wgData = data;
+  return chart;
+}
+
+function updateDualLineChart(chart, data, keyA, keyB){
+  chart.data.labels = data.map(monthTickLabel);
+  chart.data.datasets[0].data = data.map((d) => d[keyA]);
+  chart.data.datasets[1].data = data.map((d) => d[keyB]);
+  chart.wgData = data;
+  chart.update();
+}
+
+let adChartInstance = null;
+
+function updateChartNavState(){
+  if (!currentChartAd){
+    adChartPrevBtn.disabled = true;
+    adChartNextBtn.disabled = true;
+    return;
+  }
+  const startMonth = addMonths(chartEndMonth, -(CHART_MONTHS - 1));
+  const adStartMonth = currentChartAd.startAt.slice(0, 7);
+  adChartPrevBtn.disabled = startMonth <= adStartMonth;
+  adChartNextBtn.disabled = chartEndMonth >= currentMonthKey();
+}
+
+function showAdChart(ad){
+  currentChartAd = ad;
+  if (adChartInstance){ adChartInstance.destroy(); adChartInstance = null; }
+  if (!ad){
+    adChartViewport.innerHTML = "";
+    updateChartNavState();
+    return;
+  }
+  chartEndMonth = currentMonthKey();
+  const data = buildChartWindow(ad, chartEndMonth);
+  adChartViewport.innerHTML = "<canvas></canvas>";
+  adChartInstance = createDualLineChart(adChartViewport.querySelector("canvas"), {
+    data, keyA: "impressions", labelA: "曝光次數", colorA: "#2a78d6", keyB: "clicks", labelB: "點擊次數", colorB: "#eb6834",
+    ariaLabel: `近 ${CHART_MONTHS} 個月曝光與點擊趨勢`,
+  });
+  updateChartNavState();
+}
+
+function navigateAdChart(direction){
+  if (!currentChartAd || chartEndMonth === null) return;
+  const nextEndMonth = addMonths(chartEndMonth, direction === "next" ? 1 : -1);
+  if (direction === "next" && nextEndMonth > currentMonthKey()) return;
+  const nextStartMonth = addMonths(nextEndMonth, -(CHART_MONTHS - 1));
+  const adStartMonth = currentChartAd.startAt.slice(0, 7);
+  if (direction === "prev" && nextStartMonth <= adStartMonth && addMonths(chartEndMonth, -(CHART_MONTHS - 1)) <= adStartMonth) return;
+
+  chartEndMonth = nextEndMonth;
+  updateDualLineChart(adChartInstance, buildChartWindow(currentChartAd, chartEndMonth), "impressions", "clicks");
+  updateChartNavState();
+}
+
+adChartPrevBtn.addEventListener("click", () => navigateAdChart("prev"));
+adChartNextBtn.addEventListener("click", () => navigateAdChart("next"));
+
+function isAdActive(ad){
+  const today = new Date().toISOString().slice(0, 10);
+  return !!ad.enabled && ad.startAt.slice(0, 10) <= today && today <= ad.endAt.slice(0, 10);
+}
+
+function renderAdStatsSelect(){
+  const filter = adStatusFilter.value;
+  const filtered = AD_STATS.filter((ad) => {
+    if (filter === "active") return isAdActive(ad);
+    if (filter === "inactive") return !isAdActive(ad);
+    return true;
+  });
+  currentFilteredAds = filtered;
+  if (!filtered.length){
+    adStatsSelect.setOptions([]);
+    adStatsDetail.textContent = "沒有符合篩選條件的廣告";
+    showAdChart(null);
+    return;
+  }
+  adStatsDetail.textContent = "";
+  const options = [
+    { value: "__all__", html: "全部" },
+    ...filtered.map((ad) => ({ value: ad.id, html: escapeHtml(ad.text) })),
+  ];
+  adStatsSelect.setOptions(options, "__all__");
+  renderAdStatsDetail("__all__");
 }
 
 async function loadAdStats(){
@@ -133,13 +367,10 @@ async function loadAdStats(){
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
     AD_STATS = Array.isArray(data.ads) ? data.ads : [];
-    adStatsSelect.innerHTML = AD_STATS
-      .map((ad) => `<option value="${escapeHtml(ad.id)}">${ad.enabled ? "✅" : "🚫"} ${escapeHtml(ad.text.slice(0, 20))}...</option>`)
-      .join("");
     if (AD_STATS.length){
-      adStatsSelect.value = AD_STATS[0].id;
-      renderAdStatsDetail(AD_STATS[0].id);
+      renderAdStatsSelect();
     } else {
+      adStatsSelect.setOptions([]);
       adStatsDetail.textContent = "目前沒有任何廣告資料";
     }
   } catch(e){
@@ -148,6 +379,170 @@ async function loadAdStats(){
   }
 }
 adStatsSelect.addEventListener("change", () => renderAdStatsDetail(adStatsSelect.value));
+adStatusFilter.addEventListener("change", renderAdStatsSelect);
+
+// --- 查詢老師/課程統計：選定年/月，畫出當月查詢次數前 15 名的橫向長條圖 ---
+const MONTH_OPTIONS = Array.from({ length: 12 }, (_, i) => {
+  const m = pad2(i + 1);
+  return { value: m, html: `${i + 1} 月` };
+});
+
+const TBAR_ROW_H = 28, TBAR_MIN_H = 60;
+
+function renderRankingBarChart(wrapEl, chartRef, items, barColor, emptyText, ariaLabel){
+  if (chartRef.instance){ chartRef.instance.destroy(); chartRef.instance = null; }
+  if (!items.length){
+    wrapEl.style.height = "";
+    wrapEl.textContent = emptyText;
+    return;
+  }
+  wrapEl.style.height = `${Math.max(TBAR_MIN_H, items.length * TBAR_ROW_H)}px`;
+  wrapEl.innerHTML = "<canvas></canvas>";
+  const canvas = wrapEl.querySelector("canvas");
+  canvas.setAttribute("role", "img");
+  canvas.setAttribute("aria-label", ariaLabel);
+  chartRef.instance = new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels: items.map((t) => t.name),
+      datasets: [{ data: items.map((t) => t.count), backgroundColor: barColor, borderRadius: 4, barThickness: TBAR_ROW_H * 0.55 }],
+    },
+    options: {
+      indexAxis: "y",
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 280 },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: THEME_INK, titleColor: "#fff", bodyColor: "#fff",
+          titleFont: { size: 11, weight: "700" }, bodyFont: { size: 11 },
+          padding: 8, cornerRadius: 8, displayColors: false,
+        },
+      },
+      scales: {
+        x: { beginAtZero: true, grid: { color: THEME_LINE }, ticks: { color: THEME_SUB, font: { size: 10 }, precision: 0 } },
+        y: { grid: { display: false }, ticks: { color: THEME_INK, font: { size: 12, weight: "600" } } },
+      },
+    },
+  });
+}
+
+// 老師/課程統計面板共用同一套「年/月下拉 + 排行長條圖」邏輯，用 config 區分端點/欄位/顏色。
+function setupRankingStatsPanel({ yearSelectId, monthSelectId, wrapId, endpoint, itemsKey, barColor, emptyText, ariaLabel }){
+  const yearSelect = document.getElementById(yearSelectId);
+  const monthSelect = document.getElementById(monthSelectId);
+  const wrapEl = document.getElementById(wrapId);
+  enhanceCustomSelect(yearSelect);
+  enhanceCustomSelect(monthSelect);
+  monthSelect.setOptions(MONTH_OPTIONS, pad2(new Date().getMonth() + 1));
+  const chartRef = { instance: null };
+
+  async function load(){
+    const year = yearSelect.value || String(new Date().getFullYear());
+    const month = monthSelect.value || pad2(new Date().getMonth() + 1);
+    try{
+      const res = await fetch(`${WORKER_BASE}/${endpoint}?token=${encodeURIComponent(getStoredToken())}&year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      const years = Array.isArray(data.years) && data.years.length ? data.years : [String(new Date().getFullYear())];
+      if (!yearSelect.value){
+        yearSelect.setOptions(years.map((y) => ({ value: y, html: `${y} 年` })), years.includes(year) ? year : years[0]);
+        if (yearSelect.value !== year){
+          load();
+          return;
+        }
+      }
+      renderRankingBarChart(wrapEl, chartRef, Array.isArray(data[itemsKey]) ? data[itemsKey] : [], barColor, emptyText, ariaLabel);
+    } catch(e){
+      console.error(e);
+      wrapEl.textContent = "載入失敗，請重新登入";
+    }
+  }
+  yearSelect.addEventListener("change", load);
+  monthSelect.addEventListener("change", load);
+  return load;
+}
+
+const loadTeacherStats = setupRankingStatsPanel({
+  yearSelectId: "teacherYearSelect", monthSelectId: "teacherMonthSelect", wrapId: "teacherStatsWrap",
+  endpoint: "teacherStats", itemsKey: "teachers",
+  barColor: "#34a853", emptyText: "這個月沒有查詢紀錄", ariaLabel: "老師查詢次數排行",
+});
+const loadCourseStats = setupRankingStatsPanel({
+  yearSelectId: "courseYearSelect", monthSelectId: "courseMonthSelect", wrapId: "courseStatsWrap",
+  endpoint: "courseStats", itemsKey: "courses",
+  barColor: "#f0a04b", emptyText: "這個月沒有查詢紀錄", ariaLabel: "課程查詢次數排行",
+});
+const loadBranchStats = setupRankingStatsPanel({
+  yearSelectId: "branchYearSelect", monthSelectId: "branchMonthSelect", wrapId: "branchStatsWrap",
+  endpoint: "branchStats", itemsKey: "branches",
+  barColor: "#3fae8f", emptyText: "這個月沒有查詢紀錄", ariaLabel: "分店查詢次數排行",
+});
+
+// --- 查詢量趨勢：近 12 個月每月「查詢次數」與「查詢結果數」，跟廣告曝光/點擊折線圖同一套雙 Y 軸座標系統，
+// 但只有一張圖、不能翻頁。
+const searchTrendWrap = document.getElementById("searchTrendWrap");
+
+function buildSearchTrendWindow(monthly, monthlyResults, endMonth){
+  const months = [];
+  for (let i = CHART_MONTHS - 1; i >= 0; i--) months.push(addMonths(endMonth, -i));
+  return months.map((m) => ({ month: m, count: monthly[m] || 0, resultCount: monthlyResults[m] || 0 }));
+}
+
+let searchTrendChartInstance = null;
+
+async function loadSearchTrend(){
+  try{
+    const res = await fetch(`${WORKER_BASE}/searchStats?token=${encodeURIComponent(getStoredToken())}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    const data12 = buildSearchTrendWindow(data.monthly || {}, data.monthlyResults || {}, currentMonthKey());
+    if (searchTrendChartInstance){ searchTrendChartInstance.destroy(); searchTrendChartInstance = null; }
+    searchTrendWrap.innerHTML = '<div class="ad-chart-viewport"><canvas></canvas></div>';
+    searchTrendChartInstance = createDualLineChart(searchTrendWrap.querySelector("canvas"), {
+      data: data12, keyA: "count", labelA: "查詢次數", colorA: "#2a78d6", keyB: "resultCount", labelB: "結果數", colorB: "#eb6834",
+      ariaLabel: `近 ${CHART_MONTHS} 個月查詢次數與查詢結果數趨勢`,
+    });
+  } catch(e){
+    console.error(e);
+    searchTrendWrap.textContent = "載入失敗，請重新登入";
+  }
+}
+
+// --- 最愛統計：累積人數/次數用兩個大數字顯示，近 12 個月「建立人數/使用次數」跟其他雙數列折線圖同一套。 ---
+const favoriteStatsSummary = document.getElementById("favoriteStatsSummary");
+const favoriteTrendWrap = document.getElementById("favoriteTrendWrap");
+let favoriteTrendChartInstance = null;
+
+function buildFavoriteTrendWindow(monthlyAdders, monthlyApplies, endMonth){
+  const months = [];
+  for (let i = CHART_MONTHS - 1; i >= 0; i--) months.push(addMonths(endMonth, -i));
+  return months.map((m) => ({ month: m, adders: monthlyAdders[m] || 0, applies: monthlyApplies[m] || 0 }));
+}
+
+async function loadFavoriteStats(){
+  try{
+    const res = await fetch(`${WORKER_BASE}/favoriteStats?token=${encodeURIComponent(getStoredToken())}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    favoriteStatsSummary.innerHTML = `
+      <div class="favorite-stats-item"><div class="favorite-stats-num">${data.totalAdders || 0}</div><div class="favorite-stats-label">累積建立人數</div></div>
+      <div class="favorite-stats-item"><div class="favorite-stats-num">${data.totalApplies || 0}</div><div class="favorite-stats-label">累積使用次數</div></div>
+    `;
+    const data12 = buildFavoriteTrendWindow(data.monthlyAdders || {}, data.monthlyApplies || {}, currentMonthKey());
+    if (favoriteTrendChartInstance){ favoriteTrendChartInstance.destroy(); favoriteTrendChartInstance = null; }
+    favoriteTrendWrap.innerHTML = '<div class="ad-chart-viewport"><canvas></canvas></div>';
+    favoriteTrendChartInstance = createDualLineChart(favoriteTrendWrap.querySelector("canvas"), {
+      data: data12, keyA: "adders", labelA: "建立人數", colorA: "#2a78d6", keyB: "applies", labelB: "使用次數", colorB: "#eb6834",
+      ariaLabel: `近 ${CHART_MONTHS} 個月最愛建立人數與使用次數趨勢`,
+    });
+  } catch(e){
+    console.error(e);
+    favoriteStatsSummary.textContent = "";
+    favoriteTrendWrap.textContent = "載入失敗，請重新登入";
+  }
+}
 
 const modal = document.getElementById("rescrapeModal");
 const modalText = document.getElementById("rescrapeModalText");

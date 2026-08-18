@@ -19,7 +19,7 @@ const ALLOWED_ORIGINS = [
 ];
 
 function corsHeaders(origin) {
-  const headers = { "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type" };
+  const headers = { "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, X-Query-Token" };
   if (ALLOWED_ORIGINS.includes(origin)) headers["Access-Control-Allow-Origin"] = origin;
   return headers;
 }
@@ -29,6 +29,60 @@ function json(data, status, origin) {
     status,
     headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
   });
+}
+
+// --- /queryClasses 防濫用：流量限制(KV) + 短效 HMAC token ---
+// 只是拉高濫用成本，不是真的能擋住所有非瀏覽器直接呼叫（見 README 相關討論），
+// 所以刻意選簡單、低成本的做法，不追求密碼學等級的嚴謹。
+
+// 每 IP 每 60 秒窗口的請求次數上限打點，KV 帶 expirationTtl 自動過期，不用額外清理。
+async function checkRateLimit(env, kvKeyPrefix, ip, limit, ctx) {
+  const windowBucket = Math.floor(Date.now() / 60000);
+  const key = `${kvKeyPrefix}:${ip}:${windowBucket}`;
+  const current = parseInt((await env.QUERY_RATE_LIMIT.get(key)) || "0", 10);
+  if (current >= limit) return false;
+  ctx.waitUntil(env.QUERY_RATE_LIMIT.put(key, String(current + 1), { expirationTtl: 90 }));
+  return true;
+}
+
+function base64url(bytes) {
+  return btoa(String.fromCharCode(...new Uint8Array(bytes)))
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function base64urlToBytes(str) {
+  const b64 = str.replace(/-/g, "+").replace(/_/g, "/").padEnd(str.length + (4 - str.length % 4) % 4, "=");
+  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+}
+async function hmacKey(env) {
+  return crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(env.QUERY_TOKEN_SECRET),
+    { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]
+  );
+}
+// token 只放 exp（不綁 IP，手機網路常換 IP，綁了會誤傷正常使用者），效期 15 分鐘。
+// 前端過期後會自動拿新 token 重試一次，見 script.js 的 runScheduleQuery。
+async function issueQueryToken(env, ttlMs = 15 * 60 * 1000) {
+  const payload = JSON.stringify({ exp: Date.now() + ttlMs });
+  const key = await hmacKey(env);
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
+  return `${base64url(new TextEncoder().encode(payload))}.${base64url(sig)}`;
+}
+async function verifyQueryToken(env, token) {
+  if (!token || typeof token !== "string" || !token.includes(".")) return { ok: false, reason: "token_invalid" };
+  const [payloadPart, sigPart] = token.split(".");
+  let payloadBytes, payload;
+  try {
+    payloadBytes = base64urlToBytes(payloadPart);
+    payload = JSON.parse(new TextDecoder().decode(payloadBytes));
+  } catch {
+    return { ok: false, reason: "token_invalid" };
+  }
+  const key = await hmacKey(env);
+  // 要驗證的是「當初被簽名的那份原始 payload bytes」，不是 base64url 編碼後的字串本身。
+  const valid = await crypto.subtle.verify("HMAC", key, base64urlToBytes(sigPart), payloadBytes);
+  if (!valid) return { ok: false, reason: "token_invalid" };
+  if (typeof payload.exp !== "number" || Date.now() > payload.exp) return { ok: false, reason: "token_expired" };
+  return { ok: true };
 }
 
 export default {
@@ -47,7 +101,24 @@ export default {
     }
 
     try {
+      // 發短效 token 給前端：頁面載入時預熱拿一次，之後查詢帶著這個 token 打 /queryClasses。
+      // 這個端點本身也有流量限制（獨立 key 前綴），避免有人瘋狂打這個端點換無限張票。
+      if (url.pathname === "/issueToken" && req.method === "GET") {
+        const ip = req.headers.get("CF-Connecting-IP") || "unknown";
+        const allowed = await checkRateLimit(env, "rl:issueToken", ip, 10, ctx);
+        if (!allowed) return json({ error: "rate_limited" }, 429, origin);
+        const token = await issueQueryToken(env);
+        return json({ token }, 200, origin);
+      }
+
       if (url.pathname === "/queryClasses" && req.method === "POST") {
+        const ip = req.headers.get("CF-Connecting-IP") || "unknown";
+        const allowed = await checkRateLimit(env, "rl:queryClasses", ip, 20, ctx);
+        if (!allowed) return json({ error: "rate_limited" }, 429, origin);
+
+        const verification = await verifyQueryToken(env, req.headers.get("X-Query-Token"));
+        if (!verification.ok) return json({ error: verification.reason }, 401, origin);
+
         const body = await req.json().catch(() => ({}));
         const result = await queryClasses(env.DB, body || {});
         return json(result, 200, origin);
@@ -81,22 +152,231 @@ export default {
         return json({ ok: true }, 200, origin);
       }
 
-      // admin.html 廣告統計面板：一次回傳全部廣告（含已下架）+ 累計曝光/點擊數字。
+      // 老師查詢次數打點：訪客真的送出查詢（含指定老師）時觸發，不做身分驗證，
+      // 只做基本型別/長度防呆。前端已經做 30 分鐘內同老師去重，這裡單純累加寫入。
+      if (url.pathname === "/trackTeacherSearch" && req.method === "POST") {
+        const body = await req.json().catch(() => ({}));
+        const { teacher } = body || {};
+        if (typeof teacher !== "string" || !teacher.trim() || teacher.length > 50) {
+          return json({ error: "invalid teacher" }, 400, origin);
+        }
+        await env.DB.prepare("INSERT INTO teacher_search_events (teacherName, createdAt) VALUES (?, ?)")
+          .bind(teacher.trim(), new Date().toISOString())
+          .run();
+        return json({ ok: true }, 200, origin);
+      }
+
+      // 課程查詢次數打點，邏輯跟 /trackTeacherSearch 一樣。
+      if (url.pathname === "/trackCourseSearch" && req.method === "POST") {
+        const body = await req.json().catch(() => ({}));
+        const { course } = body || {};
+        if (typeof course !== "string" || !course.trim() || course.length > 50) {
+          return json({ error: "invalid course" }, 400, origin);
+        }
+        await env.DB.prepare("INSERT INTO course_search_events (courseName, createdAt) VALUES (?, ?)")
+          .bind(course.trim(), new Date().toISOString())
+          .run();
+        return json({ ok: true }, 200, origin);
+      }
+
+      // 分店查詢次數打點，邏輯跟 /trackTeacherSearch 一樣。
+      if (url.pathname === "/trackBranchSearch" && req.method === "POST") {
+        const body = await req.json().catch(() => ({}));
+        const { branch } = body || {};
+        if (typeof branch !== "string" || !branch.trim() || branch.length > 50) {
+          return json({ error: "invalid branch" }, 400, origin);
+        }
+        await env.DB.prepare("INSERT INTO branch_search_events (branchName, createdAt) VALUES (?, ?)")
+          .bind(branch.trim(), new Date().toISOString())
+          .run();
+        return json({ ok: true }, 200, origin);
+      }
+
+      // 整體查詢量打點：每次使用者真的送出查詢就打一次，不做去重、不驗證內容，
+      // 純粹用來看「每月查詢次數」跟「每月查詢結果數」的使用量趨勢。
+      if (url.pathname === "/trackSearch" && req.method === "POST") {
+        const body = await req.json().catch(() => ({}));
+        const resultCount = Number.isInteger(body?.resultCount) && body.resultCount >= 0 ? body.resultCount : 0;
+        await env.DB.prepare("INSERT INTO search_events (createdAt, resultCount) VALUES (?, ?)")
+          .bind(new Date().toISOString(), resultCount)
+          .run();
+        return json({ ok: true }, 200, origin);
+      }
+
+      // 「我的最愛」使用打點：type='add' 是成功建立一個最愛、type='apply' 是點最愛套用篩選，
+      // clientId 是前端自己產生存在 localStorage 的匿名 id，不做身分驗證，只驗證型別/長度防呆。
+      if (url.pathname === "/trackFavorite" && req.method === "POST") {
+        const body = await req.json().catch(() => ({}));
+        const { clientId, type } = body || {};
+        if (typeof clientId !== "string" || !clientId.trim() || clientId.length > 100) {
+          return json({ error: "invalid clientId" }, 400, origin);
+        }
+        if (type !== "add" && type !== "apply") {
+          return json({ error: "invalid type" }, 400, origin);
+        }
+        await env.DB.prepare("INSERT INTO favorite_events (clientId, type, createdAt) VALUES (?, ?, ?)")
+          .bind(clientId.trim(), type, new Date().toISOString())
+          .run();
+        return json({ ok: true }, 200, origin);
+      }
+
+      // admin.html 廣告統計面板：一次回傳全部廣告（含已下架）+ 累計曝光/點擊數字 + 按月分組的曝光/點擊，
+      // 讓前端畫折線圖時可以直接切月份視窗，不用每次切月都重打 API。
       if (url.pathname === "/adStats" && req.method === "GET") {
         if (url.searchParams.get("token") !== env.MANUAL_SCRAPE_TOKEN) {
           return json({ error: "forbidden" }, 403, origin);
         }
-        const { results } = await env.DB.prepare(`
-          SELECT
-            a.id, a.text, a.url, a.startAt, a.endAt, a.enabled, a.sortOrder,
-            COALESCE(imp.cnt, 0) AS impressions,
-            COALESCE(clk.cnt, 0) AS clicks
-          FROM ads a
-          LEFT JOIN (SELECT adId, COUNT(*) cnt FROM ad_events WHERE type='impression' GROUP BY adId) imp ON imp.adId = a.id
-          LEFT JOIN (SELECT adId, COUNT(*) cnt FROM ad_events WHERE type='click' GROUP BY adId) clk ON clk.adId = a.id
-          ORDER BY a.sortOrder
-        `).all();
-        return json({ ads: results }, 200, origin);
+        const [{ results: ads }, { results: monthly }] = await Promise.all([
+          env.DB.prepare(`
+            SELECT
+              a.id, a.text, a.url, a.startAt, a.endAt, a.enabled, a.sortOrder, a.advertiser,
+              COALESCE(imp.cnt, 0) AS impressions,
+              COALESCE(clk.cnt, 0) AS clicks
+            FROM ads a
+            LEFT JOIN (SELECT adId, COUNT(*) cnt FROM ad_events WHERE type='impression' GROUP BY adId) imp ON imp.adId = a.id
+            LEFT JOIN (SELECT adId, COUNT(*) cnt FROM ad_events WHERE type='click' GROUP BY adId) clk ON clk.adId = a.id
+            ORDER BY a.sortOrder
+          `).all(),
+          env.DB.prepare(`
+            SELECT adId, substr(createdAt, 1, 7) AS month, type, COUNT(*) cnt
+            FROM ad_events
+            GROUP BY adId, month, type
+          `).all(),
+        ]);
+        const monthlyByAd = {};
+        for (const row of monthly) {
+          const bucket = (monthlyByAd[row.adId] ??= {});
+          const entry = (bucket[row.month] ??= { impressions: 0, clicks: 0 });
+          entry[row.type === "impression" ? "impressions" : "clicks"] = row.cnt;
+        }
+        for (const ad of ads) ad.monthly = monthlyByAd[ad.id] || {};
+        return json({ ads }, 200, origin);
+      }
+
+      // admin.html 查詢老師統計面板：回傳指定年月查詢次數前 15 名的老師，
+      // 順便回傳所有有紀錄的年份，讓前端動態長出年份下拉選項。
+      if (url.pathname === "/teacherStats" && req.method === "GET") {
+        if (url.searchParams.get("token") !== env.MANUAL_SCRAPE_TOKEN) {
+          return json({ error: "forbidden" }, 403, origin);
+        }
+        const now = new Date();
+        const year = url.searchParams.get("year") || String(now.getUTCFullYear());
+        const month = (url.searchParams.get("month") || String(now.getUTCMonth() + 1).padStart(2, "0")).padStart(2, "0");
+        const monthKey = `${year}-${month}`;
+
+        const [{ results: years }, { results: teachers }] = await Promise.all([
+          env.DB.prepare("SELECT DISTINCT substr(createdAt, 1, 4) AS y FROM teacher_search_events ORDER BY y DESC").all(),
+          env.DB.prepare(`
+            SELECT teacherName, COUNT(*) AS cnt
+            FROM teacher_search_events
+            WHERE substr(createdAt, 1, 7) = ?
+            GROUP BY teacherName
+            ORDER BY cnt DESC
+            LIMIT 15
+          `).bind(monthKey).all(),
+        ]);
+        return json({
+          years: years.map((r) => r.y),
+          teachers: teachers.map((r) => ({ name: r.teacherName, count: r.cnt })),
+        }, 200, origin);
+      }
+
+      // admin.html 查詢課程統計面板，邏輯跟 /teacherStats 一樣。
+      if (url.pathname === "/courseStats" && req.method === "GET") {
+        if (url.searchParams.get("token") !== env.MANUAL_SCRAPE_TOKEN) {
+          return json({ error: "forbidden" }, 403, origin);
+        }
+        const now = new Date();
+        const year = url.searchParams.get("year") || String(now.getUTCFullYear());
+        const month = (url.searchParams.get("month") || String(now.getUTCMonth() + 1).padStart(2, "0")).padStart(2, "0");
+        const monthKey = `${year}-${month}`;
+
+        const [{ results: years }, { results: courses }] = await Promise.all([
+          env.DB.prepare("SELECT DISTINCT substr(createdAt, 1, 4) AS y FROM course_search_events ORDER BY y DESC").all(),
+          env.DB.prepare(`
+            SELECT courseName, COUNT(*) AS cnt
+            FROM course_search_events
+            WHERE substr(createdAt, 1, 7) = ?
+            GROUP BY courseName
+            ORDER BY cnt DESC
+            LIMIT 15
+          `).bind(monthKey).all(),
+        ]);
+        return json({
+          years: years.map((r) => r.y),
+          courses: courses.map((r) => ({ name: r.courseName, count: r.cnt })),
+        }, 200, origin);
+      }
+
+      // admin.html 查詢分店統計面板，邏輯跟 /teacherStats 一樣。
+      if (url.pathname === "/branchStats" && req.method === "GET") {
+        if (url.searchParams.get("token") !== env.MANUAL_SCRAPE_TOKEN) {
+          return json({ error: "forbidden" }, 403, origin);
+        }
+        const now = new Date();
+        const year = url.searchParams.get("year") || String(now.getUTCFullYear());
+        const month = (url.searchParams.get("month") || String(now.getUTCMonth() + 1).padStart(2, "0")).padStart(2, "0");
+        const monthKey = `${year}-${month}`;
+
+        const [{ results: years }, { results: branches }] = await Promise.all([
+          env.DB.prepare("SELECT DISTINCT substr(createdAt, 1, 4) AS y FROM branch_search_events ORDER BY y DESC").all(),
+          env.DB.prepare(`
+            SELECT branchName, COUNT(*) AS cnt
+            FROM branch_search_events
+            WHERE substr(createdAt, 1, 7) = ?
+            GROUP BY branchName
+            ORDER BY cnt DESC
+            LIMIT 15
+          `).bind(monthKey).all(),
+        ]);
+        return json({
+          years: years.map((r) => r.y),
+          branches: branches.map((r) => ({ name: r.branchName, count: r.cnt })),
+        }, 200, origin);
+      }
+
+      // admin.html 查詢量趨勢折線圖：依月分組回傳全部歷史的查詢次數，前端只取最近 12 個月畫圖。
+      if (url.pathname === "/searchStats" && req.method === "GET") {
+        if (url.searchParams.get("token") !== env.MANUAL_SCRAPE_TOKEN) {
+          return json({ error: "forbidden" }, 403, origin);
+        }
+        const { results } = await env.DB.prepare(
+          "SELECT substr(createdAt, 1, 7) AS month, COUNT(*) AS cnt, SUM(resultCount) AS resultSum FROM search_events GROUP BY month"
+        ).all();
+        const monthly = {};
+        const monthlyResults = {};
+        for (const row of results) {
+          monthly[row.month] = row.cnt;
+          monthlyResults[row.month] = row.resultSum || 0;
+        }
+        return json({ monthly, monthlyResults }, 200, origin);
+      }
+
+      // admin.html 最愛統計面板：add 用 COUNT(DISTINCT clientId) 估算「幾個人成功建立過最愛」，
+      // apply 單純累加「總共被按了幾次」，不去重。
+      if (url.pathname === "/favoriteStats" && req.method === "GET") {
+        if (url.searchParams.get("token") !== env.MANUAL_SCRAPE_TOKEN) {
+          return json({ error: "forbidden" }, 403, origin);
+        }
+        const [{ results: adderRows }, { results: applyRows }, totalAdderRow, totalApplyRow] = await Promise.all([
+          env.DB.prepare(
+            "SELECT substr(createdAt, 1, 7) AS month, COUNT(DISTINCT clientId) AS cnt FROM favorite_events WHERE type = 'add' GROUP BY month"
+          ).all(),
+          env.DB.prepare(
+            "SELECT substr(createdAt, 1, 7) AS month, COUNT(*) AS cnt FROM favorite_events WHERE type = 'apply' GROUP BY month"
+          ).all(),
+          env.DB.prepare("SELECT COUNT(DISTINCT clientId) AS cnt FROM favorite_events WHERE type = 'add'").first(),
+          env.DB.prepare("SELECT COUNT(*) AS cnt FROM favorite_events WHERE type = 'apply'").first(),
+        ]);
+        const monthlyAdders = {};
+        for (const row of adderRows) monthlyAdders[row.month] = row.cnt;
+        const monthlyApplies = {};
+        for (const row of applyRows) monthlyApplies[row.month] = row.cnt;
+        return json({
+          monthlyAdders, monthlyApplies,
+          totalAdders: totalAdderRow?.cnt || 0,
+          totalApplies: totalApplyRow?.cnt || 0,
+        }, 200, origin);
       }
 
       // 讀 meta_filter_options 快取（一列資料），不用每次頁面載入都對 classes 全表重新 GROUP BY。

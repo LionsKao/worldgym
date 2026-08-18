@@ -9,8 +9,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="icons/fontawesome/fontawesome-subset.css?v=4">
-<link rel="stylesheet" href="style.css?v=46">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+<link rel="stylesheet" href="style.css?v=59">
 <style>
   .admin-link-row{ display:flex; gap:6px; flex-wrap:wrap; margin-top:14px; }
   .admin-link-btn{
@@ -27,15 +27,15 @@
   .pill-btn-solid:hover{ background:var(--accent); border-color:var(--accent); color:#fff; opacity:.85; }
 
   .page{ max-width:1100px; }
-  .admin-layout{ display:grid; grid-template-columns:4fr 8fr; gap:20px; align-items:start; }
-  @media (max-width:640px){ .admin-layout{ grid-template-columns:1fr; } }
+  .admin-layout{ display:grid; grid-template-columns:1fr; gap:20px; align-items:start; }
   .admin-col{ margin-bottom:0; min-width:0; }
-  .terminal-panel{ display:flex; flex-direction:column; }
+  .admin-layout .admin-col:last-child{ margin-bottom:15px; }
+  .terminal-panel{ display:flex; flex-direction:column; gap:14px; }
   .terminal-log{
     background:#1e1e2e; color:#d8dee9;
     font-family:"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
     font-size:12.5px; line-height:1.7; padding:14px 16px; border-radius:12px;
-    height:420px; max-height:420px; overflow-y:auto; overflow-x:hidden; white-space:pre-wrap; word-break:break-word;
+    height:210px; max-height:210px; overflow-y:auto; overflow-x:hidden; white-space:pre-wrap; word-break:break-word;
     scrollbar-width:none; -ms-overflow-style:none;
   }
   .terminal-log::-webkit-scrollbar{ display:none; width:0; height:0; }
@@ -53,20 +53,102 @@
   #adminLoginBtnWrap{ display:block; width:100%; }
   #adminLoginBackBtnWrap{ z-index:1500; }
 
+  .ad-stats-filter-row{ display:flex; gap:8px; margin-bottom:14px; }
+  #teacherStatsWrap, #courseStatsWrap, #branchStatsWrap, #searchTrendWrap{ font-size:12.5px; overflow:hidden; }
+  .ad-stats-filter-row #adStatusFilter{ flex:3 0 0; min-width:0; }
+  .ad-stats-filter-row #adStatsSelect{ flex:9 0 0; min-width:0; }
+  .ad-stats-filter-row #teacherYearSelect,
+  .ad-stats-filter-row #teacherMonthSelect,
+  .ad-stats-filter-row #courseYearSelect,
+  .ad-stats-filter-row #courseMonthSelect,
+  .ad-stats-filter-row #branchYearSelect,
+  .ad-stats-filter-row #branchMonthSelect{ flex:1; min-width:0; }
+  /* 手機維持 col-6/col-6（撐滿一行）；桌面版寬度夠，兩個下拉縮成 col-3/col-3，不用佔滿整行。 */
+  @media (min-width:640px){
+    .ad-stats-filter-row #teacherYearSelect,
+    .ad-stats-filter-row #teacherMonthSelect,
+    .ad-stats-filter-row #courseYearSelect,
+    .ad-stats-filter-row #courseMonthSelect,
+    .ad-stats-filter-row #branchYearSelect,
+    .ad-stats-filter-row #branchMonthSelect{ flex:0 0 25%; }
+  }
+
+  .custom-select{ position:relative; }
+  .custom-select-trigger{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    width:100%; height:31px; box-sizing:border-box; font-size:13px; padding:0 14px;
+    border:1.5px solid var(--line); border-radius:999px; background:var(--paper);
+    font-family:inherit; font-weight:600; color:var(--ink);
+    cursor:pointer; text-align:left;
+  }
+  .custom-select-trigger:focus{ outline:none; border-color:var(--accent); }
+  .custom-select.open .custom-select-trigger{ border-color:var(--accent); }
+  .custom-select-label{ flex:1; min-width:0; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .custom-select-arrow{ flex:none; font-size:11px; color:var(--sub); transition:transform .15s ease; }
+  .custom-select.open .custom-select-arrow{ transform:rotate(180deg); }
+  .custom-select-menu{
+    display:none; position:absolute; top:calc(100% + 6px); left:0; right:0; z-index:20;
+    background:var(--paper); border:1.5px solid var(--line); border-radius:14px;
+    box-shadow:0 8px 24px rgba(0,0,0,0.12); padding:6px; max-height:240px; overflow-y:auto;
+  }
+  .custom-select.open .custom-select-menu{ display:block; }
+  .custom-select-option{
+    padding:8px 12px; border-radius:10px; font-size:12.5px; font-weight:600; color:var(--ink);
+    cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  /* 月份選單固定 12 個選項，排成 4 欄 3 列的格狀，不要拉成一條長長的直式列表。 */
+  #teacherMonthSelect.open .custom-select-menu,
+  #courseMonthSelect.open .custom-select-menu,
+  #branchMonthSelect.open .custom-select-menu{
+    display:grid; grid-template-columns:repeat(4, 1fr); gap:4px;
+  }
+  #teacherMonthSelect .custom-select-option,
+  #courseMonthSelect .custom-select-option,
+  #branchMonthSelect .custom-select-option{
+    padding:12px 3px; font-size:12.5px; text-align:center;
+  }
+  .custom-select-option:hover{ background:rgba(0,0,0,0.05); }
+  .custom-select-option.selected{ color:var(--accent); background:rgba(66,133,244,0.1); }
+  #adStatusFilter .custom-select-option,
+  #adStatsSelect .custom-select-option{
+    text-align:center;
+  }
+  #teacherYearSelect .custom-select-option,
+  #courseYearSelect .custom-select-option,
+  #branchYearSelect .custom-select-option{
+    text-align:center; font-size:12.5px;
+  }
+
   #adStatsDetail{ font-size:12.5px; line-height:1.7; color:var(--sub); }
-  #adStatsDetail .ad-stat-text{ display:block; color:var(--ink); font-weight:700; margin-bottom:8px; }
-  #adStatsDetail .ad-stat-row{ display:flex; gap:16px; flex-wrap:wrap; margin-top:6px; }
-  #adStatsDetail .ad-stat-num{ font-weight:800; color:var(--ink); }
+
+  .favorite-stats-summary{ display:flex; gap:24px; margin-bottom:12px; }
+  .favorite-stats-item{ flex:1; }
+  .favorite-stats-num{ font-size:22px; font-weight:800; color:var(--ink); line-height:1.3; }
+  .favorite-stats-label{ font-size:11.5px; color:var(--sub); }
+
+  .ad-chart-wrap{ display:flex; align-items:center; gap:6px; margin-top:12px; }
+  .ad-chart-nav{
+    flex:none; width:28px; height:28px; border-radius:50%; box-sizing:border-box;
+    border:1.5px solid #000; background:#000; color:#fff;
+    display:flex; align-items:center; justify-content:center; font-size:12px;
+    cursor:pointer; transition:opacity .15s ease, background-color .15s ease;
+  }
+  .ad-chart-nav:hover:not(:disabled){ background:#2b2b2b; border-color:#2b2b2b; }
+  .ad-chart-nav:disabled{ opacity:.3; cursor:not-allowed; }
+  .ad-chart-viewport{ position:relative; flex:1; min-width:0; aspect-ratio:560/210; overflow:hidden; }
+  .ad-chart-legend{ display:flex; justify-content:center; gap:16px; margin-top:14px; font-size:12px; color:var(--sub); }
+  .ad-chart-legend-item{ display:flex; align-items:center; gap:6px; }
+  .ad-chart-legend-swatch{ width:14px; height:5px; border-radius:3px; display:inline-block; }
 </style>
 </head>
 <body>
 
 <div id="adminLoginOverlay" class="modal-overlay">
   <div class="modal-box login-box">
-    <p class="modal-text">管理者功能</p>
+    <p class="modal-text">回去吧！<br>這裡不是你該來的地方！</p>
     <span class="tooltip-wrap" id="adminLoginBtnWrap">
       <span class="hint-tooltip" id="adminLoginError">密碼錯誤</span>
-      <input type="password" id="adminPasswordInput" class="login-input" placeholder="密碼" autocomplete="current-password">
+      <input type="password" id="adminPasswordInput" class="login-input" placeholder="通關密碼" autocomplete="current-password">
     </span>
     <button type="button" class="modal-btn modal-btn-confirm hidden" id="adminLoginBtn">登入</button>
   </div>
@@ -85,29 +167,156 @@
   </div>
 
   <div class="admin-layout">
-    <div class="sheet admin-col">
-      <div class="field-block" style="--accent:#f5820d">
+    <div class="sheet admin-col terminal-panel">
+      <div class="field-block" style="--accent:#3fae8f">
         <div class="admin-link-row" style="margin-top:0">
-          <button type="button" class="pill-btn pill-btn-solid" id="rescrapeAllCf"><i class="fa-solid fa-fw fa-cloud"></i>重抓所有分店</button>
           <a class="admin-link-btn" data-log-text="🔗 已開啟 Cloudflare 資料庫" style="--link-color:#3fae8f" href="https://dash.cloudflare.com/3f6a1c826e260aabaab215af1f8e798a/workers/d1/databases/ca30eeae-ed11-4952-a2e1-c8c251dada71/metrics" target="_blank" rel="noopener"><i class="fa-solid fa-fw fa-database"></i>資料庫</a>
           <a class="admin-link-btn" data-log-text="🔗 已開啟 Google Analytics" style="--link-color:#4285f4" href="https://analytics.google.com/analytics/web/?hl=zh-tw#/a404061385p549256263/reports/intelligenthome" target="_blank" rel="noopener"><i class="fa-solid fa-fw fa-chart-line"></i>GA4</a>
           <button type="button" class="pill-btn pill-btn-solid" id="cleanupStaleBtn" style="--accent:var(--coral)"><i class="fa-solid fa-fw fa-trash-can"></i>刪除停用分店資料</button>
+          <button type="button" class="pill-btn pill-btn-solid" id="rescrapeAllCf" style="--accent:#f5820d"><i class="fa-solid fa-fw fa-cloud"></i>重抓所有分店</button>
         </div>
       </div>
+      <div class="terminal-log" id="terminalLog"><span class="term-empty">👋 已成功登入</span><br><span class="term-empty">🤖 等待命令執行</span></div>
     </div>
 
     <div class="sheet admin-col">
       <div class="field-block" style="--accent:#4285f4">
         <div class="section-head">
-          <span class="section-tag"><i class="fa-solid fa-fw fa-chart-simple"></i>廣告統計</span>
+          <span class="section-tag"><i class="fa-solid fa-fw fa-chart-simple"></i>廣告</span>
         </div>
-        <select id="adStatsSelect" class="section-search"></select>
+        <div class="ad-stats-filter-row">
+          <div id="adStatusFilter" class="custom-select" data-value="active">
+            <button type="button" class="custom-select-trigger">
+              <span class="custom-select-label">上架中</span>
+              <i class="fa-solid fa-chevron-down custom-select-arrow"></i>
+            </button>
+            <div class="custom-select-menu">
+              <div class="custom-select-option selected" data-value="active">上架中</div>
+              <div class="custom-select-option" data-value="inactive">已下架</div>
+              <div class="custom-select-option" data-value="all">全部</div>
+            </div>
+          </div>
+          <div id="adStatsSelect" class="custom-select" data-value="">
+            <button type="button" class="custom-select-trigger">
+              <span class="custom-select-label"></span>
+              <i class="fa-solid fa-chevron-down custom-select-arrow"></i>
+            </button>
+            <div class="custom-select-menu"></div>
+          </div>
+        </div>
         <div id="adStatsDetail"></div>
+        <div class="ad-chart-wrap">
+          <button type="button" class="ad-chart-nav" id="adChartPrevBtn" aria-label="更早月份"><i class="fa-solid fa-chevron-left"></i></button>
+          <div class="ad-chart-viewport" id="adChartViewport"></div>
+          <button type="button" class="ad-chart-nav" id="adChartNextBtn" aria-label="更晚月份"><i class="fa-solid fa-chevron-right"></i></button>
+        </div>
+        <div class="ad-chart-legend">
+          <span class="ad-chart-legend-item"><span class="ad-chart-legend-swatch" style="background:#2a78d6"></span>曝光次數</span>
+          <span class="ad-chart-legend-item"><span class="ad-chart-legend-swatch" style="background:#eb6834"></span>點擊次數</span>
+        </div>
       </div>
     </div>
 
-    <div class="sheet admin-col terminal-panel">
-      <div class="terminal-log" id="terminalLog"><span class="term-empty">👋 已成功登入</span><br><span class="term-empty">🤖 等待命令執行</span></div>
+    <div class="sheet admin-col">
+      <div class="field-block" style="--accent:#34a853">
+        <div class="section-head">
+          <span class="section-tag"><i class="fa-solid fa-fw fa-user"></i>老師</span>
+        </div>
+        <div class="ad-stats-filter-row">
+          <div id="teacherYearSelect" class="custom-select" data-value="">
+            <button type="button" class="custom-select-trigger">
+              <span class="custom-select-label"></span>
+              <i class="fa-solid fa-chevron-down custom-select-arrow"></i>
+            </button>
+            <div class="custom-select-menu"></div>
+          </div>
+          <div id="teacherMonthSelect" class="custom-select" data-value="">
+            <button type="button" class="custom-select-trigger">
+              <span class="custom-select-label"></span>
+              <i class="fa-solid fa-chevron-down custom-select-arrow"></i>
+            </button>
+            <div class="custom-select-menu"></div>
+          </div>
+        </div>
+        <div id="teacherStatsWrap"></div>
+      </div>
+    </div>
+
+    <div class="sheet admin-col">
+      <div class="field-block" style="--accent:#f0a04b">
+        <div class="section-head">
+          <span class="section-tag"><i class="fa-solid fa-fw fa-dumbbell"></i>課程</span>
+        </div>
+        <div class="ad-stats-filter-row">
+          <div id="courseYearSelect" class="custom-select" data-value="">
+            <button type="button" class="custom-select-trigger">
+              <span class="custom-select-label"></span>
+              <i class="fa-solid fa-chevron-down custom-select-arrow"></i>
+            </button>
+            <div class="custom-select-menu"></div>
+          </div>
+          <div id="courseMonthSelect" class="custom-select" data-value="">
+            <button type="button" class="custom-select-trigger">
+              <span class="custom-select-label"></span>
+              <i class="fa-solid fa-chevron-down custom-select-arrow"></i>
+            </button>
+            <div class="custom-select-menu"></div>
+          </div>
+        </div>
+        <div id="courseStatsWrap"></div>
+      </div>
+    </div>
+
+    <div class="sheet admin-col">
+      <div class="field-block" style="--accent:#3fae8f">
+        <div class="section-head">
+          <span class="section-tag"><i class="fa-solid fa-fw fa-building"></i>分店</span>
+        </div>
+        <div class="ad-stats-filter-row">
+          <div id="branchYearSelect" class="custom-select" data-value="">
+            <button type="button" class="custom-select-trigger">
+              <span class="custom-select-label"></span>
+              <i class="fa-solid fa-chevron-down custom-select-arrow"></i>
+            </button>
+            <div class="custom-select-menu"></div>
+          </div>
+          <div id="branchMonthSelect" class="custom-select" data-value="">
+            <button type="button" class="custom-select-trigger">
+              <span class="custom-select-label"></span>
+              <i class="fa-solid fa-chevron-down custom-select-arrow"></i>
+            </button>
+            <div class="custom-select-menu"></div>
+          </div>
+        </div>
+        <div id="branchStatsWrap"></div>
+      </div>
+    </div>
+
+    <div class="sheet admin-col">
+      <div class="field-block" style="--accent:#e8604c">
+        <div class="section-head">
+          <span class="section-tag"><i class="fa-solid fa-fw fa-chart-line"></i>查詢</span>
+        </div>
+        <div id="searchTrendWrap"></div>
+        <div class="ad-chart-legend">
+          <span class="ad-chart-legend-item"><span class="ad-chart-legend-swatch" style="background:#2a78d6"></span>查詢次數</span>
+          <span class="ad-chart-legend-item"><span class="ad-chart-legend-swatch" style="background:#eb6834"></span>結果數</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="sheet admin-col">
+      <div class="field-block" style="--accent:#c2185b">
+        <div class="section-head">
+          <span class="section-tag"><i class="fa-solid fa-fw fa-heart"></i>最愛</span>
+        </div>
+        <div id="favoriteStatsSummary" class="favorite-stats-summary"></div>
+        <div id="favoriteTrendWrap"></div>
+        <div class="ad-chart-legend">
+          <span class="ad-chart-legend-item"><span class="ad-chart-legend-swatch" style="background:#2a78d6"></span>建立人數</span>
+          <span class="ad-chart-legend-item"><span class="ad-chart-legend-swatch" style="background:#eb6834"></span>使用次數</span>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -130,6 +339,7 @@
   </div>
 </div>
 
-<script src="admin.js?v=16"></script>
+<script src="vendor/chart.umd.min.js"></script>
+<script src="admin.js?v=27"></script>
 </body>
 </html>

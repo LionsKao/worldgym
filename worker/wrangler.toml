@@ -9,6 +9,11 @@ binding = "DB"
 database_name = "worldgym-schedule"
 database_id = "ca30eeae-ed11-4952-a2e1-c8c251dada71"
 
+# /queryClasses 的流量限制用（IP + 60 秒窗口的請求次數計數），跟 D1 分開，純粹防濫用不做精確計費。
+[[kv_namespaces]]
+binding = "QUERY_RATE_LIMIT"
+id = "27ad85dc0a2f411fbe0bd4f31451fad3"
+
 # 不再用 Firebase Function 排程爬蟲。目前沒有自動每日爬蟲機制，只能靠 admin.html
 # 手動重抓（Cloudflare Worker 自己打官網，過去測試會被官網擋 HTTP 530，實際狀況要重新測）。
 # 爬蟲本身仍然維持手動觸發，不掛在下面這個 cron 上——下面的 cron 只用來每 5 分鐘掃描

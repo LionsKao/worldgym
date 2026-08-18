@@ -27,6 +27,100 @@ function trackAdEvent(adId, type){
     body: JSON.stringify({ adId, type }),
   }).catch(() => {});
 }
+
+// 老師/課程查詢次數落地存進 D1，用來給 admin.html 統計「哪些老師/課程最常被查」。
+// 同一裝置 30 分鐘內重複查同一個值只算 1 次，避免上一頁/重查造成洗次數。
+const SEARCH_COUNT_DEDUPE_WINDOW_MS = 30 * 60 * 1000;
+function makeSearchCountLogger(dedupeKey, endpoint, paramName){
+  function shouldLog(value){
+    let map;
+    try { map = JSON.parse(localStorage.getItem(dedupeKey) || "{}"); }
+    catch { map = {}; }
+    const now = Date.now();
+    for (const k of Object.keys(map)){
+      if (now - map[k] > SEARCH_COUNT_DEDUPE_WINDOW_MS) delete map[k];
+    }
+    const last = map[value];
+    if (last && now - last < SEARCH_COUNT_DEDUPE_WINDOW_MS){
+      localStorage.setItem(dedupeKey, JSON.stringify(map));
+      return false;
+    }
+    map[value] = now;
+    localStorage.setItem(dedupeKey, JSON.stringify(map));
+    return true;
+  }
+  return function logSearches(values){
+    for (const value of values || []){
+      if (!value || !shouldLog(value)) continue;
+      fetch(`${WORKER_BASE}/${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [paramName]: value }),
+      }).catch(() => {});
+    }
+  };
+}
+const logTeacherSearches = makeSearchCountLogger("wg_teacher_search_dedupe", "trackTeacherSearch", "teacher");
+const logCourseSearches = makeSearchCountLogger("wg_course_search_dedupe", "trackCourseSearch", "course");
+const logBranchSearches = makeSearchCountLogger("wg_branch_search_dedupe", "trackBranchSearch", "branch");
+
+// state.branch 存的是分店 slug，要轉成畫面上看到的分店名稱再記錄，admin.html 的長條圖才看得懂。
+function branchSlugToLabel(slug){
+  const input = document.querySelector(`input[name="branch"][value="${CSS.escape(slug)}"]`);
+  return input ? input.nextElementSibling.textContent : slug;
+}
+
+// 整體查詢量落地存進 D1，每次真的送出查詢就打一次，不去重，用來看使用量趨勢。
+// resultCount 記錄這次查詢實際顯示的課程數，沒結果或結果太多沒顯示時傳 0。
+function logSearchEvent(resultCount){
+  fetch(`${WORKER_BASE}/trackSearch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ resultCount }),
+  }).catch(() => {});
+}
+
+// 沒有帳號系統，只能用存在 localStorage 的匿名 id 估算「幾個人」用過某個功能，
+// 不會拿去對應任何個人資料，純粹統計用。
+const CLIENT_ID_KEY = "wg_client_id";
+function getClientId(){
+  let id = localStorage.getItem(CLIENT_ID_KEY);
+  if (!id){
+    id = crypto.randomUUID();
+    localStorage.setItem(CLIENT_ID_KEY, id);
+  }
+  return id;
+}
+
+// 我的最愛使用量落地存進 D1：add 是成功建立一個最愛、apply 是點最愛套用篩選，不去重，
+// 用來在 admin.html 看「多少人做起來」跟「做起來後按了幾次」。
+function logFavoriteEvent(type){
+  fetch(`${WORKER_BASE}/trackFavorite`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ clientId: getClientId(), type }),
+  }).catch(() => {});
+}
+// Fisher-Yates：廣告輪播每輪播完（回到開頭）就重新洗牌一次，順序不固定、也不會永遠重複同一種排列。
+function shuffleAds(arr){
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function withUtmSource(url){
+  try {
+    const u = new URL(url);
+    u.searchParams.set("utm_source", "worldgym.pages.dev");
+    return u.toString();
+  } catch(err){
+    return url;
+  }
+}
+
 function initAdBannerCarousel(){
   const banner = document.getElementById("adBanner");
   const el = document.getElementById("adBannerText");
@@ -35,17 +129,22 @@ function initAdBannerCarousel(){
     banner.classList.add("hidden");
     return;
   }
+  AD_BANNERS = shuffleAds(AD_BANNERS);
   currentAdIndex = 0;
   el.textContent = AD_BANNERS[0].text;
-  banner.href = AD_BANNERS[0].url;
+  banner.href = withUtmSource(AD_BANNERS[0].url);
   trackAdEvent(AD_BANNERS[0].id, "impression");
   if (AD_BANNERS.length < 2) return;
   setInterval(() => {
     el.classList.add("fading");
     setTimeout(() => {
-      currentAdIndex = (currentAdIndex + 1) % AD_BANNERS.length;
+      currentAdIndex++;
+      if (currentAdIndex >= AD_BANNERS.length){
+        AD_BANNERS = shuffleAds(AD_BANNERS);
+        currentAdIndex = 0;
+      }
       el.textContent = AD_BANNERS[currentAdIndex].text;
-      banner.href = AD_BANNERS[currentAdIndex].url;
+      banner.href = withUtmSource(AD_BANNERS[currentAdIndex].url);
       el.classList.remove("fading");
       trackAdEvent(AD_BANNERS[currentAdIndex].id, "impression");
     }, 350);
@@ -736,7 +835,7 @@ const copyUrlBtn = document.getElementById("copyUrlBtn");
 copyUrlBtn.addEventListener("click", async (e) => {
   e.stopPropagation();
   try{
-    await navigator.clipboard.writeText(location.origin + "/");
+    await navigator.clipboard.writeText(location.origin + "/?utm_source=website_link");
     showPillWarning(copyUrlBtn, "已複製網站網址到剪貼簿");
     trackEvent("copy_site_url", {});
   } catch(err){
@@ -757,6 +856,19 @@ document.addEventListener("click", (e) => {
   if (!qrCodeTooltip.classList.contains("visible")) return;
   if (e.target.closest("#qrCodeBtnWrap")) return;
   qrCodeTooltip.classList.remove("visible");
+});
+
+// 隱私說明：點擊切換顯示，內容講清楚只做匿名統計、資料來源是 World Gym 官網、本站非官方工具。
+const privacyBtn = document.getElementById("privacyBtn");
+const privacyTooltip = document.getElementById("privacyTooltip");
+privacyBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  privacyTooltip.classList.toggle("visible");
+});
+document.addEventListener("click", (e) => {
+  if (!privacyTooltip.classList.contains("visible")) return;
+  if (e.target.closest("#privacyBtnWrap")) return;
+  privacyTooltip.classList.remove("visible");
 });
 
 // 星期／分店／課程／老師：勾選後記住選擇，下次打開頁面自動套用。
@@ -929,6 +1041,7 @@ function renderFavorites(){
     btn.addEventListener("click", () => {
       applyFilterState(fav.state);
       trackEventOncePerSession("apply_favorite", fav.label, { favorite_label: fav.label });
+      logFavoriteEvent("apply");
       searchTriggerSource = "favorite";
       document.getElementById("filterForm").requestSubmit(document.getElementById("scheduleSubmitBtn"));
     });
@@ -956,6 +1069,7 @@ document.getElementById("favModalSubmitBtn").addEventListener("click", () => {
   favs.push({ label: name, icon, color, state: currentFilterState() });
   saveFavorites(favs);
   trackEvent("add_favorite", { favorite_label: name });
+  logFavoriteEvent("add");
   renderFavorites();
   addFavoriteModal.classList.add("hidden");
 });
@@ -1207,6 +1321,10 @@ class QueryTimeoutError extends Error {}
 class QueryHttpError extends Error {
   constructor(status){ super(`查詢失敗：伺服器回應 ${status}`); this.status = status; }
 }
+// /queryClasses 回 429（單 IP 短時間查太多次）跟回 401 token_expired（見下方 token 機制）
+// 都要跟一般的 HTTP 錯誤分開處理，才知道要顯示「查太頻繁」還是自動換票重試。
+class QueryRateLimitedError extends Error {}
+class QueryTokenExpiredError extends Error {}
 const QUERY_RETRY_AFTER_MS = 3000;
 const QUERY_GIVE_UP_AFTER_MS = 6000;
 // 3 秒還沒回應就多開一次同樣的請求重試，6 秒內兩次都還沒成功就放棄。
@@ -1236,18 +1354,55 @@ function withRetryTimeout(queryFactory, retryAfterMs, giveUpAfterMs){
   });
 }
 
+// /queryClasses 要帶一個短效 token 才能查（防止非瀏覽器直接爬 API，見 worker/src/index.js
+// 的 issueQueryToken/verifyQueryToken），這裡快取起來，快過期或還沒拿過才重新要一張。
+let cachedQueryToken = null; // { token, exp } | null
+async function fetchFreshQueryToken(){
+  const res = await fetch(`${WORKER_BASE}/issueToken`);
+  if (!res.ok) throw new Error(`issueToken failed: ${res.status}`);
+  const { token } = await res.json();
+  const payload = JSON.parse(atob(token.split(".")[0].replace(/-/g, "+").replace(/_/g, "/")));
+  cachedQueryToken = { token, exp: payload.exp };
+  return cachedQueryToken;
+}
+async function getQueryToken(){
+  if (cachedQueryToken && cachedQueryToken.exp > Date.now() + 5000) return cachedQueryToken.token;
+  return (await fetchFreshQueryToken()).token;
+}
+
+async function queryClassesOnce(state){
+  const token = await getQueryToken();
+  const res = await fetch(`${WORKER_BASE}/queryClasses`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Query-Token": token },
+    body: JSON.stringify(state),
+  });
+  if (res.status === 429) throw new QueryRateLimitedError();
+  if (res.status === 401){
+    const data = await res.json().catch(() => ({}));
+    if (data.error === "token_expired") throw new QueryTokenExpiredError();
+    throw new QueryHttpError(res.status);
+  }
+  if (!res.ok) throw new QueryHttpError(res.status);
+  return res.json();
+}
+
 // 查課表：前端只送目前勾選的篩選條件，Firestore 查詢＋所有篩選＋去重都在後端
 // （functions/queryClasses.js）做完，這裡只拿最終要顯示的 rows 來渲染。
-async function runScheduleQuery(state){
-  const res = await withRetryTimeout(() => fetch(`${WORKER_BASE}/queryClasses`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(state),
-  }).then(r => {
-    if (!r.ok) throw new QueryHttpError(r.status);
-    return r.json();
-  }), QUERY_RETRY_AFTER_MS, QUERY_GIVE_UP_AFTER_MS);
-  return res; // { rows, fetchedCount, displayedCount }
+// token 過期的話清快取重來一次就好（只重試一次，避免萬一一直失敗就無限迴圈）；
+// withRetryTimeout 本身是「時間到就再打一次」不是「錯誤發生就馬上重試」，所以 token
+// 過期最壞情況要等到 giveUpAfterMs 那次才會浮上來，多花幾秒，但使用者完全不會看到失敗畫面。
+async function runScheduleQuery(state, isRetry){
+  try{
+    return await withRetryTimeout(() => queryClassesOnce(state), QUERY_RETRY_AFTER_MS, QUERY_GIVE_UP_AFTER_MS);
+  } catch(err){
+    if (err instanceof QueryTokenExpiredError && !isRetry){
+      cachedQueryToken = null;
+      return runScheduleQuery(state, true);
+    }
+    throw err;
+  }
+  // 回傳格式：{ rows, fetchedCount, displayedCount }
 }
 
 let lastResultRows = [];
@@ -1340,6 +1495,7 @@ function showResultView(){
   document.getElementById("settingsSheet").classList.add("hidden");
   document.getElementById("favoriteSheet").classList.add("hidden");
   document.getElementById("mailDisclaimerSheet").classList.add("hidden");
+  document.getElementById("quickLinksSheet").classList.add("hidden");
   fadeInView(document.getElementById("resultView"));
   document.getElementById("backBtnWrap").classList.remove("hidden");
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1352,12 +1508,13 @@ function fadeInView(el){
 }
 function showMailView(){
   trackEvent("open_reminder_list", {});
-  document.getElementById("filterForm").classList.add("hidden");
+  document.getElementById("mainFormSheet").classList.add("hidden");
   document.getElementById("settingsSheet").classList.add("hidden");
   document.getElementById("favoriteSheet").classList.add("hidden");
   fadeInView(document.getElementById("reminderView"));
   fadeInView(document.getElementById("mailView"));
   document.getElementById("mailDisclaimerSheet").classList.remove("hidden");
+  document.getElementById("quickLinksSheet").classList.remove("hidden");
   document.getElementById("mailBackBtnWrap").classList.remove("hidden");
   document.getElementById("mailContent").disabled = false;
   document.getElementById("mailSentOverlay").classList.add("hidden");
@@ -1371,11 +1528,13 @@ function showFilterView(){
   document.getElementById("reminderView").classList.add("hidden");
   document.getElementById("mailView").classList.add("hidden");
   document.getElementById("mailDisclaimerSheet").classList.add("hidden");
+  document.getElementById("quickLinksSheet").classList.add("hidden");
   document.getElementById("mailBackBtnWrap").classList.add("hidden");
   document.getElementById("mailContent").value = "";
   document.getElementById("mailContent").disabled = false;
   document.getElementById("mailSentOverlay").classList.add("hidden");
   document.getElementById("mailSendBtn").disabled = false;
+  fadeInView(document.getElementById("mainFormSheet"));
   fadeInView(document.getElementById("filterForm"));
   document.getElementById("settingsSheet").classList.remove("hidden");
   document.getElementById("favoriteSheet").classList.remove("hidden");
@@ -1430,11 +1589,15 @@ async function runSearchAndShowResults(state){
   const queryState = resolveQueryState(state);
   try{
     const { rows, displayedCount } = await runScheduleQuery(queryState);
+    logSearchEvent(displayedCount);
     if (displayedCount === 0){
       showPillWarning(submitBtn, "查無符合條件的課程，請調整篩選條件");
     } else if (displayedCount > RESULT_COUNT_WARN_LIMIT){
       showPillWarning(submitBtn, "結果太多，請調整篩選條件");
     } else {
+      logTeacherSearches(state.teacher);
+      logCourseSearches(state.course);
+      logBranchSearches((state.branch || []).map(branchSlugToLabel));
       showResultView();
       history.replaceState(null, "", buildShareUrl(state));
       renderActiveFilters(state);
@@ -1445,6 +1608,8 @@ async function runSearchAndShowResults(state){
     let message;
     if (err instanceof QueryTimeoutError){
       message = "查詢逾時，請重新整理 😭";
+    } else if (err instanceof QueryRateLimitedError){
+      message = "查詢太頻繁了，請稍等一下再試一次";
     } else if (err instanceof QueryHttpError){
       message = "伺服器發生錯誤，請稍後再試一次 😭";
     } else {
@@ -1525,6 +1690,8 @@ async function init(){
   // 不要一個抓完才抓下一個，不然畫面等待時間會是兩個請求時間相加。
   const branchesPromise = withRetryTimeout(() => fetch("branches.json").then(r => r.json()), QUERY_RETRY_AFTER_MS, QUERY_GIVE_UP_AFTER_MS);
   const filterOptionsPromise = withRetryTimeout(() => fetch(`${WORKER_BASE}/filterOptions`).then(r => r.json()), QUERY_RETRY_AFTER_MS, QUERY_GIVE_UP_AFTER_MS);
+  // 頁面載入就先預熱一張查詢用的 token，大部分情況使用者按查詢時早就備好了，不用多等。
+  fetchFreshQueryToken().catch(e => console.error("issueToken 預熱失敗", e));
 
   try{
     const branches = await branchesPromise;
@@ -1577,6 +1744,16 @@ async function init(){
   }
 }
 init();
+
+// 分頁從背景切回前景時，如果查詢 token 快過期或已經過期，就先在背景換一張新的，
+// 降低使用者真的按下查詢時撞到 token 過期、需要多等一次重試的機率（不是正確性必要條件，
+// 真的沒趕上換新的話 runScheduleQuery 裡的過期重試機制還是會處理，只是會慢一點）。
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  if (!cachedQueryToken || cachedQueryToken.exp <= Date.now() + 60000){
+    fetchFreshQueryToken().catch(e => console.error("visibilitychange token 刷新失敗", e));
+  }
+});
 
 // iOS「加入主畫面」後是獨立模式，沒有瀏覽器原生的下拉重新整理，補一個簡易版本。
 (function setupPullToRefresh(){
