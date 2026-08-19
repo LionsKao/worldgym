@@ -1,7 +1,7 @@
 // 課表查詢、分店/課程/老師篩選選項都改由 Cloudflare Worker + D1 提供，不再直接用 Firestore client SDK。
 const WORKER_BASE = "https://worldgym-api.lions2100.workers.dev";
 // 篩選後結果超過這個筆數就視為條件太寬鬆，不導到結果頁、只在查詢按鈕上提示使用者多加篩選。
-const RESULT_COUNT_WARN_LIMIT = 150;
+const RESULT_COUNT_WARN_LIMIT = 250;
 
 // 課表通知（Web Push）：VAPID public key，跟 worker/.dev.vars 的 VAPID_PUBLIC_KEY 是同一組 key pair。
 const VAPID_PUBLIC_KEY = "BCcFfPhUxaUYFMtosUu21nd24j5El9YcuYNndb3Ll0_rjC-SwSnT4YvQfi7nVTuQWYjIiDlZqG1jrZrwi7uuw4k";
@@ -19,8 +19,10 @@ if (new URLSearchParams(location.search).get("pwa") === "1"){
 let AD_BANNERS = [];
 let currentAdIndex = 0;
 // 廣告曝光/點擊落地存進 D1（跟 GA4 的 trackEvent 分開），失敗靜默吞掉，不影響前台體驗、不重試。
+// 本機開發(localhost/127.0.0.1)不計入，避免測試把廣告曝光/點擊數字洗掉。
 function trackAdEvent(adId, type){
   if (!adId) return;
+  if (["localhost", "127.0.0.1"].includes(location.hostname)) return;
   fetch(`${WORKER_BASE}/trackAdEvent`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -779,10 +781,17 @@ function positionPillTooltip(rect){
   const arrowPct = half > 0 ? Math.max(10, Math.min(90, ((anchorCenterX - centerX) / (half * 2) + 0.5) * 100)) : 50;
   pillWarnTooltip.style.setProperty("--arrow-left", arrowPct + "%");
 }
-function showPillWarning(anchorEl, text){
+function showPillWarning(anchorEl, text, iconClass){
   const rect = anchorEl.getBoundingClientRect();
   pillWarnTooltip.classList.remove("wrap");
-  pillWarnTooltip.textContent = text;
+  pillWarnTooltip.innerHTML = "";
+  if (iconClass){
+    const icon = document.createElement("i");
+    icon.className = iconClass;
+    pillWarnTooltip.appendChild(icon);
+    pillWarnTooltip.appendChild(document.createTextNode(" "));
+  }
+  pillWarnTooltip.appendChild(document.createTextNode(text));
   positionPillTooltip(rect);
   pillWarnTooltip.classList.add("visible");
   clearTimeout(pillWarnTimer);
@@ -825,7 +834,7 @@ copyUrlBtn.addEventListener("click", async (e) => {
   e.stopPropagation();
   try{
     await navigator.clipboard.writeText(location.origin + "/?utm_source=website_link");
-    showPillWarning(copyUrlBtn, "已複製網站網址到剪貼簿");
+    showPillWarning(copyUrlBtn, "已複製網站網址到剪貼簿", "fa-solid fa-fw fa-clipboard-check");
     trackEvent("copy_site_url", {});
   } catch(err){
     console.error(err);
@@ -1924,6 +1933,7 @@ function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint
 
   yearSelect.addEventListener("change", load);
   monthSelect.addEventListener("change", load);
+  window.addEventListener("resize", () => { if (chartInstance) chartInstance.resize(); });
 
   const observer = new IntersectionObserver((entries) => {
     if (entries.some((e) => e.isIntersecting)){
@@ -1941,6 +1951,7 @@ function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint
 
   const THEME_INK = "#2b2b2b", THEME_SUB = "#7a7a7a", THEME_LINE = "#ececec";
   const CHART_MONTHS = 12;
+  let chartInstance = null;
 
   function currentMonthKey(){ return new Date().toISOString().slice(0, 7); }
   function addMonths(monthStr, delta){
@@ -1969,7 +1980,7 @@ function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint
       const canvas = wrapEl.querySelector("canvas");
       canvas.setAttribute("role", "img");
       canvas.setAttribute("aria-label", `近 ${CHART_MONTHS} 個月查詢次數與查詢結果數趨勢`);
-      new Chart(canvas, {
+      chartInstance = new Chart(canvas, {
         type: "line",
         data: {
           labels: chartData.map(monthTickLabel),
@@ -2008,6 +2019,8 @@ function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint
       wrapEl.textContent = "載入失敗，請稍後再試";
     }
   }
+
+  window.addEventListener("resize", () => { if (chartInstance) chartInstance.resize(); });
 
   const observer = new IntersectionObserver((entries) => {
     if (entries.some((e) => e.isIntersecting)){

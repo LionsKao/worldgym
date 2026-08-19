@@ -331,7 +331,7 @@ adChartPrevBtn.addEventListener("click", () => navigateAdChart("prev"));
 adChartNextBtn.addEventListener("click", () => navigateAdChart("next"));
 
 function isAdActive(ad){
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
   return !!ad.enabled && ad.startAt.slice(0, 10) <= today && today <= ad.endAt.slice(0, 10);
 }
 
@@ -562,3 +562,48 @@ document.getElementById("cleanupStaleBtn").addEventListener("click", () => runAc
 document.querySelectorAll(".admin-link-btn[data-log-text]").forEach((link) => {
   link.addEventListener("click", () => logToTerminal(link.dataset.logText));
 });
+
+// iOS「加入主畫面」後是獨立模式，沒有瀏覽器原生的下拉重新整理，補一個簡易版本。
+(function setupPullToRefresh(){
+  const isStandalone = window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
+  if (!isStandalone) return;
+  const indicator = document.getElementById("ptrIndicator");
+  const THRESHOLD = 70;
+  const MAX_PULL = 100;
+  let startY = 0;
+  let pulling = false;
+  let refreshing = false;
+
+  document.addEventListener("touchstart", (e) => {
+    if (refreshing) return;
+    if (window.scrollY > 0){ pulling = false; return; }
+    startY = e.touches[0].clientY;
+    pulling = true;
+    indicator.classList.remove("ptr-releasing");
+  }, { passive: true });
+
+  document.addEventListener("touchmove", (e) => {
+    if (!pulling || refreshing) return;
+    const delta = e.touches[0].clientY - startY;
+    if (delta <= 0){ indicator.style.top = "-50px"; return; }
+    const pull = Math.min(delta / 2, MAX_PULL);
+    indicator.style.top = `${pull - 50}px`;
+    indicator.style.transform = `translate(-50%, 0) rotate(${pull * 3}deg)`;
+  }, { passive: true });
+
+  document.addEventListener("touchend", () => {
+    if (!pulling || refreshing) return;
+    pulling = false;
+    indicator.classList.add("ptr-releasing");
+    const top = parseFloat(indicator.style.top || "-50");
+    if (top + 50 >= THRESHOLD){
+      refreshing = true;
+      indicator.style.top = "16px";
+      indicator.style.transform = "translate(-50%, 0) rotate(0deg)";
+      indicator.classList.add("ptr-refreshing");
+      setTimeout(() => location.reload(), 300);
+    } else {
+      indicator.style.top = "-50px";
+    }
+  });
+})();

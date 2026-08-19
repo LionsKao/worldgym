@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
-<link rel="stylesheet" href="style.css?v=60">
+<link rel="stylesheet" href="style.css?v=62">
 <style>
   .admin-link-row{ display:flex; gap:6px; flex-wrap:wrap; margin-top:14px; }
   .admin-link-btn{
@@ -41,8 +41,8 @@
   .terminal-log::-webkit-scrollbar{ display:none; width:0; height:0; }
   .terminal-log .term-line + .term-line{ margin-top:1px; }
   .terminal-log .term-time{ color:#6c7a96; margin-right:6px; }
-  .terminal-log .term-ok{ color:#3fae8f; }
-  .terminal-log .term-err{ color:#e8604c; }
+  .terminal-log .term-ok{ color:var(--teal); }
+  .terminal-log .term-err{ color:var(--coral); }
   .terminal-log .term-empty{ color:#6c7a96; }
   .login-box{ max-width:280px; }
   .login-input{
@@ -81,8 +81,9 @@
     font-family:inherit; font-weight:600; color:var(--ink);
     cursor:pointer; text-align:left;
   }
+  .custom-select-trigger:hover,
+  .custom-select.open .custom-select-trigger{ border-style:dashed; border-color:var(--accent); color:var(--accent); }
   .custom-select-trigger:focus{ outline:none; border-color:var(--accent); }
-  .custom-select.open .custom-select-trigger{ border-color:var(--accent); }
   .custom-select-label{ flex:1; min-width:0; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .custom-select-arrow{ flex:none; font-size:11px; color:var(--sub); transition:transform .15s ease; }
   .custom-select.open .custom-select-arrow{ transform:rotate(180deg); }
@@ -108,7 +109,7 @@
     padding:12px 3px; font-size:12.5px; text-align:center;
   }
   .custom-select-option:hover{ background:rgba(0,0,0,0.05); }
-  .custom-select-option.selected{ color:var(--accent); background:rgba(66,133,244,0.1); }
+  .custom-select-option.selected{ color:var(--accent); background:color-mix(in srgb, var(--accent) 12%, transparent); }
   #adStatusFilter .custom-select-option,
   #adStatsSelect .custom-select-option{
     text-align:center;
@@ -129,7 +130,7 @@
   .ad-chart-wrap{ display:flex; align-items:center; gap:6px; margin-top:12px; }
   .ad-chart-nav{
     flex:none; width:28px; height:28px; border-radius:50%; box-sizing:border-box;
-    border:1.5px solid #3a3a4a; background:#3a3a4a; color:#fff;
+    border:1.5px solid var(--navy); background:var(--navy); color:#fff;
     display:flex; align-items:center; justify-content:center; font-size:12px;
     cursor:pointer; transition:opacity .15s ease, background-color .15s ease;
   }
@@ -143,9 +144,11 @@
 </head>
 <body>
 
+<div id="ptrIndicator" class="ptr-indicator"><i class="fa-solid fa-arrow-rotate-right"></i></div>
+
 <div id="adminLoginOverlay" class="modal-overlay">
   <div class="modal-box login-box">
-    <p class="modal-text">回去吧！<br>這裡不是你該來的地方！</p>
+    <p class="modal-text">君たちがここへ来るのは… <br>まだ早すぎるよ <i class="fa-solid fa-heart"></i></p>
     <span class="tooltip-wrap" id="adminLoginBtnWrap">
       <span class="hint-tooltip" id="adminLoginError">密碼錯誤</span>
       <input type="password" id="adminPasswordInput" class="login-input" placeholder="通關密碼" autocomplete="current-password">
@@ -168,9 +171,9 @@
 
   <div class="admin-layout">
     <div class="sheet admin-col terminal-panel">
-      <div class="field-block" style="--accent:#3fae8f">
+      <div class="field-block" style="--accent:var(--teal)">
         <div class="admin-link-row" style="margin-top:0">
-          <a class="admin-link-btn" data-log-text="🔗 已開啟 Cloudflare 資料庫" style="--link-color:#3fae8f" href="https://dash.cloudflare.com/3f6a1c826e260aabaab215af1f8e798a/workers/d1/databases/ca30eeae-ed11-4952-a2e1-c8c251dada71/metrics" target="_blank" rel="noopener"><i class="fa-solid fa-fw fa-database"></i>資料庫</a>
+          <a class="admin-link-btn" data-log-text="🔗 已開啟 Cloudflare 資料庫" style="--link-color:var(--teal)" href="https://dash.cloudflare.com/3f6a1c826e260aabaab215af1f8e798a/workers/d1/databases/ca30eeae-ed11-4952-a2e1-c8c251dada71/metrics" target="_blank" rel="noopener"><i class="fa-solid fa-fw fa-database"></i>資料庫</a>
           <a class="admin-link-btn" data-log-text="🔗 已開啟 Google Analytics" style="--link-color:#4285f4" href="https://analytics.google.com/analytics/web/?hl=zh-tw#/a404061385p549256263/reports/intelligenthome" target="_blank" rel="noopener"><i class="fa-solid fa-fw fa-chart-line"></i>GA4</a>
           <button type="button" class="pill-btn pill-btn-solid" id="cleanupStaleBtn" style="--accent:var(--coral)"><i class="fa-solid fa-fw fa-trash-can"></i>刪除停用分店資料</button>
           <button type="button" class="pill-btn pill-btn-solid" id="rescrapeAllCf" style="--accent:#f5820d"><i class="fa-solid fa-fw fa-cloud"></i>重抓所有分店</button>
@@ -180,7 +183,7 @@
     </div>
 
     <div class="sheet admin-col">
-      <div class="field-block" style="--accent:#3a3a4a">
+      <div class="field-block" style="--accent:var(--navy)">
         <div class="section-head">
           <span class="section-tag"><i class="fa-solid fa-fw fa-chart-simple"></i>廣告</span>
         </div>
@@ -218,7 +221,7 @@
     </div>
 
     <div class="sheet admin-col">
-      <div class="field-block" style="--accent:#3a3a4a">
+      <div class="field-block" style="--accent:var(--navy)">
         <div class="section-head">
           <span class="section-tag"><i class="fa-solid fa-fw fa-chart-line"></i>查詢</span>
         </div>
@@ -231,7 +234,7 @@
     </div>
 
     <div class="sheet admin-col">
-      <div class="field-block" style="--accent:#e8604c">
+      <div class="field-block" style="--accent:var(--coral)">
         <div class="section-head">
           <span class="section-tag"><i class="fa-solid fa-fw fa-heart"></i>最愛</span>
         </div>
@@ -265,6 +268,6 @@
 </div>
 
 <script src="vendor/chart.umd.min.js"></script>
-<script src="admin.js?v=28"></script>
+<script src="admin.js?v=29"></script>
 </body>
 </html>

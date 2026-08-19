@@ -24,7 +24,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
-<link rel="stylesheet" href="style.css?v=72">
+<link rel="stylesheet" href="style.css?v=77">
 <style>#loadingOverlay{position:fixed;top:0;left:0;width:100%;height:100%;background:#fff;z-index:9999;}</style>
 </head>
 <body>
@@ -46,14 +46,14 @@
   </div>
 
   <a class="sheet ad-banner" id="adBanner" href="https://www.dd-room.com/object/wkx02awwk4xntjhk" target="_blank" rel="noopener sponsored">
-    <span class="section-tag ad-banner-tag" style="--accent:#3a3a4a" aria-label="廣告"><i class="fa-solid fa-rectangle-ad"></i></span>
+    <span class="section-tag ad-banner-tag" style="--accent:var(--navy)" aria-label="廣告"><i class="fa-solid fa-rectangle-ad"></i></span>
     <span class="ad-banner-text-wrap">
       <span class="ad-banner-text" id="adBannerText">📍 大安黃金地段 1 樓免爬樓！質感時尚裝潢與獨立衛浴，輕鬆享受便利生活！ ✨</span>
     </span>
   </a>
 
   <div class="sheet" id="favoriteSheet">
-    <div class="field-block" style="--accent:#e8604c">
+    <div class="field-block" style="--accent:var(--coral)">
       <div class="pill-grid" id="favoriteGrid">
         <span class="section-tag"><i class="fa-solid fa-fw fa-heart"></i></span>
       </div>
@@ -63,7 +63,7 @@
   <div class="sheet" id="mainFormSheet">
     <form id="filterForm">
 
-      <fieldset class="field-block" style="--accent:#3fae8f">
+      <fieldset class="field-block" style="--accent:var(--teal)">
         <div class="pill-grid" id="dayGrid">
           <span class="section-tag"><i class="fa-solid fa-fw fa-calendar-day"></i></span>
         </div>
@@ -82,7 +82,7 @@
         <div class="pill-grid" id="branchGrid"><div class="empty-hint">讀取中…</div></div>
       </fieldset>
 
-      <fieldset class="field-block" style="--accent:#f0a04b">
+      <fieldset class="field-block" style="--accent:var(--orange)">
         <div class="pill-grid" id="roomGrid">
           <span class="section-tag"><i class="fa-solid fa-fw fa-store"></i></span>
         </div>
@@ -142,7 +142,7 @@
 
   <div class="sheet hidden" id="searchTrendSheet">
     <div class="section-head">
-      <span class="section-tag" aria-label="查詢量趨勢" style="--accent:#3a3a4a"><i class="fa-solid fa-chart-line"></i><i class="fa-solid fa-fw fa-magnifying-glass"></i></span>
+      <span class="section-tag" aria-label="查詢量趨勢" style="--accent:var(--navy)"><i class="fa-solid fa-chart-line"></i><i class="fa-solid fa-fw fa-magnifying-glass"></i></span>
     </div>
     <div id="searchTrendWrap" class="branch-stats-wrap"><div class="empty-hint">讀取中…</div></div>
     <div class="stats-chart-legend">
@@ -151,7 +151,7 @@
     </div>
   </div>
 
-  <div class="sheet hidden" id="branchStatsSheet">
+  <div class="sheet hidden" id="branchStatsSheet" style="--accent:#4a90d9">
     <div class="section-head">
       <span class="section-tag" aria-label="分店查詢排行" style="--accent:#4a90d9"><i class="fa-solid fa-chart-line"></i><i class="fa-solid fa-fw fa-location-dot"></i></span>
     </div>
@@ -168,7 +168,7 @@
     <div id="branchStatsWrap" class="branch-stats-wrap"><div class="empty-hint">讀取中…</div></div>
   </div>
 
-  <div class="sheet hidden" id="courseStatsSheet">
+  <div class="sheet hidden" id="courseStatsSheet" style="--accent:#8a6fb3">
     <div class="section-head">
       <span class="section-tag" aria-label="課程查詢排行" style="--accent:#8a6fb3"><i class="fa-solid fa-chart-line"></i><i class="fa-solid fa-fw fa-face-smile"></i></span>
     </div>
@@ -185,7 +185,7 @@
     <div id="courseStatsWrap" class="branch-stats-wrap"><div class="empty-hint">讀取中…</div></div>
   </div>
 
-  <div class="sheet hidden" id="teacherStatsSheet">
+  <div class="sheet hidden" id="teacherStatsSheet" style="--accent:#c9922e">
     <div class="section-head">
       <span class="section-tag" aria-label="老師查詢排行" style="--accent:#c9922e"><i class="fa-solid fa-chart-line"></i><i class="fa-solid fa-fw fa-user"></i></span>
     </div>
@@ -206,7 +206,7 @@
     <div class="section-head">
       <span class="section-tag" aria-label="通知" style="--accent:#d99a1b"><i class="fa-solid fa-fw fa-bell"></i></span>
       <span class="tooltip-wrap" id="notifyInfoBtnWrap">
-        <span class="hint-tooltip wrap" id="notifyInfoTooltip">想使用通知功能？請使用 Safari 開啟，點擊「分享」並「加入主畫面」以開啟 App 模式與通知功能！🔔✨</span>
+        <span class="hint-tooltip wrap" id="notifyInfoTooltip">想使用通知功能？請使用 Safari 開啟，點擊「分享」並「加入主畫面」以開啟 App 模式與通知功能！<i class="fa-solid fa-bell"></i> <i class="fa-solid fa-wand-magic-sparkles"></i></span>
         <button type="button" class="section-tag" id="notifyInfoBtn" aria-label="通知說明" style="--accent:#9a9a9a"><i class="fa-solid fa-fw fa-circle-info"></i></button>
       </span>
     </div>
@@ -215,7 +215,7 @@
 
   <div id="mailView" class="sheet hidden">
     <div class="section-head">
-      <span class="section-tag" aria-label="留言" style="--accent:#e8604c"><i class="fa-solid fa-fw fa-envelope"></i></span>
+      <span class="section-tag" aria-label="留言" style="--accent:var(--coral)"><i class="fa-solid fa-fw fa-envelope"></i></span>
     </div>
     <div class="mail-textarea-wrap">
       <textarea id="mailContent" class="mail-textarea" placeholder="有新開的分店沒有列在上面嗎？有什麼想要的功能嗎？都歡迎在這裡留言～"></textarea>
@@ -239,18 +239,18 @@
 
   <div class="sheet hidden" id="quickLinksSheet">
     <div class="mail-disclaimer">
-      <a href="https://www.worldgymtaiwan.com" target="_blank" rel="noopener" class="section-tag" id="officialSiteLink" aria-label="前往 World Gym 官網" style="--accent:#e8604c"><i class="fa-solid fa-fw fa-globe"></i>世界健身中心官網</a>
+      <a href="https://www.worldgymtaiwan.com" target="_blank" rel="noopener" class="section-tag" id="officialSiteLink" aria-label="前往 World Gym 官網" style="--accent:var(--coral)"><i class="fa-solid fa-fw fa-globe"></i>世界健身中心官網</a>
       <span class="tooltip-wrap" id="privacyBtnWrap">
-        <span class="hint-tooltip wrap" id="privacyTooltip">僅做匿名使用統計，不收集個人資料。課表資料來自 World Gym 官網，僅供參考；本站為非官方工具，正確課表請以官網為準。</span>
+        <span class="hint-tooltip wrap" id="privacyTooltip"><i class="fa-solid fa-fw fa-user-secret"></i> 僅做匿名使用統計，不收集個人資料。<br><i class="fa-solid fa-fw fa-heart"></i> 最愛只會存在你的裝置上。<br><i class="fa-solid fa-fw fa-globe"></i> 課表資料來自 World Gym 官網，僅供參考；<br><i class="fa-solid fa-fw fa-triangle-exclamation"></i> 本站為非官方工具，正確課表請以官網為準。</span>
         <button type="button" class="section-tag" id="privacyBtn" aria-label="隱私說明" style="--accent:#127a76"><i class="fa-solid fa-fw fa-shield-halved"></i>隱私說明</button>
       </span>
-      <a class="section-tag" id="githubLinkIcon" href="https://github.com/LionsKao/worldgym" target="_blank" rel="noopener" aria-label="GitHub 原始碼" style="--accent:#3a3a4a"><i class="fa-brands fa-fw fa-github"></i>GitHub</a>
-      <a class="section-tag" id="adminLinkIcon" href="admin.html" aria-label="管理者功能" style="--accent:#5b3cc4"><i class="fa-solid fa-fw fa-lock"></i>管理者登入</a>
+      <a class="section-tag" id="githubLinkIcon" href="https://github.com/LionsKao/worldgym" target="_blank" rel="noopener" aria-label="GitHub 原始碼" style="--accent:var(--navy)"><i class="fa-brands fa-fw fa-github"></i>GitHub</a>
+      <a class="section-tag" id="adminLinkIcon" href="admin.html" aria-label="管理者功能" style="--accent:var(--navy)"><i class="fa-solid fa-fw fa-lock"></i>管理者登入</a>
     </div>
   </div>
 
   <div class="sheet" id="settingsSheet">
-    <div class="field-block" id="settingsBlock" style="--accent:#3a3a4a">
+    <div class="field-block" id="settingsBlock" style="--accent:var(--navy)">
       <div class="pill-grid" id="settingsGrid">
         <span class="section-tag"><i class="fa-solid fa-fw fa-gear"></i></span>
         <span class="tooltip-wrap" id="addFavoriteBtnWrap">
@@ -363,6 +363,6 @@
   </div>
 </div>
 
-<script src="script.js?v=88"></script>
+<script src="script.js?v=90"></script>
 </body>
 </html>

@@ -81,8 +81,8 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 .section-btn:hover{ border-color:var(--accent); color:var(--accent); }
 .section-btn:disabled{ cursor:not-allowed; opacity:0.5; }
 .section-btn:disabled:hover{ border-color:var(--line); color:var(--sub); }
-#addFavoriteBtn:not(:disabled){ background:#e8604c; border-color:#e8604c; color:#fff; }
-#clearMemoryBtn{ background:#3a3a4a; border-color:#3a3a4a; color:#fff; }
+#addFavoriteBtn:not(:disabled){ background:var(--coral); border-color:var(--coral); color:#fff; }
+#clearMemoryBtn{ background:var(--navy); border-color:var(--navy); color:#fff; }
 .section-btn i{ padding-right:8px; font-size:13px; }
 .section-search{
   width:100%; font-size:13px; padding:9px 14px; margin-bottom:10px;
@@ -150,7 +150,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 
 .branch-stats-filter-row{ display:flex; gap:8px; margin-bottom:14px; }
 .branch-stats-select{ flex:1; min-width:0; }
-.branch-stats-wrap{ font-size:12.5px; overflow:hidden; }
+.branch-stats-wrap{ font-size:12.5px; overflow:hidden; text-align:center; }
 
 /* 自製下拉選單：外觀跟 .section-btn 一致，但不用原生 <select>（原生下拉的箭頭位置/樣式沒辦法客製）。 */
 .custom-select{ position:relative; }
@@ -161,8 +161,9 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
   font-family:inherit; font-weight:700; color:var(--ink);
   cursor:pointer; text-align:left;
 }
+.custom-select-trigger:hover,
+.custom-select.open .custom-select-trigger{ border-style:dashed; border-color:var(--accent); color:var(--accent); }
 .custom-select-trigger:focus{ outline:none; border-color:var(--accent); }
-.custom-select.open .custom-select-trigger{ border-color:var(--accent); }
 .custom-select-label{ flex:1; min-width:0; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .custom-select-arrow{ flex:none; font-size:11px; color:var(--sub); transition:transform .15s ease; }
 .custom-select.open .custom-select-arrow{ transform:rotate(180deg); }
@@ -177,12 +178,13 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
   cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:center;
 }
 .custom-select-option:hover{ background:rgba(0,0,0,0.05); }
-.custom-select-option.selected{ color:var(--accent); background:rgba(66,133,244,0.1); }
+.custom-select-option.selected{ color:var(--accent); background:color-mix(in srgb, var(--accent) 12%, transparent); }
 /* 月份選單固定 12 個選項，排成 4 欄 3 列的格狀，不要拉成一條長長的直式列表。 */
 #branchStatsMonth.open .custom-select-menu,
 #courseStatsMonth.open .custom-select-menu,
 #teacherStatsMonth.open .custom-select-menu{
   display:grid; grid-template-columns:repeat(4, 1fr); gap:4px;
+  left:auto; right:0; width:max(100%, 260px);
 }
 #branchStatsMonth .custom-select-option,
 #courseStatsMonth .custom-select-option,
@@ -282,7 +284,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 .tooltip-wrap{ position:relative; display:inline-flex; }
 .tooltip-wrap.hidden{ display:none; }
 .hint-tooltip, .pill-warn-tooltip{
-  background:#3a3a4a; color:#fff; font-size:12.5px; font-weight:700;
+  background:var(--navy); color:#fff; font-size:12.5px; font-weight:700;
   padding:8px 14px; border-radius:12px; white-space:nowrap; z-index:600;
   box-shadow:0 6px 16px rgba(0,0,0,0.18);
   opacity:0; visibility:hidden; transform:translate(-50%, 6px);
@@ -290,10 +292,15 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 }
 .hint-tooltip{ position:absolute; left:50%; bottom:100%; margin-bottom:10px; }
 .hint-tooltip.wrap{ white-space:normal; width:220px; text-align:center; line-height:1.5; }
+#privacyTooltip.wrap{ width:300px; text-align:left; }
+#privacyTooltip i{ width:1.25em; }
+@media (max-width:480px){
+  #privacyTooltip.wrap{ width:220px; }
+}
 .pill-warn-tooltip{ position:fixed; pointer-events:none; }
 .hint-tooltip::after, .pill-warn-tooltip::after{
   content:""; position:absolute; top:100%; left:var(--arrow-left, 50%); transform:translateX(-50%);
-  border-width:6px 6px 0 6px; border-style:solid; border-color:#3a3a4a transparent transparent transparent;
+  border-width:6px 6px 0 6px; border-style:solid; border-color:var(--navy) transparent transparent transparent;
 }
 .hint-tooltip.visible, .pill-warn-tooltip.visible{ opacity:1; visibility:visible; transform:translate(-50%, 0); }
 .pill-warn-tooltip.wrap{ white-space:normal; max-width:240px; text-align:center; line-height:1.4; }
@@ -377,14 +384,14 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 #githubLinkIcon, #adminLinkIcon, #adminLoginBackBtn, #officialSiteLink{ cursor:pointer; text-decoration:none; }
 #qrCodeBtn, #copyUrlBtn, #privacyBtn, #notifyInfoBtn{ border:none; font-family:inherit; cursor:pointer; }
 #notifyInfoBtn{ background:var(--paper); color:var(--accent); border:1.5px solid var(--line); }
-.qr-tooltip{ padding:10px; background:#fff; }
+.qr-tooltip{ padding:10px; background:var(--paper); }
 .qr-tooltip img{ display:block; width:132px; height:132px; }
-.qr-tooltip::after{ border-color:#fff transparent transparent transparent; }
+.qr-tooltip::after{ border-color:var(--paper) transparent transparent transparent; }
 .mail-disclaimer span:last-child:not(.section-tag){ flex:1; min-width:0; }
 .result-row{
   display:flex; align-items:center; justify-content:space-between; gap:8px;
   padding:8px 14px; border:1.5px solid var(--line); border-radius:14px; margin-bottom:8px;
-  font-size:13px; font-weight:700; color:#2b2b2b; background:var(--paper);
+  font-size:13px; font-weight:700; color:var(--ink); background:var(--paper);
 }
 .result-row-content{ min-width:0; }
 .result-row.flagged{ border-color:var(--line); background:var(--paper); }
@@ -417,7 +424,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 
 #loadingOverlay{
   position:fixed; top:0; left:0; width:100%; height:100%;
-  background:#fff;
+  background:var(--paper);
   display:flex; align-items:center; justify-content:center; z-index:9999;
 }
 #loadingOverlay .loading-box{ display:flex; flex-direction:column; align-items:center; gap:12px; }
@@ -445,7 +452,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 .reminder-row{ position:relative; display:flex; align-items:center; justify-content:space-between; gap:8px; transition:opacity .25s ease; }
 .reminder-row.fading-out{ opacity:0; }
 .reminder-text{ min-width:0; }
-.reminder-teacher{ color:#2b2b2b; }
+.reminder-teacher{ color:var(--ink); }
 .reminder-notify-time{ font-size:11px; font-weight:500; color:var(--sub); margin-top:2px; }
 .reminder-cancel-bell{ color:#f0b400; cursor:pointer; padding-left:10px; flex-shrink:0; }
 .reminder-cancel-bell.busy{ opacity:.5; pointer-events:none; }

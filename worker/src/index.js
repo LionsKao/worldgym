@@ -18,9 +18,8 @@ const ALLOWED_ORIGINS = [
   "https://worldgym-web.lions2100.workers.dev",
 ];
 
-// D1 裡的事件打點時間戳一律用台灣時間（+8），跟 scrape.js / reminders.js 的 nowTaiwanIso() 同一套慣例——
-// 純位移 8 小時再貼 +08:00 後綴，這樣 createdAt 才能跟其他表的時間戳直接用字串比較/排序。
-// 注意：/ads 的 startAt/endAt 是既有 UTC('Z') 排程欄位，不在這個慣例內，比較時仍用 UTC now。
+// D1 裡的時間戳（含 ads 的 startAt/endAt）一律用台灣時間（+8），跟 scrape.js / reminders.js 的
+// nowTaiwanIso() 同一套慣例——純位移 8 小時再貼 +08:00 後綴，這樣才能跟其他時間戳直接用字串比較/排序。
 function nowTaiwanIso() {
   const d = new Date(Date.now() + 8 * 3600 * 1000);
   return d.toISOString().replace("Z", "+08:00");
@@ -142,7 +141,7 @@ export default {
       // 首頁廣告輪播：只回傳目前在上下架時間內、且 enabled=1 的廣告，順序照 sortOrder。
       // id 要回傳出去，前端輪播才能標記「目前顯示的是哪一則廣告」，用來打曝光/點擊事件。
       if (url.pathname === "/ads" && req.method === "GET") {
-        const now = new Date().toISOString();
+        const now = nowTaiwanIso();
         const { results } = await env.DB.prepare(
           "SELECT id, text, url FROM ads WHERE enabled = 1 AND startAt <= ? AND endAt >= ? ORDER BY sortOrder"
         ).bind(now, now).all();
