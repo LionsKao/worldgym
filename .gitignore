@@ -6,6 +6,9 @@ node_modules/
 .dev.vars
 .dev.vars.*
 
+# D1 備份匯出(含正式資料，不進版控)
+worker/backups/
+
 # env
 .env
 .env.*

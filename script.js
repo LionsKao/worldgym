@@ -240,7 +240,7 @@ function formatReminderTime(iso){
   if (!m) return iso;
   const [, year, month, date, hour, minute] = m;
   const weekday = WEEKDAY_LABEL[weekdayOfIso(`${year}-${month}-${date}`)];
-  return `${month}/${date} 週${weekday} ${hour}:${minute}`;
+  return `${month}/${date} 週${weekday} ${hour}${minute}`;
 }
 
 let pendingReminderBell = null;
@@ -313,16 +313,7 @@ async function handleBellClick(bell){
 async function renderReminderList(){
   const grid = document.getElementById("reminderGrid");
   if (!isPWAInstalled() || Notification.permission !== "granted"){
-    grid.innerHTML = `<div class="empty-hint notify-hint" id="reminderEmptyHint">
-      <div class="notify-hint-title">如何啟用通知功能</div>
-      <ol class="notify-hint-steps">
-        <li><span class="notify-hint-num">1</span>用 Safari 開啟本網站</li>
-        <li><span class="notify-hint-num">2</span>點擊螢幕下方 <i class="fa-solid fa-ellipsis"></i> 三個點，點 <i class="fa-solid fa-arrow-up-from-bracket"></i> 分享</li>
-        <li><span class="notify-hint-num">3</span>在裡面找到 <i class="fa-solid fa-square-plus"></i> 加入主畫面</li>
-        <li><span class="notify-hint-num">4</span>打開為網頁 APP 開啟，加入</li>
-        <li><span class="notify-hint-num">5</span>使用網頁 APP 查詢一些課，並按下小鈴鐺開啟通知</li>
-      </ol>
-    </div>`;
+    grid.innerHTML = "";
     return;
   }
   let list = [];
@@ -350,7 +341,7 @@ async function renderReminderList(){
     const text = document.createElement("div");
     text.className = "reminder-text";
     const mainLine = document.createElement("div");
-    mainLine.appendChild(document.createTextNode(`${r.branchName} 週${WEEKDAY_LABEL[r.dayOfWeek]} ${r.startTime} ${r.className} `));
+    mainLine.appendChild(document.createTextNode(`${r.branchName} 週${WEEKDAY_LABEL[r.dayOfWeek]} ${r.startTime.replace(":", "")} ${r.className} `));
     const teacherSpan = document.createElement("span");
     teacherSpan.className = "reminder-teacher";
     teacherSpan.textContent = r.teacherName;
@@ -620,8 +611,6 @@ function renderBranchGrid(containerId, options) {
   });
 
   [
-    { label: "桃園", zoneName: "桃園區" },
-    { label: "新竹", zoneName: "新竹區" },
     { label: "台中", zoneName: "台中區" },
     { label: "台南", zoneName: "台南區" },
     { label: "高屏", zoneName: "高屏區" },
@@ -869,6 +858,23 @@ document.addEventListener("click", (e) => {
   if (!privacyTooltip.classList.contains("visible")) return;
   if (e.target.closest("#privacyBtnWrap")) return;
   privacyTooltip.classList.remove("visible");
+});
+
+// 通知說明：只在「還不是 PWA 模式」時顯示，讓使用者知道怎麼加入主畫面開啟通知；
+// 已經是 PWA 模式（standalone）就不需要這顆按鈕了。點擊切換顯示提示文字。
+const notifyInfoBtnWrap = document.getElementById("notifyInfoBtnWrap");
+const isStandaloneMode = window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
+if (isStandaloneMode) notifyInfoBtnWrap.classList.add("hidden");
+const notifyInfoBtn = document.getElementById("notifyInfoBtn");
+const notifyInfoTooltip = document.getElementById("notifyInfoTooltip");
+notifyInfoBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  notifyInfoTooltip.classList.toggle("visible");
+});
+document.addEventListener("click", (e) => {
+  if (!notifyInfoTooltip.classList.contains("visible")) return;
+  if (e.target.closest("#notifyInfoBtnWrap")) return;
+  notifyInfoTooltip.classList.remove("visible");
 });
 
 // 星期／分店／課程／老師：勾選後記住選擇，下次打開頁面自動套用。
@@ -1431,7 +1437,7 @@ function renderScheduleResults(rows, onlyTeacher){
       content.appendChild(icon);
       content.appendChild(document.createTextNode(`${c.date.slice(5).replace("-", "/")} `));
     }
-    content.appendChild(document.createTextNode(`${c.branchName} 週${WEEKDAY_LABEL[c.dayOfWeek]} ${c.startTime} ${c.className} `));
+    content.appendChild(document.createTextNode(`${c.branchName} 週${WEEKDAY_LABEL[c.dayOfWeek]} ${c.startTime.replace(":", "")} ${c.className} `));
     if (c.teacherName === onlyTeacher){
       content.appendChild(document.createTextNode(c.teacherName));
     } else {
@@ -1513,6 +1519,7 @@ function showMailView(){
   document.getElementById("favoriteSheet").classList.add("hidden");
   fadeInView(document.getElementById("reminderView"));
   fadeInView(document.getElementById("mailView"));
+  document.getElementById("searchTrendSheet").classList.remove("hidden");
   document.getElementById("branchStatsSheet").classList.remove("hidden");
   document.getElementById("courseStatsSheet").classList.remove("hidden");
   document.getElementById("teacherStatsSheet").classList.remove("hidden");
@@ -1530,6 +1537,7 @@ function showFilterView(){
   document.getElementById("backBtnWrap").classList.add("hidden");
   document.getElementById("reminderView").classList.add("hidden");
   document.getElementById("mailView").classList.add("hidden");
+  document.getElementById("searchTrendSheet").classList.add("hidden");
   document.getElementById("branchStatsSheet").classList.add("hidden");
   document.getElementById("courseStatsSheet").classList.add("hidden");
   document.getElementById("teacherStatsSheet").classList.add("hidden");
@@ -1777,11 +1785,63 @@ function loadChartJs(){
   return loadChartJs._promise;
 }
 
-function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint, itemsKey, barColor, ariaLabel }){
+// 自製下拉選單：外觀跟 .section-btn 一致，但不用原生 <select>（原生下拉的箭頭位置/樣式沒辦法客製）。
+// root 是 .custom-select 容器，內含 .custom-select-trigger 按鈕跟 .custom-select-menu 選項列表。
+// 用 root.value（getter/setter）+ root.addEventListener("change", ...) 模擬原生 select 的介面。
+// root.setOptions(options, selectedValue) 用來動態換選項（年份/月份清單都是動態抓的）。
+function enhanceCustomSelect(root){
+  const trigger = root.querySelector(".custom-select-trigger");
+  const label = root.querySelector(".custom-select-label");
+  const menu = root.querySelector(".custom-select-menu");
+
+  function close(){ root.classList.remove("open"); }
+  function open(){ root.classList.add("open"); }
+
+  function selectOption(optionEl, { silent = false } = {}){
+    menu.querySelectorAll(".custom-select-option").forEach((o) => o.classList.toggle("selected", o === optionEl));
+    label.innerHTML = optionEl.innerHTML;
+    root.dataset.value = optionEl.dataset.value;
+    close();
+    if (!silent) root.dispatchEvent(new Event("change"));
+  }
+
+  trigger.addEventListener("click", (e) => {
+    e.stopPropagation();
+    root.classList.contains("open") ? close() : open();
+  });
+  menu.addEventListener("click", (e) => {
+    const opt = e.target.closest(".custom-select-option");
+    if (opt) selectOption(opt);
+  });
+  document.addEventListener("click", (e) => {
+    if (!root.contains(e.target)) close();
+  });
+
+  Object.defineProperty(root, "value", {
+    get(){ return root.dataset.value || ""; },
+    set(v){
+      const opt = menu.querySelector(`.custom-select-option[data-value="${CSS.escape(String(v))}"]`);
+      if (opt) selectOption(opt, { silent: true });
+    },
+  });
+
+  root.setOptions = function(options, selectedValue){
+    menu.innerHTML = options
+      .map((o) => `<div class="custom-select-option${o.value === selectedValue ? " selected" : ""}" data-value="${o.value}">${o.html}</div>`)
+      .join("");
+    const sel = options.find((o) => o.value === selectedValue) || options[0];
+    label.innerHTML = sel ? sel.html : "";
+    root.dataset.value = sel ? sel.value : "";
+  };
+}
+
+function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint, itemsKey, barColor, ariaLabel, maxItems }){
   const wrapEl = document.getElementById(wrapId);
   const yearSelect = document.getElementById(yearSelectId);
   const monthSelect = document.getElementById(monthSelectId);
   if (!wrapEl || !yearSelect || !monthSelect) return;
+  enhanceCustomSelect(yearSelect);
+  enhanceCustomSelect(monthSelect);
 
   const THEME_INK = "#2b2b2b", THEME_SUB = "#7a7a7a", THEME_LINE = "#ececec";
   const ROW_H = 28, MIN_H = 60;
@@ -1827,11 +1887,11 @@ function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint
   }
 
   function populateMonthOptions(selected){
-    monthSelect.innerHTML = Array.from({ length: 12 }, (_, i) => {
+    const options = Array.from({ length: 12 }, (_, i) => {
       const m = String(i + 1).padStart(2, "0");
-      return `<option value="${m}">${i + 1} 月</option>`;
-    }).join("");
-    monthSelect.value = selected;
+      return { value: m, html: `${i + 1} 月` };
+    });
+    monthSelect.setOptions(options, selected);
   }
 
   async function load(){
@@ -1845,15 +1905,17 @@ function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       const years = Array.isArray(data.years) && data.years.length ? data.years : [String(now.getFullYear())];
       if (!yearSelect.value){
-        yearSelect.innerHTML = years.map((y) => `<option value="${y}">${y} 年</option>`).join("");
-        yearSelect.value = years.includes(year) ? year : years[0];
+        const yearOptions = years.map((y) => ({ value: y, html: `${y} 年` }));
+        const selectedYear = years.includes(year) ? year : years[0];
+        yearSelect.setOptions(yearOptions, selectedYear);
         populateMonthOptions(month);
         if (yearSelect.value !== year){
           load();
           return;
         }
       }
-      renderChart(Array.isArray(data[itemsKey]) ? data[itemsKey] : []);
+      const items = Array.isArray(data[itemsKey]) ? data[itemsKey] : [];
+      renderChart(maxItems ? items.slice(0, maxItems) : items);
     } catch(e){
       console.error(e);
       wrapEl.textContent = "載入失敗，請稍後再試";
@@ -1872,13 +1934,97 @@ function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint
   observer.observe(wrapEl);
 }
 
+// 首頁「查詢量趨勢」：近 12 個月查詢次數 / 結果數雙折線圖，資料來自公開端點 /publicSearchStats。
+(function setupSearchTrend(){
+  const wrapEl = document.getElementById("searchTrendWrap");
+  if (!wrapEl) return;
+
+  const THEME_INK = "#2b2b2b", THEME_SUB = "#7a7a7a", THEME_LINE = "#ececec";
+  const CHART_MONTHS = 12;
+
+  function currentMonthKey(){ return new Date().toISOString().slice(0, 7); }
+  function addMonths(monthStr, delta){
+    const [y, m] = monthStr.split("-").map(Number);
+    const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  }
+  function monthTickLabel(d){
+    const [yyyy, mm] = d.month.split("-");
+    return [yyyy, mm];
+  }
+  function buildWindow(monthly, monthlyResults, endMonth){
+    const months = [];
+    for (let i = CHART_MONTHS - 1; i >= 0; i--) months.push(addMonths(endMonth, -i));
+    return months.map((m) => ({ month: m, count: monthly[m] || 0, resultCount: monthlyResults[m] || 0 }));
+  }
+
+  async function load(){
+    try{
+      await loadChartJs();
+      const res = await fetch(`${WORKER_BASE}/publicSearchStats`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      const chartData = buildWindow(data.monthly || {}, data.monthlyResults || {}, currentMonthKey());
+      wrapEl.innerHTML = "<canvas></canvas>";
+      const canvas = wrapEl.querySelector("canvas");
+      canvas.setAttribute("role", "img");
+      canvas.setAttribute("aria-label", `近 ${CHART_MONTHS} 個月查詢次數與查詢結果數趨勢`);
+      new Chart(canvas, {
+        type: "line",
+        data: {
+          labels: chartData.map(monthTickLabel),
+          datasets: [
+            { label: "查詢次數", data: chartData.map((d) => d.count), borderColor: "#2a78d6", backgroundColor: "#2a78d6", yAxisID: "yA", tension: 0.3, pointRadius: 4, pointHoverRadius: 5, borderWidth: 3 },
+            { label: "結果數", data: chartData.map((d) => d.resultCount), borderColor: "#eb6834", backgroundColor: "#eb6834", yAxisID: "yB", tension: 0.3, pointRadius: 4, pointHoverRadius: 5, borderWidth: 3 },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          aspectRatio: 560 / 210,
+          animation: { duration: 280 },
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: THEME_INK, titleColor: "#fff", bodyColor: "#fff",
+              titleFont: { size: 11, weight: "700" }, bodyFont: { size: 11 },
+              padding: 8, cornerRadius: 8, displayColors: false,
+              callbacks: {
+                title: (items) => chartData[items[0].dataIndex].month,
+                label: (item) => `${item.dataset.label} ${item.formattedValue}`,
+              },
+            },
+          },
+          scales: {
+            x: { grid: { display: false }, ticks: { color: THEME_SUB, font: { size: 9 } } },
+            yA: { position: "left", beginAtZero: true, ticks: { color: "#2a78d6", font: { size: 9 }, count: 5, precision: 0, callback: (v) => Math.round(v) }, grid: { color: THEME_LINE } },
+            yB: { position: "right", beginAtZero: true, ticks: { color: "#eb6834", font: { size: 9 }, count: 5, precision: 0, callback: (v) => Math.round(v) }, grid: { display: false } },
+          },
+        },
+      });
+    } catch(e){
+      console.error(e);
+      wrapEl.textContent = "載入失敗，請稍後再試";
+    }
+  }
+
+  const observer = new IntersectionObserver((entries) => {
+    if (entries.some((e) => e.isIntersecting)){
+      observer.disconnect();
+      load();
+    }
+  }, { rootMargin: "200px" });
+  observer.observe(wrapEl);
+})();
+
 setupPublicRankingStats({
   wrapId: "branchStatsWrap", yearSelectId: "branchStatsYear", monthSelectId: "branchStatsMonth",
-  endpoint: "publicBranchStats", itemsKey: "branches", barColor: "#4a90d9", ariaLabel: "分店查詢次數排行",
+  endpoint: "publicBranchStats", itemsKey: "branches", barColor: "#4a90d9", ariaLabel: "分店查詢次數排行", maxItems: 10,
 });
 setupPublicRankingStats({
   wrapId: "courseStatsWrap", yearSelectId: "courseStatsYear", monthSelectId: "courseStatsMonth",
-  endpoint: "publicCourseStats", itemsKey: "courses", barColor: "#8a6fb3", ariaLabel: "課程查詢次數排行",
+  endpoint: "publicCourseStats", itemsKey: "courses", barColor: "#8a6fb3", ariaLabel: "課程查詢次數排行", maxItems: 10,
 });
 setupPublicRankingStats({
   wrapId: "teacherStatsWrap", yearSelectId: "teacherStatsYear", monthSelectId: "teacherStatsMonth",

@@ -99,9 +99,6 @@ adminBackBtn.addEventListener("mouseleave", () => adminBackTooltip.classList.rem
     showAdminPage();
     loadAdStats();
     loadSearchTrend();
-    loadTeacherStats();
-    loadCourseStats();
-    loadBranchStats();
     loadFavoriteStats();
   } else {
     clearStoredToken();
@@ -380,105 +377,6 @@ async function loadAdStats(){
 }
 adStatsSelect.addEventListener("change", () => renderAdStatsDetail(adStatsSelect.value));
 adStatusFilter.addEventListener("change", renderAdStatsSelect);
-
-// --- 查詢老師/課程統計：選定年/月，畫出當月查詢次數前 15 名的橫向長條圖 ---
-const MONTH_OPTIONS = Array.from({ length: 12 }, (_, i) => {
-  const m = pad2(i + 1);
-  return { value: m, html: `${i + 1} 月` };
-});
-
-const TBAR_ROW_H = 28, TBAR_MIN_H = 60;
-
-function renderRankingBarChart(wrapEl, chartRef, items, barColor, emptyText, ariaLabel){
-  if (chartRef.instance){ chartRef.instance.destroy(); chartRef.instance = null; }
-  if (!items.length){
-    wrapEl.style.height = "";
-    wrapEl.textContent = emptyText;
-    return;
-  }
-  wrapEl.style.height = `${Math.max(TBAR_MIN_H, items.length * TBAR_ROW_H)}px`;
-  wrapEl.innerHTML = "<canvas></canvas>";
-  const canvas = wrapEl.querySelector("canvas");
-  canvas.setAttribute("role", "img");
-  canvas.setAttribute("aria-label", ariaLabel);
-  chartRef.instance = new Chart(canvas, {
-    type: "bar",
-    data: {
-      labels: items.map((t) => t.name),
-      datasets: [{ data: items.map((t) => t.count), backgroundColor: barColor, borderRadius: 4, barThickness: TBAR_ROW_H * 0.55 }],
-    },
-    options: {
-      indexAxis: "y",
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: { duration: 280 },
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: THEME_INK, titleColor: "#fff", bodyColor: "#fff",
-          titleFont: { size: 11, weight: "700" }, bodyFont: { size: 11 },
-          padding: 8, cornerRadius: 8, displayColors: false,
-        },
-      },
-      scales: {
-        x: { beginAtZero: true, grid: { color: THEME_LINE }, ticks: { color: THEME_SUB, font: { size: 10 }, precision: 0 } },
-        y: { grid: { display: false }, ticks: { color: THEME_INK, font: { size: 12, weight: "600" } } },
-      },
-    },
-  });
-}
-
-// 老師/課程統計面板共用同一套「年/月下拉 + 排行長條圖」邏輯，用 config 區分端點/欄位/顏色。
-function setupRankingStatsPanel({ yearSelectId, monthSelectId, wrapId, endpoint, itemsKey, barColor, emptyText, ariaLabel }){
-  const yearSelect = document.getElementById(yearSelectId);
-  const monthSelect = document.getElementById(monthSelectId);
-  const wrapEl = document.getElementById(wrapId);
-  enhanceCustomSelect(yearSelect);
-  enhanceCustomSelect(monthSelect);
-  monthSelect.setOptions(MONTH_OPTIONS, pad2(new Date().getMonth() + 1));
-  const chartRef = { instance: null };
-
-  async function load(){
-    const year = yearSelect.value || String(new Date().getFullYear());
-    const month = monthSelect.value || pad2(new Date().getMonth() + 1);
-    try{
-      const res = await fetch(`${WORKER_BASE}/${endpoint}?token=${encodeURIComponent(getStoredToken())}&year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-      const years = Array.isArray(data.years) && data.years.length ? data.years : [String(new Date().getFullYear())];
-      if (!yearSelect.value){
-        yearSelect.setOptions(years.map((y) => ({ value: y, html: `${y} 年` })), years.includes(year) ? year : years[0]);
-        if (yearSelect.value !== year){
-          load();
-          return;
-        }
-      }
-      renderRankingBarChart(wrapEl, chartRef, Array.isArray(data[itemsKey]) ? data[itemsKey] : [], barColor, emptyText, ariaLabel);
-    } catch(e){
-      console.error(e);
-      wrapEl.textContent = "載入失敗，請重新登入";
-    }
-  }
-  yearSelect.addEventListener("change", load);
-  monthSelect.addEventListener("change", load);
-  return load;
-}
-
-const loadTeacherStats = setupRankingStatsPanel({
-  yearSelectId: "teacherYearSelect", monthSelectId: "teacherMonthSelect", wrapId: "teacherStatsWrap",
-  endpoint: "teacherStats", itemsKey: "teachers",
-  barColor: "#c9922e", emptyText: "這個月沒有查詢紀錄", ariaLabel: "老師查詢次數排行",
-});
-const loadCourseStats = setupRankingStatsPanel({
-  yearSelectId: "courseYearSelect", monthSelectId: "courseMonthSelect", wrapId: "courseStatsWrap",
-  endpoint: "courseStats", itemsKey: "courses",
-  barColor: "#8a6fb3", emptyText: "這個月沒有查詢紀錄", ariaLabel: "課程查詢次數排行",
-});
-const loadBranchStats = setupRankingStatsPanel({
-  yearSelectId: "branchYearSelect", monthSelectId: "branchMonthSelect", wrapId: "branchStatsWrap",
-  endpoint: "branchStats", itemsKey: "branches",
-  barColor: "#4a90d9", emptyText: "這個月沒有查詢紀錄", ariaLabel: "分店查詢次數排行",
-});
 
 // --- 查詢量趨勢：近 12 個月每月「查詢次數」與「查詢結果數」，跟廣告曝光/點擊折線圖同一套雙 Y 軸座標系統，
 // 但只有一張圖、不能翻頁。

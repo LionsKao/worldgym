@@ -46,9 +46,11 @@ D1(`worldgym-schedule`)裡的 table,完整欄位定義以 [`worker/schema.sql`](
 | `reminders` | 課前推播提醒的登記紀錄與發送狀態 |
 | `ads` | 首頁廣告輪播內容與上下架時間 |
 | `ad_events` | 廣告曝光/點擊打點(admin.html 廣告報表用) |
-| `teacher_search_events` / `course_search_events` / `branch_search_events` | 老師/課程/分店的查詢次數打點(admin.html 排行榜報表用) |
+| `teacher_search_events` / `course_search_events` / `branch_search_events` | 老師/課程/分店的查詢次數打點(首頁公開排行報表 + admin.html 查詢報表用) |
 | `search_events` | 整體查詢次數與查詢結果數打點(admin.html 查詢趨勢報表用) |
 | `favorite_events` | 「我的最愛」建立/使用打點,用匿名 `clientId` 估算人數(admin.html 最愛報表用) |
+
+**時間戳記一律用台灣時間(`+08:00`)**,不是 UTC——`createdAt`/`updatedAt`/`scrapedAt` 都是位移 8 小時再貼 `+08:00` 後綴的 ISO 字串(見 `worker/src/index.js`/`scrape.js`/`reminders.js` 的 `nowTaiwanIso()`),報表的「這個月」預設值也是用台灣時間判斷,才不會在台灣午夜前後 8 小時內把「這個月」誤判成上個月。例外是 `ads.startAt`/`endAt`,這是後台手動填的排程時間,維持既有的 UTC(`Z`)格式,跟事件打點時間意義不同。
 
 ## 🔔 推播提醒(PWA)
 
@@ -76,20 +78,27 @@ npx wrangler d1 execute worldgym-schedule --remote --command="UPDATE ads SET ena
 
 ## 📊 後台報表
 
-`admin.html` 登入後有 6 個報表面板,全部用 [Chart.js](https://www.chartjs.org/)(vendor 進 `vendor/chart.umd.min.js`,不吃 CDN)畫圖:
+`admin.html` 登入後有 3 個報表面板,全部用 [Chart.js](https://www.chartjs.org/)(vendor 進 `vendor/chart.umd.min.js`,不吃 CDN)畫圖:
 
 | 面板 | 資料來源 | 內容 |
 | --- | --- | --- |
 | 廣告 | `ad_events` | 每則廣告(或全部加總)近 12 個月的曝光/點擊趨勢,可翻頁切換月份視窗 |
-| 老師 / 課程 / 分店 | `teacher_search_events` / `course_search_events` / `branch_search_events` | 指定年月的查詢次數排行(前 15 名) |
 | 查詢 | `search_events` | 近 12 個月「查詢次數」與「查詢結果數」趨勢(沒結果或結果太多沒顯示也算一次查詢) |
 | 最愛 | `favorite_events` | 累積建立人數(用匿名 `clientId` 去重估算)+ 累積使用次數,近 12 個月趨勢 |
 
 網站沒有帳號系統,所以「幾個人」的統計(例如最愛建立人數)是靠前端在 `localStorage` 存一個 `crypto.randomUUID()` 產生的匿名 id(`wg_client_id`),打點時帶著這個 id 送到 worker,後端用 `COUNT(DISTINCT clientId)` 估算——這個 id 不會對應到任何真實身分,純粹統計用。
 
-新增報表面板的話,流程大致是:worker 開一個 `/trackXxx` 打點端點 + 一個 `/xxxStats` 給 admin 讀,新增對應的 D1 table(記得同步寫 migration),前端在對應的使用者動作發生時打 `/trackXxx`,admin.js 用共用的 `createDualLineChart`(雙 Y 軸折線圖)或 `renderRankingBarChart`(排行長條圖)畫出來。
+新增報表面板的話,流程大致是:worker 開一個 `/trackXxx` 打點端點 + 一個 `/xxxStats` 給 admin 讀,新增對應的 D1 table(記得同步寫 migration),前端在對應的使用者動作發生時打 `/trackXxx`,admin.js 用共用的 `createDualLineChart`(雙 Y 軸折線圖)畫出來。
 
 這些統計都不蒐集可識別個人身份的資料,GA4 事件跟這裡的匿名 `clientId` 都只用來看使用量,不會對應到任何真實使用者身分。
+
+## 🏆 首頁公開排行報表
+
+老師/課程/分店的查詢次數排行改放在**首頁**(`index.html` 的「通知」分頁下方),不需要登入,任何人都看得到——因為這幾個名字本來就是課表上的公開資訊,不含個資。對應 worker 端點是 `/publicTeacherStats`、`/publicCourseStats`、`/publicBranchStats`(邏輯跟 admin 版的 `/teacherStats` 等一樣,只是不驗證 token)。
+
+- 前端用 `script.js` 的 `setupPublicRankingStats()` 共用一份邏輯畫三張排行長條圖(Chart.js),每張只顯示**前 10 名**(`maxItems: 10`)。
+- 年/月選單不是原生 `<select>`,是自製的 `.custom-select` 元件(`enhanceCustomSelect()`),外觀跟按鈕一致,月份選單排成 4×3 格狀;跟 `admin.html` 的廣告篩選下拉用同一套元件慣例。
+- 排行數字是使用者真的送出查詢時即時 +1(見 `/trackTeacherSearch` 等打點端點),不是跟著爬蟲排程更新,所以是即時的;跟爬蟲排程更新頻率無關的是課表本身(`classes` table)。
 
 ## 🛡️ /queryClasses 防濫用
 

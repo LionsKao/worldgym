@@ -18,6 +18,21 @@ const ALLOWED_ORIGINS = [
   "https://worldgym-web.lions2100.workers.dev",
 ];
 
+// D1 裡的事件打點時間戳一律用台灣時間（+8），跟 scrape.js / reminders.js 的 nowTaiwanIso() 同一套慣例——
+// 純位移 8 小時再貼 +08:00 後綴，這樣 createdAt 才能跟其他表的時間戳直接用字串比較/排序。
+// 注意：/ads 的 startAt/endAt 是既有 UTC('Z') 排程欄位，不在這個慣例內，比較時仍用 UTC now。
+function nowTaiwanIso() {
+  const d = new Date(Date.now() + 8 * 3600 * 1000);
+  return d.toISOString().replace("Z", "+08:00");
+}
+
+// 回傳台灣「現在」的年/月，用來當作統計報表沒帶 year/month 參數時的預設值，
+// 避免用 UTC 現在時間判斷「這個月」在台灣午夜前後 8 小時內會跟資料庫實際存的月份對不起來。
+function currentTaiwanYearMonth() {
+  const d = new Date(Date.now() + 8 * 3600 * 1000);
+  return { year: String(d.getUTCFullYear()), month: String(d.getUTCMonth() + 1).padStart(2, "0") };
+}
+
 function corsHeaders(origin) {
   const headers = { "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, X-Query-Token" };
   if (ALLOWED_ORIGINS.includes(origin)) headers["Access-Control-Allow-Origin"] = origin;
@@ -147,7 +162,7 @@ export default {
           return json({ error: "unknown adId" }, 400, origin);
         }
         await env.DB.prepare("INSERT INTO ad_events (adId, type, createdAt) VALUES (?, ?, ?)")
-          .bind(adId, type, new Date().toISOString())
+          .bind(adId, type, nowTaiwanIso())
           .run();
         return json({ ok: true }, 200, origin);
       }
@@ -161,7 +176,7 @@ export default {
           return json({ error: "invalid teacher" }, 400, origin);
         }
         await env.DB.prepare("INSERT INTO teacher_search_events (teacherName, createdAt) VALUES (?, ?)")
-          .bind(teacher.trim(), new Date().toISOString())
+          .bind(teacher.trim(), nowTaiwanIso())
           .run();
         return json({ ok: true }, 200, origin);
       }
@@ -174,7 +189,7 @@ export default {
           return json({ error: "invalid course" }, 400, origin);
         }
         await env.DB.prepare("INSERT INTO course_search_events (courseName, createdAt) VALUES (?, ?)")
-          .bind(course.trim(), new Date().toISOString())
+          .bind(course.trim(), nowTaiwanIso())
           .run();
         return json({ ok: true }, 200, origin);
       }
@@ -187,7 +202,7 @@ export default {
           return json({ error: "invalid branch" }, 400, origin);
         }
         await env.DB.prepare("INSERT INTO branch_search_events (branchName, createdAt) VALUES (?, ?)")
-          .bind(branch.trim(), new Date().toISOString())
+          .bind(branch.trim(), nowTaiwanIso())
           .run();
         return json({ ok: true }, 200, origin);
       }
@@ -198,7 +213,7 @@ export default {
         const body = await req.json().catch(() => ({}));
         const resultCount = Number.isInteger(body?.resultCount) && body.resultCount >= 0 ? body.resultCount : 0;
         await env.DB.prepare("INSERT INTO search_events (createdAt, resultCount) VALUES (?, ?)")
-          .bind(new Date().toISOString(), resultCount)
+          .bind(nowTaiwanIso(), resultCount)
           .run();
         return json({ ok: true }, 200, origin);
       }
@@ -215,7 +230,7 @@ export default {
           return json({ error: "invalid type" }, 400, origin);
         }
         await env.DB.prepare("INSERT INTO favorite_events (clientId, type, createdAt) VALUES (?, ?, ?)")
-          .bind(clientId.trim(), type, new Date().toISOString())
+          .bind(clientId.trim(), type, nowTaiwanIso())
           .run();
         return json({ ok: true }, 200, origin);
       }
@@ -259,9 +274,9 @@ export default {
         if (url.searchParams.get("token") !== env.MANUAL_SCRAPE_TOKEN) {
           return json({ error: "forbidden" }, 403, origin);
         }
-        const now = new Date();
-        const year = url.searchParams.get("year") || String(now.getUTCFullYear());
-        const month = (url.searchParams.get("month") || String(now.getUTCMonth() + 1).padStart(2, "0")).padStart(2, "0");
+        const nowTW = currentTaiwanYearMonth();
+        const year = url.searchParams.get("year") || nowTW.year;
+        const month = (url.searchParams.get("month") || nowTW.month).padStart(2, "0");
         const monthKey = `${year}-${month}`;
 
         const [{ results: years }, { results: teachers }] = await Promise.all([
@@ -286,9 +301,9 @@ export default {
         if (url.searchParams.get("token") !== env.MANUAL_SCRAPE_TOKEN) {
           return json({ error: "forbidden" }, 403, origin);
         }
-        const now = new Date();
-        const year = url.searchParams.get("year") || String(now.getUTCFullYear());
-        const month = (url.searchParams.get("month") || String(now.getUTCMonth() + 1).padStart(2, "0")).padStart(2, "0");
+        const nowTW = currentTaiwanYearMonth();
+        const year = url.searchParams.get("year") || nowTW.year;
+        const month = (url.searchParams.get("month") || nowTW.month).padStart(2, "0");
         const monthKey = `${year}-${month}`;
 
         const [{ results: years }, { results: courses }] = await Promise.all([
@@ -313,9 +328,9 @@ export default {
         if (url.searchParams.get("token") !== env.MANUAL_SCRAPE_TOKEN) {
           return json({ error: "forbidden" }, 403, origin);
         }
-        const now = new Date();
-        const year = url.searchParams.get("year") || String(now.getUTCFullYear());
-        const month = (url.searchParams.get("month") || String(now.getUTCMonth() + 1).padStart(2, "0")).padStart(2, "0");
+        const nowTW = currentTaiwanYearMonth();
+        const year = url.searchParams.get("year") || nowTW.year;
+        const month = (url.searchParams.get("month") || nowTW.month).padStart(2, "0");
         const monthKey = `${year}-${month}`;
 
         const [{ results: years }, { results: branches }] = await Promise.all([
@@ -335,11 +350,25 @@ export default {
         }, 200, origin);
       }
 
+      // index.html 公開版查詢量趨勢，邏輯跟 /searchStats 一樣，但不驗證 token（僅回傳每月聚合次數，不含個資）。
+      if (url.pathname === "/publicSearchStats" && req.method === "GET") {
+        const { results } = await env.DB.prepare(
+          "SELECT substr(createdAt, 1, 7) AS month, COUNT(*) AS cnt, SUM(resultCount) AS resultSum FROM search_events GROUP BY month"
+        ).all();
+        const monthly = {};
+        const monthlyResults = {};
+        for (const row of results) {
+          monthly[row.month] = row.cnt;
+          monthlyResults[row.month] = row.resultSum || 0;
+        }
+        return json({ monthly, monthlyResults }, 200, origin);
+      }
+
       // index.html 公開版老師查詢排行，邏輯跟 /teacherStats 一樣，但不驗證 token（老師名字本來就是課表上的公開資訊）。
       if (url.pathname === "/publicTeacherStats" && req.method === "GET") {
-        const now = new Date();
-        const year = url.searchParams.get("year") || String(now.getUTCFullYear());
-        const month = (url.searchParams.get("month") || String(now.getUTCMonth() + 1).padStart(2, "0")).padStart(2, "0");
+        const nowTW = currentTaiwanYearMonth();
+        const year = url.searchParams.get("year") || nowTW.year;
+        const month = (url.searchParams.get("month") || nowTW.month).padStart(2, "0");
         const monthKey = `${year}-${month}`;
 
         const [{ results: years }, { results: teachers }] = await Promise.all([
@@ -361,9 +390,9 @@ export default {
 
       // index.html 公開版課程查詢排行，邏輯跟 /courseStats 一樣，但不驗證 token（僅回傳聚合次數，不含個資）。
       if (url.pathname === "/publicCourseStats" && req.method === "GET") {
-        const now = new Date();
-        const year = url.searchParams.get("year") || String(now.getUTCFullYear());
-        const month = (url.searchParams.get("month") || String(now.getUTCMonth() + 1).padStart(2, "0")).padStart(2, "0");
+        const nowTW = currentTaiwanYearMonth();
+        const year = url.searchParams.get("year") || nowTW.year;
+        const month = (url.searchParams.get("month") || nowTW.month).padStart(2, "0");
         const monthKey = `${year}-${month}`;
 
         const [{ results: years }, { results: courses }] = await Promise.all([
@@ -385,9 +414,9 @@ export default {
 
       // index.html 公開版分店查詢排行，邏輯跟 /branchStats 一樣，但不驗證 token（僅回傳聚合次數，不含個資）。
       if (url.pathname === "/publicBranchStats" && req.method === "GET") {
-        const now = new Date();
-        const year = url.searchParams.get("year") || String(now.getUTCFullYear());
-        const month = (url.searchParams.get("month") || String(now.getUTCMonth() + 1).padStart(2, "0")).padStart(2, "0");
+        const nowTW = currentTaiwanYearMonth();
+        const year = url.searchParams.get("year") || nowTW.year;
+        const month = (url.searchParams.get("month") || nowTW.month).padStart(2, "0");
         const monthKey = `${year}-${month}`;
 
         const [{ results: years }, { results: branches }] = await Promise.all([
@@ -398,7 +427,7 @@ export default {
             WHERE substr(createdAt, 1, 7) = ?
             GROUP BY branchName
             ORDER BY cnt DESC
-            LIMIT 15
+            LIMIT 10
           `).bind(monthKey).all(),
         ]);
         return json({

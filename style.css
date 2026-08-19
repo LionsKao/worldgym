@@ -74,7 +74,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 }
 .section-btn{
   display:inline-flex; align-items:center; box-sizing:border-box; height:31px;
-  font-size:11.5px; padding:0 12px; border:1.5px solid var(--line);
+  font-size:12.5px; padding:0 12px; border:1.5px solid var(--line);
   border-radius:999px; background:var(--paper); color:var(--sub); cursor:pointer; font-weight:700;
   font-family:inherit;
 }
@@ -149,11 +149,50 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 .empty-hint{ color:var(--sub); font-size:12px; padding:6px 2px; }
 
 .branch-stats-filter-row{ display:flex; gap:8px; margin-bottom:14px; }
-.branch-stats-select{
-  flex:1; min-width:0; height:31px; padding:0 10px; border:1.5px solid var(--line); border-radius:999px;
-  font-family:inherit; font-size:12.5px; font-weight:700; color:var(--ink); background:var(--paper); cursor:pointer;
-}
+.branch-stats-select{ flex:1; min-width:0; }
 .branch-stats-wrap{ font-size:12.5px; overflow:hidden; }
+
+/* 自製下拉選單：外觀跟 .section-btn 一致，但不用原生 <select>（原生下拉的箭頭位置/樣式沒辦法客製）。 */
+.custom-select{ position:relative; }
+.custom-select-trigger{
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  width:100%; height:31px; box-sizing:border-box; font-size:12.5px; padding:0 12px;
+  border:1.5px solid var(--line); border-radius:999px; background:var(--paper);
+  font-family:inherit; font-weight:700; color:var(--ink);
+  cursor:pointer; text-align:left;
+}
+.custom-select-trigger:focus{ outline:none; border-color:var(--accent); }
+.custom-select.open .custom-select-trigger{ border-color:var(--accent); }
+.custom-select-label{ flex:1; min-width:0; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.custom-select-arrow{ flex:none; font-size:11px; color:var(--sub); transition:transform .15s ease; }
+.custom-select.open .custom-select-arrow{ transform:rotate(180deg); }
+.custom-select-menu{
+  display:none; position:absolute; top:calc(100% + 6px); left:0; right:0; z-index:20;
+  background:var(--paper); border:1.5px solid var(--line); border-radius:14px;
+  box-shadow:0 8px 24px rgba(0,0,0,0.12); padding:6px; max-height:240px; overflow-y:auto;
+}
+.custom-select.open .custom-select-menu{ display:block; }
+.custom-select-option{
+  padding:8px 12px; border-radius:10px; font-size:12.5px; font-weight:600; color:var(--ink);
+  cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:center;
+}
+.custom-select-option:hover{ background:rgba(0,0,0,0.05); }
+.custom-select-option.selected{ color:var(--accent); background:rgba(66,133,244,0.1); }
+/* 月份選單固定 12 個選項，排成 4 欄 3 列的格狀，不要拉成一條長長的直式列表。 */
+#branchStatsMonth.open .custom-select-menu,
+#courseStatsMonth.open .custom-select-menu,
+#teacherStatsMonth.open .custom-select-menu{
+  display:grid; grid-template-columns:repeat(4, 1fr); gap:4px;
+}
+#branchStatsMonth .custom-select-option,
+#courseStatsMonth .custom-select-option,
+#teacherStatsMonth .custom-select-option{
+  padding:12px 3px;
+}
+
+.stats-chart-legend{ display:flex; justify-content:center; gap:16px; margin-top:14px; font-size:12px; color:var(--sub); }
+.stats-chart-legend-item{ display:flex; align-items:center; gap:6px; }
+.stats-chart-legend-swatch{ width:14px; height:5px; border-radius:3px; display:inline-block; }
 .fav-empty-hint{ flex:1; min-width:0; font-size:12.5px; }
 
 .notify-hint{ padding:10px 2px; }
@@ -241,8 +280,9 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 #filterForm, #resultView, #mailView{ transition:opacity .2s ease; }
 #filterForm.view-fade-in, #resultView.view-fade-in, #mailView.view-fade-in{ opacity:0; }
 .tooltip-wrap{ position:relative; display:inline-flex; }
+.tooltip-wrap.hidden{ display:none; }
 .hint-tooltip, .pill-warn-tooltip{
-  background:var(--ink); color:#fff; font-size:12.5px; font-weight:700;
+  background:#3a3a4a; color:#fff; font-size:12.5px; font-weight:700;
   padding:8px 14px; border-radius:12px; white-space:nowrap; z-index:600;
   box-shadow:0 6px 16px rgba(0,0,0,0.18);
   opacity:0; visibility:hidden; transform:translate(-50%, 6px);
@@ -253,7 +293,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 .pill-warn-tooltip{ position:fixed; pointer-events:none; }
 .hint-tooltip::after, .pill-warn-tooltip::after{
   content:""; position:absolute; top:100%; left:var(--arrow-left, 50%); transform:translateX(-50%);
-  border-width:6px 6px 0 6px; border-style:solid; border-color:var(--ink) transparent transparent transparent;
+  border-width:6px 6px 0 6px; border-style:solid; border-color:#3a3a4a transparent transparent transparent;
 }
 .hint-tooltip.visible, .pill-warn-tooltip.visible{ opacity:1; visibility:visible; transform:translate(-50%, 0); }
 .pill-warn-tooltip.wrap{ white-space:normal; max-width:240px; text-align:center; line-height:1.4; }
@@ -332,9 +372,11 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
   display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-start; gap:12px;
   color:var(--sub); font-size:14px; font-weight:600; line-height:1.6;
 }
-.mail-disclaimer .section-tag{ flex-shrink:0; cursor:default; }
+.mail-disclaimer .section-tag{ flex-shrink:0; cursor:default; font-size:12.5px; }
+.mail-disclaimer .section-tag i{ font-size:13px; }
 #githubLinkIcon, #adminLinkIcon, #adminLoginBackBtn, #officialSiteLink{ cursor:pointer; text-decoration:none; }
-#qrCodeBtn, #copyUrlBtn, #privacyBtn{ border:none; font-family:inherit; cursor:pointer; }
+#qrCodeBtn, #copyUrlBtn, #privacyBtn, #notifyInfoBtn{ border:none; font-family:inherit; cursor:pointer; }
+#notifyInfoBtn{ background:var(--paper); color:var(--accent); border:1.5px solid var(--line); }
 .qr-tooltip{ padding:10px; background:#fff; }
 .qr-tooltip img{ display:block; width:132px; height:132px; }
 .qr-tooltip::after{ border-color:#fff transparent transparent transparent; }
@@ -396,7 +438,6 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
   flex-shrink:0; color:var(--sub); cursor:pointer; transition:color .2s ease, transform .1s ease;
   padding:10px; margin:-10px; box-sizing:content-box;
 }
-.bell-icon:hover{ color:#f0b400; }
 .bell-icon.armed{ color:#f0b400; }
 .bell-icon.busy{ opacity:.5; pointer-events:none; }
 #reminderView{ transition:opacity .2s ease; }

@@ -24,7 +24,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
-<link rel="stylesheet" href="style.css?v=61">
+<link rel="stylesheet" href="style.css?v=72">
 <style>#loadingOverlay{position:fixed;top:0;left:0;width:100%;height:100%;background:#fff;z-index:9999;}</style>
 </head>
 <body>
@@ -140,24 +140,47 @@
 
   </div>
 
+  <div class="sheet hidden" id="searchTrendSheet">
+    <div class="section-head">
+      <span class="section-tag" aria-label="查詢量趨勢" style="--accent:#3a3a4a"><i class="fa-solid fa-chart-line"></i><i class="fa-solid fa-fw fa-magnifying-glass"></i></span>
+    </div>
+    <div id="searchTrendWrap" class="branch-stats-wrap"><div class="empty-hint">讀取中…</div></div>
+    <div class="stats-chart-legend">
+      <span class="stats-chart-legend-item"><span class="stats-chart-legend-swatch" style="background:#2a78d6"></span>查詢次數</span>
+      <span class="stats-chart-legend-item"><span class="stats-chart-legend-swatch" style="background:#eb6834"></span>結果數</span>
+    </div>
+  </div>
+
   <div class="sheet hidden" id="branchStatsSheet">
     <div class="section-head">
       <span class="section-tag" aria-label="分店查詢排行" style="--accent:#4a90d9"><i class="fa-solid fa-chart-line"></i><i class="fa-solid fa-fw fa-location-dot"></i></span>
     </div>
     <div class="branch-stats-filter-row">
-      <select id="branchStatsYear" class="branch-stats-select" aria-label="年"></select>
-      <select id="branchStatsMonth" class="branch-stats-select" aria-label="月"></select>
+      <div id="branchStatsYear" class="custom-select branch-stats-select" aria-label="年">
+        <button type="button" class="custom-select-trigger"><span class="custom-select-label"></span><i class="fa-solid fa-chevron-down custom-select-arrow"></i></button>
+        <div class="custom-select-menu"></div>
+      </div>
+      <div id="branchStatsMonth" class="custom-select branch-stats-select" aria-label="月">
+        <button type="button" class="custom-select-trigger"><span class="custom-select-label"></span><i class="fa-solid fa-chevron-down custom-select-arrow"></i></button>
+        <div class="custom-select-menu"></div>
+      </div>
     </div>
     <div id="branchStatsWrap" class="branch-stats-wrap"><div class="empty-hint">讀取中…</div></div>
   </div>
 
   <div class="sheet hidden" id="courseStatsSheet">
     <div class="section-head">
-      <span class="section-tag" aria-label="課程查詢排行" style="--accent:#8a6fb3"><i class="fa-solid fa-chart-line"></i><i class="fa-solid fa-fw fa-dumbbell"></i></span>
+      <span class="section-tag" aria-label="課程查詢排行" style="--accent:#8a6fb3"><i class="fa-solid fa-chart-line"></i><i class="fa-solid fa-fw fa-face-smile"></i></span>
     </div>
     <div class="branch-stats-filter-row">
-      <select id="courseStatsYear" class="branch-stats-select" aria-label="年"></select>
-      <select id="courseStatsMonth" class="branch-stats-select" aria-label="月"></select>
+      <div id="courseStatsYear" class="custom-select branch-stats-select" aria-label="年">
+        <button type="button" class="custom-select-trigger"><span class="custom-select-label"></span><i class="fa-solid fa-chevron-down custom-select-arrow"></i></button>
+        <div class="custom-select-menu"></div>
+      </div>
+      <div id="courseStatsMonth" class="custom-select branch-stats-select" aria-label="月">
+        <button type="button" class="custom-select-trigger"><span class="custom-select-label"></span><i class="fa-solid fa-chevron-down custom-select-arrow"></i></button>
+        <div class="custom-select-menu"></div>
+      </div>
     </div>
     <div id="courseStatsWrap" class="branch-stats-wrap"><div class="empty-hint">讀取中…</div></div>
   </div>
@@ -167,8 +190,14 @@
       <span class="section-tag" aria-label="老師查詢排行" style="--accent:#c9922e"><i class="fa-solid fa-chart-line"></i><i class="fa-solid fa-fw fa-user"></i></span>
     </div>
     <div class="branch-stats-filter-row">
-      <select id="teacherStatsYear" class="branch-stats-select" aria-label="年"></select>
-      <select id="teacherStatsMonth" class="branch-stats-select" aria-label="月"></select>
+      <div id="teacherStatsYear" class="custom-select branch-stats-select" aria-label="年">
+        <button type="button" class="custom-select-trigger"><span class="custom-select-label"></span><i class="fa-solid fa-chevron-down custom-select-arrow"></i></button>
+        <div class="custom-select-menu"></div>
+      </div>
+      <div id="teacherStatsMonth" class="custom-select branch-stats-select" aria-label="月">
+        <button type="button" class="custom-select-trigger"><span class="custom-select-label"></span><i class="fa-solid fa-chevron-down custom-select-arrow"></i></button>
+        <div class="custom-select-menu"></div>
+      </div>
     </div>
     <div id="teacherStatsWrap" class="branch-stats-wrap"><div class="empty-hint">讀取中…</div></div>
   </div>
@@ -176,6 +205,10 @@
   <div id="reminderView" class="sheet hidden">
     <div class="section-head">
       <span class="section-tag" aria-label="通知" style="--accent:#d99a1b"><i class="fa-solid fa-fw fa-bell"></i></span>
+      <span class="tooltip-wrap" id="notifyInfoBtnWrap">
+        <span class="hint-tooltip wrap" id="notifyInfoTooltip">想使用通知功能？請使用 Safari 開啟，點擊「分享」並「加入主畫面」以開啟 App 模式與通知功能！🔔✨</span>
+        <button type="button" class="section-tag" id="notifyInfoBtn" aria-label="通知說明" style="--accent:#9a9a9a"><i class="fa-solid fa-fw fa-circle-info"></i></button>
+      </span>
     </div>
     <div class="pill-grid" id="reminderGrid" style="display:block; --accent:#d99a1b;"></div>
   </div>
@@ -330,6 +363,6 @@
   </div>
 </div>
 
-<script src="script.js?v=80"></script>
+<script src="script.js?v=88"></script>
 </body>
 </html>
