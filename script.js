@@ -1006,9 +1006,18 @@ function applyFilterState(state){
     const values = new Set(state[name] || []);
     document.querySelectorAll(`input[name="${name}"]`).forEach(input => {
       input.checked = values.has(input.value);
+      if (name === "branch" && input.checked) expandZoneForBranchInput(input);
     });
   });
   updateSubmitState();
+}
+// 套用最愛/分享網址等會直接勾選分店 checkbox 的情境，若該分店所在的地區是折疊狀態，
+// 使用者會看不到自己被選起來的分店，所以要連動展開對應的 zone-group。
+function expandZoneForBranchInput(input){
+  const group = input.closest(".zone-group");
+  const toggle = group?.previousElementSibling;
+  if (!group || !toggle || !toggle.classList.contains("zone-toggle")) return;
+  if (!toggle.classList.contains("expanded")) toggle.click();
 }
 const FUNNY_DEFAULT_FAVORITE_LABELS = [
   "興奮到模糊 🤩",
@@ -1055,6 +1064,9 @@ function renderFavorites(){
     btn.innerHTML = `<i class="fa-solid fa-${fav.icon || "heart"}"></i>${fav.label}`;
     btn.addEventListener("click", () => {
       applyFilterState(fav.state);
+      ["wg_selected_day", "wg_selected_time", "wg_selected_branch", "wg_selected_room", "wg_selected_course", "wg_selected_teacher"].forEach(key => localStorage.removeItem(key));
+      FILTER_GROUPS.forEach(name => saveSelection(`wg_selected_${name}`, [name]));
+      updateResetButtonState();
       trackEventOncePerSession("apply_favorite", fav.label, { favorite_label: fav.label });
       logFavoriteEvent("apply");
       searchTriggerSource = "favorite";
@@ -1102,6 +1114,15 @@ document.getElementById("clearMemoryConfirmBtn").addEventListener("click", () =>
   trackEvent("clear_memory", {});
   localStorage.clear();
   location.reload();
+});
+
+// 頁面載入時課程/老師清單抓取失敗（伺服器或資料庫異常）跳出的提示 modal。
+const serviceErrorModal = document.getElementById("serviceErrorModal");
+function showServiceErrorModal(){
+  serviceErrorModal.classList.remove("hidden");
+}
+document.getElementById("serviceErrorOkBtn").addEventListener("click", () => {
+  serviceErrorModal.classList.add("hidden");
 });
 
 // 課表通知：第一次按灰色鈴鐺、還沒授權通知時彈出的說明 modal。
@@ -1595,13 +1616,6 @@ document.getElementById("mailSendBtn").addEventListener("click", async () => {
 // 抽成獨立函式，讓「使用者按送出」跟「帶網址參數自動查詢」共用同一段邏輯 —
 // 後者需要在畫面切到結果視圖之前都不能露出篩選畫面，見 init() 裡的呼叫方式。
 async function runSearchAndShowResults(state){
-  trackEvent("search_schedule", {
-    branch_count: state.branch.length,
-    has_teacher: state.teacher.length > 0,
-    has_course: state.course.length > 0,
-    day_count: state.day.length,
-    trigger_source: searchTriggerSource,
-  });
   const submitBtn = document.getElementById("scheduleSubmitBtn");
   const submitIcon = submitBtn.querySelector("i");
   submitBtn.disabled = true;
@@ -1618,9 +1632,18 @@ async function runSearchAndShowResults(state){
     } else if (displayedCount > RESULT_COUNT_WARN_LIMIT){
       showPillWarning(submitBtn, "結果太多，請調整篩選條件");
     } else {
-      logTeacherSearches(state.teacher);
-      logCourseSearches(state.course);
-      logBranchSearches((state.branch || []).map(branchSlugToLabel));
+      trackEvent("search_schedule", {
+        branch_count: state.branch.length,
+        has_teacher: state.teacher.length > 0,
+        has_course: state.course.length > 0,
+        day_count: state.day.length,
+        trigger_source: searchTriggerSource,
+      });
+      if (searchTriggerSource !== "favorite"){
+        logTeacherSearches(state.teacher);
+        logCourseSearches(state.course);
+        logBranchSearches((state.branch || []).map(branchSlugToLabel));
+      }
       showResultView();
       history.replaceState(null, "", buildShareUrl(state));
       renderActiveFilters(state);
@@ -1752,6 +1775,7 @@ async function init(){
     console.error(e);
     document.getElementById("courseGrid").innerHTML = '<div class="empty-hint">課程清單讀取失敗，請重新整理頁面再試一次。</div>';
     document.getElementById("teacherGrid").innerHTML = '<div class="empty-hint">老師清單讀取失敗，請重新整理頁面再試一次。</div>';
+    showServiceErrorModal();
   } finally {
     updateResetButtonState();
     // 帶網址參數進來時，遮罩要一路蓋到查詢結果準備好才收掉，

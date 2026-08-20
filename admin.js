@@ -98,7 +98,6 @@ adminBackBtn.addEventListener("mouseleave", () => adminBackTooltip.classList.rem
   if (stored && await verifyToken(stored).catch(() => false)){
     showAdminPage();
     loadAdStats();
-    loadSearchTrend();
     loadFavoriteStats();
   } else {
     clearStoredToken();
@@ -377,36 +376,6 @@ async function loadAdStats(){
 }
 adStatsSelect.addEventListener("change", () => renderAdStatsDetail(adStatsSelect.value));
 adStatusFilter.addEventListener("change", renderAdStatsSelect);
-
-// --- 查詢量趨勢：近 12 個月每月「查詢次數」與「查詢結果數」，跟廣告曝光/點擊折線圖同一套雙 Y 軸座標系統，
-// 但只有一張圖、不能翻頁。
-const searchTrendWrap = document.getElementById("searchTrendWrap");
-
-function buildSearchTrendWindow(monthly, monthlyResults, endMonth){
-  const months = [];
-  for (let i = CHART_MONTHS - 1; i >= 0; i--) months.push(addMonths(endMonth, -i));
-  return months.map((m) => ({ month: m, count: monthly[m] || 0, resultCount: monthlyResults[m] || 0 }));
-}
-
-let searchTrendChartInstance = null;
-
-async function loadSearchTrend(){
-  try{
-    const res = await fetch(`${WORKER_BASE}/searchStats?token=${encodeURIComponent(getStoredToken())}`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-    const data12 = buildSearchTrendWindow(data.monthly || {}, data.monthlyResults || {}, currentMonthKey());
-    if (searchTrendChartInstance){ searchTrendChartInstance.destroy(); searchTrendChartInstance = null; }
-    searchTrendWrap.innerHTML = '<div class="ad-chart-viewport"><canvas></canvas></div>';
-    searchTrendChartInstance = createDualLineChart(searchTrendWrap.querySelector("canvas"), {
-      data: data12, keyA: "count", labelA: "查詢次數", colorA: "#2a78d6", keyB: "resultCount", labelB: "結果數", colorB: "#eb6834",
-      ariaLabel: `近 ${CHART_MONTHS} 個月查詢次數與查詢結果數趨勢`,
-    });
-  } catch(e){
-    console.error(e);
-    searchTrendWrap.textContent = "載入失敗，請重新登入";
-  }
-}
 
 // --- 最愛統計：累積人數/次數用兩個大數字顯示，近 12 個月「建立人數/使用次數」跟其他雙數列折線圖同一套。 ---
 const favoriteStatsSummary = document.getElementById("favoriteStatsSummary");

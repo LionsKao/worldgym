@@ -6,3 +6,4 @@ worker
 hosting
 .claude
 *.log
+.DS_Store

@@ -10,6 +10,13 @@
   gtag('js', new Date());
   gtag('config', 'G-Q7NZN45T0D');
 </script>
+<!-- Facebook Pixel Code -->
+<script>!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+fbq('init', '1037122719034276');
+fbq('track', 'PageView');
+</script>
+<noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=1037122719034276&ev=PageView&noscript=1"/></noscript>
+<!-- End Facebook Pixel Code -->
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 44'%3E%3Ctext x='22' y='19' text-anchor='middle' font-family='sans-serif' font-weight='900' font-size='16' fill='%23e8604c'%3E課表%3C/text%3E%3Ctext x='22' y='38' text-anchor='middle' font-family='sans-serif' font-weight='900' font-size='16' fill='%233a3a4a'%3E查詢%3C/text%3E%3C/svg%3E">
 <title>💪</title>
 <meta name="description" content="課表查詢">
@@ -241,7 +248,7 @@
     <div class="mail-disclaimer">
       <a href="https://www.worldgymtaiwan.com" target="_blank" rel="noopener" class="section-tag" id="officialSiteLink" aria-label="前往 World Gym 官網" style="--accent:var(--coral)"><i class="fa-solid fa-fw fa-globe"></i>世界健身中心官網</a>
       <span class="tooltip-wrap" id="privacyBtnWrap">
-        <span class="hint-tooltip wrap" id="privacyTooltip"><i class="fa-solid fa-fw fa-user-secret"></i> 僅做匿名使用統計，不收集個人資料。<br><i class="fa-solid fa-fw fa-heart"></i> 最愛只會存在你的裝置上。<br><i class="fa-solid fa-fw fa-globe"></i> 課表資料來自 World Gym 官網，僅供參考；<br><i class="fa-solid fa-fw fa-triangle-exclamation"></i> 本站為非官方工具，正確課表請以官網為準。</span>
+        <span class="hint-tooltip wrap" id="privacyTooltip">本站使用 Google Analytics 與 Facebook Pixel 僅進行匿名統計且不收集個人資料。最愛清單僅保存在你的裝置上。課表資料來自 World Gym 官網僅供參考。本站為非官方工具，正確課表請以官網為準。</span>
         <button type="button" class="section-tag" id="privacyBtn" aria-label="隱私說明" style="--accent:#127a76"><i class="fa-solid fa-fw fa-shield-halved"></i>隱私說明</button>
       </span>
       <a class="section-tag" id="githubLinkIcon" href="https://github.com/LionsKao/worldgym" target="_blank" rel="noopener" aria-label="GitHub 原始碼" style="--accent:var(--navy)"><i class="fa-brands fa-fw fa-github"></i>GitHub</a>
@@ -306,6 +313,15 @@
   </div>
 </div>
 
+<div id="serviceErrorModal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <p class="modal-text">伺服器目前發生異常，暫時無法讀取課程與老師資料，請稍後再試一次。</p>
+    <div class="modal-actions">
+      <button type="button" class="modal-btn modal-btn-confirm" id="serviceErrorOkBtn">確定</button>
+    </div>
+  </div>
+</div>
+
 <div id="addFavoriteModal" class="modal-overlay hidden">
   <div class="modal-box fav-modal-box">
     <button type="button" class="modal-close-btn" id="favModalCloseBtn" aria-label="取消"><i class="fa-solid fa-xmark"></i></button>
@@ -363,6 +379,6 @@
   </div>
 </div>
 
-<script src="script.js?v=90"></script>
+<script src="script.js?v=91"></script>
 </body>
 </html>

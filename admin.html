@@ -55,8 +55,8 @@
 
   .ad-stats-filter-row{ display:flex; gap:8px; margin-bottom:14px; }
   #teacherStatsWrap, #courseStatsWrap, #branchStatsWrap, #searchTrendWrap{ font-size:12.5px; overflow:hidden; }
-  .ad-stats-filter-row #adStatusFilter{ flex:3 0 0; min-width:0; }
-  .ad-stats-filter-row #adStatsSelect{ flex:9 0 0; min-width:0; }
+  .ad-stats-filter-row #adStatusFilter{ flex:0 0 100px; min-width:100px; }
+  .ad-stats-filter-row #adStatsSelect{ flex:1 1 0; min-width:0; }
   .ad-stats-filter-row #teacherYearSelect,
   .ad-stats-filter-row #teacherMonthSelect,
   .ad-stats-filter-row #courseYearSelect,
@@ -216,19 +216,6 @@
         <div class="ad-chart-legend">
           <span class="ad-chart-legend-item"><span class="ad-chart-legend-swatch" style="background:#2a78d6"></span>曝光次數</span>
           <span class="ad-chart-legend-item"><span class="ad-chart-legend-swatch" style="background:#eb6834"></span>點擊次數</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="sheet admin-col">
-      <div class="field-block" style="--accent:var(--navy)">
-        <div class="section-head">
-          <span class="section-tag"><i class="fa-solid fa-fw fa-chart-line"></i>查詢</span>
-        </div>
-        <div id="searchTrendWrap"></div>
-        <div class="ad-chart-legend">
-          <span class="ad-chart-legend-item"><span class="ad-chart-legend-swatch" style="background:#2a78d6"></span>查詢次數</span>
-          <span class="ad-chart-legend-item"><span class="ad-chart-legend-swatch" style="background:#eb6834"></span>結果數</span>
         </div>
       </div>
     </div>
