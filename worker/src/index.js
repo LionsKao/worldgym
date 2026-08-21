@@ -539,7 +539,15 @@ export default {
         const teamsRes = await fetch(env.TEAMS_WEBHOOK_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: `課表查詢網站有新留言：\n${content}` }),
+          body: JSON.stringify({
+            type: "AdaptiveCard",
+            $schema: "http://adaptivecards.io/schemas/adaptive-card.json",
+            version: "1.4",
+            body: [
+              { type: "TextBlock", text: "課表查詢網站有新留言：", weight: "bolder", wrap: true },
+              { type: "TextBlock", text: content, wrap: true },
+            ],
+          }),
         });
         if (!teamsRes.ok) {
           console.error("Teams webhook responded with error", teamsRes.status, await teamsRes.text());
