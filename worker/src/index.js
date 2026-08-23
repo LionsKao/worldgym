@@ -166,6 +166,38 @@ export default {
         return json({ ok: true }, 200, origin);
       }
 
+      // 廣告曝光打點的 batch 版本：前端輪播每 5 秒攢一筆到記憶體，定時/離開頁面時才一次送一批
+      // （見 script.js 的 flushAdImpressions），避免每次輪播都各自發一個 request + D1 寫入。
+      // sendBeacon 送出的 body 是 text/plain，這裡用 req.text() 手動 parse 才能同時吃 fetch 跟 beacon 兩種來源。
+      if (url.pathname === "/trackAdEvents" && req.method === "POST") {
+        const raw = await req.text();
+        let body;
+        try { body = JSON.parse(raw); } catch { body = {}; }
+        const events = Array.isArray(body && body.events) ? body.events : [];
+        const MAX_BATCH_EVENTS = 100;
+        const valid = events
+          .filter((e) => e && (e.type === "impression" || e.type === "click") && typeof e.adId === "string" && e.adId)
+          .slice(0, MAX_BATCH_EVENTS);
+        if (valid.length === 0) {
+          return json({ ok: true, written: 0 }, 200, origin);
+        }
+        // 一次查出這批事件裡出現過的 adId 誰是合法的，取代逐筆各查一次「SELECT 1 FROM ads」。
+        const adIds = [...new Set(valid.map((e) => e.adId))];
+        const placeholders = adIds.map(() => "?").join(",");
+        const { results } = await env.DB.prepare(`SELECT id FROM ads WHERE id IN (${placeholders})`)
+          .bind(...adIds)
+          .all();
+        const knownIds = new Set(results.map((r) => r.id));
+        const createdAt = nowTaiwanIso();
+        const stmts = valid
+          .filter((e) => knownIds.has(e.adId))
+          .map((e) =>
+            env.DB.prepare("INSERT INTO ad_events (adId, type, createdAt) VALUES (?, ?, ?)").bind(e.adId, e.type, createdAt)
+          );
+        if (stmts.length > 0) await env.DB.batch(stmts);
+        return json({ ok: true, written: stmts.length }, 200, origin);
+      }
+
       // 老師查詢次數打點：訪客真的送出查詢（含指定老師）時觸發，不做身分驗證，
       // 只做基本型別/長度防呆。前端已經做 30 分鐘內同老師去重，這裡單純累加寫入。
       if (url.pathname === "/trackTeacherSearch" && req.method === "POST") {
@@ -204,6 +236,42 @@ export default {
           .bind(branch.trim(), nowTaiwanIso())
           .run();
         return json({ ok: true }, 200, origin);
+      }
+
+      // 老師/課程/分店查詢次數打點的 batch 版本：使用者一次查詢動作常常同時勾了多個老師/課程/分店，
+      // 前端（logSearchEvents，取代原本各自迴圈呼叫 /trackTeacherSearch 等）已經做完 30 分鐘去重，
+      // 這裡收整批已經確定要記錄的值，三張表各自組 INSERT 語句、一次 db.batch() 送完，
+      // 取代「選了幾個分店/老師/課程就各自發幾個獨立 request + 獨立 INSERT」。
+      if (url.pathname === "/trackSearchEvents" && req.method === "POST") {
+        const body = await req.json().catch(() => ({}));
+        const MAX_ITEMS_PER_KIND = 20;
+        function sanitizeList(list) {
+          if (!Array.isArray(list)) return [];
+          return list
+            .filter((v) => typeof v === "string" && v.trim() && v.length <= 50)
+            .map((v) => v.trim())
+            .slice(0, MAX_ITEMS_PER_KIND);
+        }
+        const teachers = sanitizeList(body && body.teachers);
+        const courses = sanitizeList(body && body.courses);
+        const branches = sanitizeList(body && body.branches);
+        if (teachers.length === 0 && courses.length === 0 && branches.length === 0) {
+          return json({ ok: true, written: 0 }, 200, origin);
+        }
+        const createdAt = nowTaiwanIso();
+        const stmts = [
+          ...teachers.map((t) =>
+            env.DB.prepare("INSERT INTO teacher_search_events (teacherName, createdAt) VALUES (?, ?)").bind(t, createdAt)
+          ),
+          ...courses.map((c) =>
+            env.DB.prepare("INSERT INTO course_search_events (courseName, createdAt) VALUES (?, ?)").bind(c, createdAt)
+          ),
+          ...branches.map((b) =>
+            env.DB.prepare("INSERT INTO branch_search_events (branchName, createdAt) VALUES (?, ?)").bind(b, createdAt)
+          ),
+        ];
+        await env.DB.batch(stmts);
+        return json({ ok: true, written: stmts.length }, 200, origin);
       }
 
       // 整體查詢量打點：每次使用者真的送出查詢就打一次，不做去重、不驗證內容，

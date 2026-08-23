@@ -20,21 +20,59 @@ let AD_BANNERS = [];
 let currentAdIndex = 0;
 // 廣告曝光/點擊落地存進 D1（跟 GA4 的 trackEvent 分開），失敗靜默吞掉，不影響前台體驗、不重試。
 // 本機開發(localhost/127.0.0.1)不計入，避免測試把廣告曝光/點擊數字洗掉。
-function trackAdEvent(adId, type){
-  if (!adId) return;
-  if (["localhost", "127.0.0.1"].includes(location.hostname)) return;
+function isAdTrackingExcluded(){
+  return ["localhost", "127.0.0.1"].includes(location.hostname);
+}
+
+// 點擊是低頻、有明確意圖的事件，直接送單筆即可，不用跟曝光一起排隊等 batch。
+function trackAdClick(adId){
+  if (!adId || isAdTrackingExcluded()) return;
   fetch(`${WORKER_BASE}/trackAdEvent`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ adId, type }),
+    body: JSON.stringify({ adId, type: "click" }),
   }).catch(() => {});
 }
 
-// 老師/課程查詢次數落地存進 D1，用來給 admin.html 統計「哪些老師/課程最常被查」。
+// 曝光是輪播自動觸發的高頻事件（每 5 秒一次），不能每次都各自發一個 request/D1 寫入，
+// 先攢在記憶體裡，定時或離開頁面時才一次 batch 送出，見 flushAdImpressions()。
+let adImpressionBuffer = [];
+function bufferAdImpression(adId){
+  if (!adId || isAdTrackingExcluded()) return;
+  adImpressionBuffer.push(adId);
+}
+
+// useBeacon: 分頁切到背景/即將卸載時呼叫，用 sendBeacon 確保即使頁面馬上關閉也送得出去；
+// 一般定時 flush 用 fetch 就好。清空 buffer 前先複製一份，避免送出中途又有新曝光被吃掉。
+function flushAdImpressions(useBeacon){
+  if (adImpressionBuffer.length === 0) return;
+  const events = adImpressionBuffer.map((adId) => ({ adId, type: "impression" }));
+  adImpressionBuffer = [];
+  const payload = JSON.stringify({ events });
+  if (useBeacon && navigator.sendBeacon){
+    navigator.sendBeacon(`${WORKER_BASE}/trackAdEvents`, new Blob([payload], { type: "text/plain" }));
+    return;
+  }
+  fetch(`${WORKER_BASE}/trackAdEvents`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: payload,
+  }).catch(() => {});
+}
+const AD_IMPRESSION_FLUSH_INTERVAL_MS = 30000;
+setInterval(() => flushAdImpressions(false), AD_IMPRESSION_FLUSH_INTERVAL_MS);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) flushAdImpressions(true);
+});
+window.addEventListener("pagehide", () => flushAdImpressions(true));
+
+// 老師/課程/分店查詢次數落地存進 D1，用來給 admin.html 統計「哪些老師/課程/分店最常被查」。
 // 同一裝置 30 分鐘內重複查同一個值只算 1 次，避免上一頁/重查造成洗次數。
+// 一次查詢常常同時勾多個老師/課程/分店，三種各自去重篩選完之後合成一個 payload，
+// 一次 fetch 打 /trackSearchEvents 讓 worker 一次 batch 寫完，不要選了幾個就發幾個獨立 request。
 const SEARCH_COUNT_DEDUPE_WINDOW_MS = 30 * 60 * 1000;
-function makeSearchCountLogger(dedupeKey, endpoint, paramName){
-  function shouldLog(value){
+function makeSearchCountFilter(dedupeKey){
+  return function filterLoggable(values){
     let map;
     try { map = JSON.parse(localStorage.getItem(dedupeKey) || "{}"); }
     catch { map = {}; }
@@ -42,29 +80,34 @@ function makeSearchCountLogger(dedupeKey, endpoint, paramName){
     for (const k of Object.keys(map)){
       if (now - map[k] > SEARCH_COUNT_DEDUPE_WINDOW_MS) delete map[k];
     }
-    const last = map[value];
-    if (last && now - last < SEARCH_COUNT_DEDUPE_WINDOW_MS){
-      localStorage.setItem(dedupeKey, JSON.stringify(map));
-      return false;
-    }
-    map[value] = now;
-    localStorage.setItem(dedupeKey, JSON.stringify(map));
-    return true;
-  }
-  return function logSearches(values){
+    const loggable = [];
     for (const value of values || []){
-      if (!value || !shouldLog(value)) continue;
-      fetch(`${WORKER_BASE}/${endpoint}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [paramName]: value }),
-      }).catch(() => {});
+      if (!value) continue;
+      const last = map[value];
+      if (last && now - last < SEARCH_COUNT_DEDUPE_WINDOW_MS) continue;
+      map[value] = now;
+      loggable.push(value);
     }
+    localStorage.setItem(dedupeKey, JSON.stringify(map));
+    return loggable;
   };
 }
-const logTeacherSearches = makeSearchCountLogger("wg_teacher_search_dedupe", "trackTeacherSearch", "teacher");
-const logCourseSearches = makeSearchCountLogger("wg_course_search_dedupe", "trackCourseSearch", "course");
-const logBranchSearches = makeSearchCountLogger("wg_branch_search_dedupe", "trackBranchSearch", "branch");
+const filterLoggableTeachers = makeSearchCountFilter("wg_teacher_search_dedupe");
+const filterLoggableCourses = makeSearchCountFilter("wg_course_search_dedupe");
+const filterLoggableBranches = makeSearchCountFilter("wg_branch_search_dedupe");
+function logSearchEvents(teachers, courses, branches){
+  const payload = {
+    teachers: filterLoggableTeachers(teachers),
+    courses: filterLoggableCourses(courses),
+    branches: filterLoggableBranches(branches),
+  };
+  if (payload.teachers.length === 0 && payload.courses.length === 0 && payload.branches.length === 0) return;
+  fetch(`${WORKER_BASE}/trackSearchEvents`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  }).catch(() => {});
+}
 
 // state.branch 存的是分店 slug，要轉成畫面上看到的分店名稱再記錄，admin.html 的長條圖才看得懂。
 function branchSlugToLabel(slug){
@@ -135,9 +178,11 @@ function initAdBannerCarousel(){
   currentAdIndex = 0;
   el.textContent = AD_BANNERS[0].text;
   banner.href = withUtmSource(AD_BANNERS[0].url);
-  trackAdEvent(AD_BANNERS[0].id, "impression");
+  bufferAdImpression(AD_BANNERS[0].id);
   if (AD_BANNERS.length < 2) return;
   setInterval(() => {
+    // 分頁在背景時暫停輪播與曝光計數，使用者根本沒在看，跳了也只是白洗曝光數字。
+    if (document.hidden) return;
     el.classList.add("fading");
     setTimeout(() => {
       currentAdIndex++;
@@ -148,7 +193,7 @@ function initAdBannerCarousel(){
       el.textContent = AD_BANNERS[currentAdIndex].text;
       banner.href = withUtmSource(AD_BANNERS[currentAdIndex].url);
       el.classList.remove("fading");
-      trackAdEvent(AD_BANNERS[currentAdIndex].id, "impression");
+      bufferAdImpression(AD_BANNERS[currentAdIndex].id);
     }, 350);
   }, 5000);
 }
@@ -159,7 +204,7 @@ fetch(`${WORKER_BASE}/ads`)
   .finally(initAdBannerCarousel);
 document.querySelector(".ad-banner")?.addEventListener("click", () => {
   trackEvent("click_ad_banner", { ad_text: document.getElementById("adBannerText")?.textContent });
-  trackAdEvent(AD_BANNERS[currentAdIndex]?.id, "click");
+  trackAdClick(AD_BANNERS[currentAdIndex]?.id);
 });
 
 // 鈴鐺只在「已安裝成 standalone PWA」才顯示，不要求通知權限已授權（未授權按下去會先跳說明 modal）。
@@ -1640,9 +1685,7 @@ async function runSearchAndShowResults(state){
         trigger_source: searchTriggerSource,
       });
       if (searchTriggerSource !== "favorite"){
-        logTeacherSearches(state.teacher);
-        logCourseSearches(state.course);
-        logBranchSearches((state.branch || []).map(branchSlugToLabel));
+        logSearchEvents(state.teacher, state.course, (state.branch || []).map(branchSlugToLabel));
       }
       showResultView();
       history.replaceState(null, "", buildShareUrl(state));
@@ -1669,6 +1712,18 @@ async function runSearchAndShowResults(state){
     updateSubmitState();
   }
 }
+// 同一個篩選條件連續手動查詢滿 5 次就跳 modal 提醒 30 分鐘去重規則，避免使用者一直查/返回白耗 D1 讀取量。
+const repeatQueryModal = document.getElementById("repeatQueryModal");
+function showRepeatQueryModal(){
+  repeatQueryModal.classList.remove("hidden");
+}
+document.getElementById("repeatQueryOkBtn").addEventListener("click", () => {
+  repeatQueryModal.classList.add("hidden");
+});
+const REPEAT_QUERY_MODAL_THRESHOLD = 5;
+let lastManualQueryKey = null;
+let sameFilterQueryStreak = 0;
+
 document.getElementById("filterForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!isSearchValid()){
@@ -1676,7 +1731,19 @@ document.getElementById("filterForm").addEventListener("submit", async (e) => {
     return;
   }
   searchTriggerSource = "manual";
-  await runSearchAndShowResults(currentFilterState());
+  const state = currentFilterState();
+  const filterKey = JSON.stringify(state);
+  if (filterKey === lastManualQueryKey){
+    sameFilterQueryStreak++;
+  } else {
+    lastManualQueryKey = filterKey;
+    sameFilterQueryStreak = 1;
+  }
+  if (sameFilterQueryStreak >= REPEAT_QUERY_MODAL_THRESHOLD){
+    sameFilterQueryStreak = 0;
+    showRepeatQueryModal();
+  }
+  await runSearchAndShowResults(state);
 });
 document.getElementById("backBtn").addEventListener("click", showFilterView);
 

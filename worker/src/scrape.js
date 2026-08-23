@@ -1,6 +1,10 @@
 import BRANCHES from "./branches-seed.js";
 
 const SCHEDULE_DAYS_AHEAD = 13;
+// 跟 queryClasses.js 的 NORMAL_DAYS_AHEAD 對齊：近 7 天（day0~day6）全存，
+// 超過的天數（day7~day13）只存代課——查詢端本來就只在遠期挑代課顯示，
+// 遠期的正常班寫進 D1 也用不到，不存可以省下寫入量與儲存空間。
+const NEAR_DAYS_AHEAD = 6;
 // 104 家分店依序（非平行）逐一請求，跟 group.aspx.cs 的爬蟲間隔對齊。
 const BRANCH_REQUEST_DELAY_MS = 500;
 // D1 batch 一次太多語句容易超時，分批送出。
@@ -171,14 +175,18 @@ async function deleteBranchClasses(db, branchSlug) {
 async function ingestBranchClasses(db, branchSlug, branchName, rawClasses) {
   const firstDate = todayAtMidnight();
   const lastDate = addDays(firstDate, SCHEDULE_DAYS_AHEAD);
+  const nearDate = addDays(firstDate, NEAR_DAYS_AHEAD);
   const todayIso = formatDateIso(firstDate);
   const lastDateIso = formatDateIso(lastDate);
+  const nearDateIso = formatDateIso(nearDate);
 
-  // 不再區分「前幾天存全部、後幾天只存代課」——抓到多少課程就存多少，抓多少天就存多少天。
+  // 近 7 天（day0~day6）全存；剩餘天數（day7~day13）只存代課，配合查詢端
+  // （queryClasses.js 的 NORMAL_DAYS_AHEAD/SUBSTITUTE_DAYS_AHEAD 窗口）本來就只在遠期顯示代課。
   const transformed = rawClasses
     .map((raw) => transformRawClass(raw, branchSlug, branchName))
     .filter(Boolean)
-    .filter((item) => item.date >= todayIso && item.date <= lastDateIso);
+    .filter((item) => item.date >= todayIso && item.date <= lastDateIso)
+    .filter((item) => item.date <= nearDateIso || item.isSubstitute === 1);
 
   const staleDeleted = await deleteBranchClasses(db, branchSlug);
   await upsertClasses(db, transformed);

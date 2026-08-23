@@ -1,4 +1,4 @@
-const NORMAL_DAYS_AHEAD = 7;
+const NORMAL_DAYS_AHEAD = 6;
 const SUBSTITUTE_DAYS_AHEAD = 14;
 // course/teacher 走 SQL IN 子句，D1 每個查詢的綁定參數上限是 100，
 // course+teacher 兩個 IN 子句（30*2=60）加上 day(7)+room(2)+日期範圍(4) = 73，還有餘裕。
