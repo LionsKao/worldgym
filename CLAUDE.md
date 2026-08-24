@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 World Gym 台灣課表查詢網站。純靜態前端 + Cloudflare Worker API + D1 資料庫，沒有 build step、沒有前端框架、沒有 bundler。`script.js`/`admin.js`/`style.css` 都是直接編輯後部署的原始檔。
 
-- Hosting (static site, Workers Assets): https://worldgym-web.lions2100.workers.dev (also fronted at https://worldgym.pages.dev)
+- Hosting (static site, Cloudflare Pages): https://worldgym.pages.dev
 - API (Worker): https://worldgym-api.lions2100.workers.dev
 
 ## Commands
@@ -28,7 +28,7 @@ Both dev servers are also registered in `.claude/launch.json` (`worldgym-hosting
 ### Deploy
 ```bash
 cd worker && npm run deploy     # 部署 API (wrangler deploy)
-cd hosting && npx wrangler deploy   # 部署靜態站（見下方「部署注意」，不要用 npm run deploy）
+cd hosting && npx wrangler pages deploy .. --project-name worldgym --branch main   # 部署靜態站到 Cloudflare Pages
 ```
 
 Worker tail logs: `cd worker && npm run tail`
@@ -42,10 +42,12 @@ npx wrangler d1 execute worldgym-schedule --remote --file=migrations/xxx.sql
 
 There is no test suite and no lint/build command in this repo.
 
-### 部署注意：hosting 的 npm script 是舊的，不要用
-`hosting/package.json` 的 `deploy` script 還寫著 `wrangler pages deploy .. --project-name worldgym --branch main`（舊的 Cloudflare Pages 部署方式），但 `hosting/wrangler.jsonc` 已經是 Workers Assets 設定（`name: "worldgym-web"`, `assets.directory: ".."`）。實際部署要用 `npx wrangler deploy`（讀 `wrangler.jsonc`），不要用 `npm run deploy`。
+### 部署注意
+唯一的靜態站部署目標是 Cloudflare Pages 專案 `worldgym`（網址 https://worldgym.pages.dev），用 `npx wrangler pages deploy .. --project-name worldgym --branch main` 部署。
 
-部署會把整個 repo 根目錄（`assets.directory: ".."`，`.assetsignore` 排除 `worker/`/`hosting`/`node_modules` 等）當成靜態資源整批發布——發的是**當下工作目錄的檔案內容**，不是 git HEAD。deploy 前要注意根目錄下有沒有其他人正在改、還沒 commit 的檔案，因為它們會一起被發布上線。
+（`hosting/wrangler.jsonc` 是另一套 Workers Assets 設定，`name: "worldgym-web"`，曾經對應過一個叫 `worldgym-web.lions2100.workers.dev` 的 Worker，但那個 Worker 已刪除——它跟 `worldgym.pages.dev` 是互相獨立、不互相依賴的兩個部署目標，且沒有 `functions/_middleware.js` 的台灣 IP 限制。不要再用 `npx wrangler deploy` 部署到它。）
+
+部署會把整個 repo 根目錄（`.assetsignore` 排除 `worker/`/`hosting`/`node_modules` 等）當成靜態資源整批發布——發的是**當下工作目錄的檔案內容**，不是 git HEAD。deploy 前要注意根目錄下有沒有其他人正在改、還沒 commit 的檔案，因為它們會一起被發布上線。
 
 ## Architecture
 

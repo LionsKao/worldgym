@@ -15,7 +15,6 @@ const ALLOWED_ORIGINS = [
   "http://localhost:1069", // Cloudflare Workers 靜態託管本機模擬（hosting/ wrangler dev）
   "http://127.0.0.1:1069",
   "https://worldgym-api.lions2100.workers.dev",
-  "https://worldgym-web.lions2100.workers.dev",
 ];
 
 // D1 裡的時間戳（含 ads 的 startAt/endAt）一律用台灣時間（+8），跟 scrape.js / reminders.js 的

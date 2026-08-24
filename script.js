@@ -12,10 +12,9 @@ if (new URLSearchParams(location.search).get("pwa") === "1"){
   localStorage.setItem("wg_debug_force_pwa", "1");
 }
 
-// 廣告文案輪播：內容改由 D1 的 ads table 提供（上下架時間 + enabled 開關），
-// 首頁載入時打 /ads 拿目前生效中的廣告，每隔幾秒淡出換字再淡入，動畫時間要跟
-// style.css 的 .ad-banner-text transition 對齊。每則廣告各自帶自己的連結，
-// 切換文字時同步換掉外層 <a> 的 href。
+// 廣告文案：內容改由 D1 的 ads table 提供（上下架時間 + enabled 開關），
+// 首頁載入時打 /ads 拿目前生效中的廣告，隨機挑一則顯示，同一個工作階段（頁面沒重整）
+// 就固定顯示那一則，不會再輪播切換。每則廣告各自帶自己的連結，換廣告時同步換外層 <a> 的 href。
 let AD_BANNERS = [];
 let currentAdIndex = 0;
 // 廣告曝光/點擊落地存進 D1（跟 GA4 的 trackEvent 分開），失敗靜默吞掉，不影響前台體驗、不重試。
@@ -146,16 +145,6 @@ function logFavoriteEvent(type){
     body: JSON.stringify({ clientId: getClientId(), type }),
   }).catch(() => {});
 }
-// Fisher-Yates：廣告輪播每輪播完（回到開頭）就重新洗牌一次，順序不固定、也不會永遠重複同一種排列。
-function shuffleAds(arr){
-  const a = arr.slice();
-  for (let i = a.length - 1; i > 0; i--){
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
 function withUtmSource(url){
   try {
     const u = new URL(url);
@@ -166,6 +155,7 @@ function withUtmSource(url){
   }
 }
 
+// 一次工作階段只隨機挑一則廣告顯示，不再輪播；使用者要看到別的廣告只能重新整理頁面（等同開新的工作階段）。
 function initAdBannerCarousel(){
   const banner = document.getElementById("adBanner");
   const el = document.getElementById("adBannerText");
@@ -174,28 +164,10 @@ function initAdBannerCarousel(){
     banner.classList.add("hidden");
     return;
   }
-  AD_BANNERS = shuffleAds(AD_BANNERS);
-  currentAdIndex = 0;
-  el.textContent = AD_BANNERS[0].text;
-  banner.href = withUtmSource(AD_BANNERS[0].url);
-  bufferAdImpression(AD_BANNERS[0].id);
-  if (AD_BANNERS.length < 2) return;
-  setInterval(() => {
-    // 分頁在背景時暫停輪播與曝光計數，使用者根本沒在看，跳了也只是白洗曝光數字。
-    if (document.hidden) return;
-    el.classList.add("fading");
-    setTimeout(() => {
-      currentAdIndex++;
-      if (currentAdIndex >= AD_BANNERS.length){
-        AD_BANNERS = shuffleAds(AD_BANNERS);
-        currentAdIndex = 0;
-      }
-      el.textContent = AD_BANNERS[currentAdIndex].text;
-      banner.href = withUtmSource(AD_BANNERS[currentAdIndex].url);
-      el.classList.remove("fading");
-      bufferAdImpression(AD_BANNERS[currentAdIndex].id);
-    }, 350);
-  }, 5000);
+  currentAdIndex = Math.floor(Math.random() * AD_BANNERS.length);
+  el.textContent = AD_BANNERS[currentAdIndex].text;
+  banner.href = withUtmSource(AD_BANNERS[currentAdIndex].url);
+  bufferAdImpression(AD_BANNERS[currentAdIndex].id);
 }
 fetch(`${WORKER_BASE}/ads`)
   .then((res) => (res.ok ? res.json() : { ads: [] }))
