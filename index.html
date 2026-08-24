@@ -31,7 +31,7 @@ fbq('track', 'PageView');
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
-<link rel="stylesheet" href="style.css?v=77">
+<link rel="stylesheet" href="style.css?v=87">
 <style>#loadingOverlay{position:fixed;top:0;left:0;width:100%;height:100%;background:#fff;z-index:9999;}</style>
 </head>
 <body>
@@ -334,7 +334,7 @@ fbq('track', 'PageView');
 <div id="addFavoriteModal" class="modal-overlay hidden">
   <div class="modal-box fav-modal-box">
     <button type="button" class="modal-close-btn" id="favModalCloseBtn" aria-label="取消"><i class="fa-solid fa-xmark"></i></button>
-    <p class="modal-text" style="padding-right:24px">新增最愛</p>
+    <p class="modal-text" style="padding-right:24px"><span class="section-tag" aria-label="新增最愛" style="--accent:var(--coral)"><i class="fa-solid fa-heart"></i><i class="fa-solid fa-fw fa-plus"></i></span></p>
 
     <div class="fav-modal-field">
       <span class="fav-modal-label">圖示</span>
@@ -347,10 +347,26 @@ fbq('track', 'PageView');
         <span class="fav-icon-pill"><input type="radio" name="favIcon" value="bolt" id="favIcon-bolt"><label for="favIcon-bolt"><i class="fa-solid fa-bolt"></i></label></span>
         <span class="fav-icon-pill"><input type="radio" name="favIcon" value="hand-fist" id="favIcon-hand-fist"><label for="favIcon-hand-fist"><i class="fa-solid fa-hand-fist"></i></label></span>
         <span class="fav-icon-pill"><input type="radio" name="favIcon" value="bell" id="favIcon-bell"><label for="favIcon-bell"><i class="fa-solid fa-bell"></i></label></span>
-        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="dharmachakra" id="favIcon-dharmachakra"><label for="favIcon-dharmachakra"><i class="fa-solid fa-dharmachakra"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="fish-fins" id="favIcon-fish-fins"><label for="favIcon-fish-fins"><i class="fa-solid fa-fish-fins"></i></label></span>
         <span class="fav-icon-pill"><input type="radio" name="favIcon" value="dumbbell" id="favIcon-dumbbell"><label for="favIcon-dumbbell"><i class="fa-solid fa-dumbbell"></i></label></span>
         <span class="fav-icon-pill"><input type="radio" name="favIcon" value="sun" id="favIcon-sun"><label for="favIcon-sun"><i class="fa-solid fa-sun"></i></label></span>
         <span class="fav-icon-pill"><input type="radio" name="favIcon" value="moon" id="favIcon-moon"><label for="favIcon-moon"><i class="fa-solid fa-moon"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="fire" id="favIcon-fire"><label for="favIcon-fire"><i class="fa-solid fa-fire"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="crown" id="favIcon-crown"><label for="favIcon-crown"><i class="fa-solid fa-crown"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="bullseye" id="favIcon-bullseye"><label for="favIcon-bullseye"><i class="fa-solid fa-bullseye"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="paw" id="favIcon-paw"><label for="favIcon-paw"><i class="fa-solid fa-paw"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="bullhorn" id="favIcon-bullhorn"><label for="favIcon-bullhorn"><i class="fa-solid fa-bullhorn"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="lightbulb" id="favIcon-lightbulb"><label for="favIcon-lightbulb"><i class="fa-solid fa-lightbulb"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="weight-hanging" id="favIcon-weight-hanging"><label for="favIcon-weight-hanging"><i class="fa-solid fa-weight-hanging"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="shower" id="favIcon-shower"><label for="favIcon-shower"><i class="fa-solid fa-shower"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="chess-rook" id="favIcon-chess-rook"><label for="favIcon-chess-rook"><i class="fa-solid fa-chess-rook"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="toilet-paper" id="favIcon-toilet-paper"><label for="favIcon-toilet-paper"><i class="fa-solid fa-toilet-paper"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="umbrella" id="favIcon-umbrella"><label for="favIcon-umbrella"><i class="fa-solid fa-umbrella"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="face-smile" id="favIcon-face-smile"><label for="favIcon-face-smile"><i class="fa-solid fa-face-smile"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="plane" id="favIcon-plane"><label for="favIcon-plane"><i class="fa-solid fa-plane"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="bicycle" id="favIcon-bicycle"><label for="favIcon-bicycle"><i class="fa-solid fa-bicycle"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="car-side" id="favIcon-car-side"><label for="favIcon-car-side"><i class="fa-solid fa-car-side"></i></label></span>
+        <span class="fav-icon-pill"><input type="radio" name="favIcon" value="ice-cream" id="favIcon-ice-cream"><label for="favIcon-ice-cream"><i class="fa-solid fa-ice-cream"></i></label></span>
       </div>
     </div>
 
@@ -377,17 +393,20 @@ fbq('track', 'PageView');
     <div class="fav-modal-field">
       <span class="fav-modal-label">名稱</span>
       <div class="fav-name-row">
-        <input type="text" id="favNameInput" class="section-search" placeholder="幫這個最愛命名">
+        <div class="fav-name-input-wrap">
+          <input type="text" id="favNameInput" class="section-search" placeholder="幫這個最愛命名">
+          <button type="button" class="search-clear" id="favNameClearBtn" aria-label="清除文字">&times;</button>
+        </div>
         <button type="button" class="fav-name-random-btn" id="favNameRandomBtn" aria-label="隨機取名"><i class="fa-solid fa-dice"></i></button>
       </div>
     </div>
 
     <div class="modal-actions">
-      <button type="button" class="modal-btn modal-btn-confirm" id="favModalSubmitBtn">送出</button>
+      <button type="button" class="modal-btn modal-btn-confirm" id="favModalSubmitBtn" aria-label="送出"><i class="fa-solid fa-floppy-disk"></i></button>
     </div>
   </div>
 </div>
 
-<script src="script.js?v=92"></script>
+<script src="script.js?v=94"></script>
 </body>
 </html>

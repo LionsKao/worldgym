@@ -1094,13 +1094,25 @@ function renderFavorites(){
 }
 
 const addFavoriteModal = document.getElementById("addFavoriteModal");
+const favNameInput = document.getElementById("favNameInput");
+const favNameClearBtn = document.getElementById("favNameClearBtn");
+function syncFavNameClearBtn(){
+  favNameClearBtn.classList.toggle("visible", favNameInput.value !== "");
+}
 document.getElementById("addFavoriteBtn").addEventListener("click", () => {
-  document.getElementById("favNameInput").value = favoriteLabel(currentFilterState());
+  favNameInput.value = favoriteLabel(currentFilterState());
+  syncFavNameClearBtn();
   addFavoriteModal.classList.remove("hidden");
 });
+favNameInput.addEventListener("input", syncFavNameClearBtn);
 document.getElementById("favNameRandomBtn").addEventListener("click", () => {
-  const input = document.getElementById("favNameInput");
-  input.value = FUNNY_DEFAULT_FAVORITE_LABELS[Math.floor(Math.random() * FUNNY_DEFAULT_FAVORITE_LABELS.length)];
+  favNameInput.value = FUNNY_DEFAULT_FAVORITE_LABELS[Math.floor(Math.random() * FUNNY_DEFAULT_FAVORITE_LABELS.length)];
+  syncFavNameClearBtn();
+});
+favNameClearBtn.addEventListener("click", () => {
+  favNameInput.value = "";
+  syncFavNameClearBtn();
+  favNameInput.focus();
 });
 document.getElementById("favModalCloseBtn").addEventListener("click", () => {
   addFavoriteModal.classList.add("hidden");
