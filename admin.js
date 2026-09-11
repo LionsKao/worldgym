@@ -2,9 +2,11 @@ const WORKER_BASE = "https://worldgym-api.lions2100.workers.dev";
 const TOKEN_STORAGE_KEY = "worldgym_admin_token";
 const ADMIN_TOKEN_HEADER = "X-Admin-Token";
 
-// 密碼跟 worker 的 MANUAL_SCRAPE_TOKEN secret 對應。登入成功後存在 localStorage，
-// 之後每次操作都帶著送到後端驗證，密碼本身不會寫死在原始碼裡（repo 是公開的）。
-// 一律用 header 帶（不是 URL query string／JSON body），避免 token 被記進網址、外流到瀏覽器紀錄或中介的存取日誌。
+// 密碼跟 worker 的 MANUAL_SCRAPE_TOKEN secret 對應，密碼本身不會寫死在原始碼裡（repo 是公開的）。
+// 登入成功後實際存進 localStorage、之後每次操作帶出去的，是 worker 換發的 7 天效期 session
+// token，不是原始密碼——密碼只在登入當下送出一次，降低它在網路上被送出的次數；session token
+// 過期或失效，重新輸入密碼即可換到新的一張。一律用 header 帶（不是 URL query string／JSON
+// body），避免 token 被記進網址、外流到瀏覽器紀錄或中介的存取日誌。
 function getStoredToken(){ return localStorage.getItem(TOKEN_STORAGE_KEY) || ""; }
 function setStoredToken(token){ localStorage.setItem(TOKEN_STORAGE_KEY, token); }
 function clearStoredToken(){ localStorage.removeItem(TOKEN_STORAGE_KEY); }
@@ -18,12 +20,16 @@ function adminFetch(path, options = {}){
 }
 
 // 登入流程驗證的是使用者剛輸入、還沒存起來的密碼，所以不能用 adminFetch（它讀的是已存的 token）。
+// 驗證成功會換到一張有效期限的 session token（見 worker 的 issueAdminSession），之後改存/送
+// 這張，不是原始密碼本身——降低密碼實際被送出網路的次數。
 async function verifyToken(token){
   const res = await fetch(`${WORKER_BASE}/verifyAdminToken`, {
     method: "POST",
     headers: { [ADMIN_TOKEN_HEADER]: token },
   });
-  return res.ok;
+  if (!res.ok) return null;
+  const data = await res.json().catch(() => null);
+  return data?.sessionToken || null;
 }
 
 const loginOverlay = document.getElementById("adminLoginOverlay");
@@ -80,9 +86,9 @@ async function attemptLogin(){
   loginBtn.disabled = true;
   hideLoginError();
   try{
-    const ok = await verifyToken(token);
-    if (ok){
-      setStoredToken(token);
+    const sessionToken = await verifyToken(token);
+    if (sessionToken){
+      setStoredToken(sessionToken);
       showAdminPage();
       loadAdStats();
       loadFavoriteStats();
@@ -109,7 +115,9 @@ adminBackBtn.addEventListener("mouseleave", () => adminBackTooltip.classList.rem
 
 (async function initAuth(){
   const stored = getStoredToken();
-  if (stored && await verifyToken(stored).catch(() => false)){
+  const refreshed = stored && await verifyToken(stored).catch(() => null);
+  if (refreshed){
+    setStoredToken(refreshed); // 換到新的 session token，滑動延長 7 天效期
     showAdminPage();
     loadAdStats();
     loadFavoriteStats();
@@ -431,11 +439,17 @@ async function loadFavoriteStats(){
 const reminderStatsSummary = document.getElementById("reminderStatsSummary");
 const reminderStatsTableWrap = document.getElementById("reminderStatsTableWrap");
 
+// 跟廣告/最愛面板的折線圖同一套邏輯：固定顯示近 CHART_MONTHS 個月，沒紀錄的月份補 0，
+// 不會因為完全沒資料就整個面板空著、讓人誤以為功能壞掉。由新到舊排序，本月排最上面。
+function buildReminderMonthlyWindow(monthly, endMonth){
+  const byMonth = {};
+  for (const row of monthly) byMonth[row.month] = row.count;
+  const months = [];
+  for (let i = 0; i < CHART_MONTHS; i++) months.push(addMonths(endMonth, -i));
+  return months.map((m) => ({ month: m, count: byMonth[m] || 0 }));
+}
+
 function renderReminderStatsTable(monthly){
-  if (!monthly.length){
-    reminderStatsTableWrap.innerHTML = '<span class="empty-hint">目前沒有紀錄</span>';
-    return;
-  }
   const rows = monthly.map((row) => `<tr><td>${escapeHtml(row.month)}</td><td>${row.count}</td></tr>`).join("");
   reminderStatsTableWrap.innerHTML = `
     <table class="access-log-table">
@@ -453,7 +467,7 @@ async function loadReminderStats(){
     reminderStatsSummary.innerHTML = `
       <div class="favorite-stats-item"><div class="favorite-stats-num">${data.total || 0}</div><div class="favorite-stats-label">累積登記次數</div></div>
     `;
-    renderReminderStatsTable(data.monthly || []);
+    renderReminderStatsTable(buildReminderMonthlyWindow(data.monthly || [], currentMonthKey()));
   } catch(e){
     console.error(e);
     reminderStatsSummary.textContent = "";

@@ -139,8 +139,40 @@ function constantTimeEqual(a, b) {
   const hb = createHash("sha256").update(String(b ?? "")).digest();
   return timingSafeEqual(ha, hb);
 }
-function isAdminRequest(req, env) {
-  return constantTimeEqual(req.headers.get(ADMIN_TOKEN_HEADER), env.MANUAL_SCRAPE_TOKEN);
+// 登入成功後換一張有效期限的簽章 session token，之後的請求都送這張，不用每次都把真正的密碼
+// 傳一次（降低密碼在網路上被送出的次數）。簽章金鑰是從 MANUAL_SCRAPE_TOKEN 雜湊衍生出來、
+// 不是直接拿密碼當 HMAC key，這樣就算 session token 外流也推不回密碼本身。
+// isAdminRequest 兩種憑證都認：舊的直接帶密碼（相容既有呼叫方式）、新的帶 session token。
+const ADMIN_SESSION_TTL_MS = 7 * 24 * 3600 * 1000; // 7 天，過期要重新輸入密碼
+async function adminSessionKey(env) {
+  const material = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`admin-session:${env.MANUAL_SCRAPE_TOKEN}`));
+  return crypto.subtle.importKey("raw", material, { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
+}
+async function issueAdminSession(env, ttlMs = ADMIN_SESSION_TTL_MS) {
+  const payload = JSON.stringify({ exp: Date.now() + ttlMs });
+  const key = await adminSessionKey(env);
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
+  return `${base64url(new TextEncoder().encode(payload))}.${base64url(sig)}`;
+}
+async function verifyAdminSession(env, token) {
+  if (!token || typeof token !== "string" || !token.includes(".")) return false;
+  const [payloadPart, sigPart] = token.split(".");
+  let payloadBytes, payload;
+  try {
+    payloadBytes = base64urlToBytes(payloadPart);
+    payload = JSON.parse(new TextDecoder().decode(payloadBytes));
+  } catch {
+    return false;
+  }
+  const key = await adminSessionKey(env);
+  const valid = await crypto.subtle.verify("HMAC", key, base64urlToBytes(sigPart), payloadBytes);
+  if (!valid) return false;
+  return typeof payload.exp === "number" && Date.now() <= payload.exp;
+}
+async function isAdminRequest(req, env) {
+  const header = req.headers.get(ADMIN_TOKEN_HEADER);
+  if (await verifyAdminSession(env, header)) return true;
+  return constantTimeEqual(header, env.MANUAL_SCRAPE_TOKEN);
 }
 
 export default {
@@ -382,7 +414,7 @@ export default {
       if (url.pathname === "/adStats" && req.method === "GET") {
         const rl = await rateLimitOrNull(req, env, ctx, "adStats", 30, origin);
         if (rl) return rl;
-        if (!isAdminRequest(req, env)) {
+        if (!(await isAdminRequest(req, env))) {
           return json({ error: "forbidden" }, 403, origin);
         }
         const ads = await adStatsCombined(env.DB);
@@ -396,7 +428,7 @@ export default {
       if (url.pathname === "/teacherStats" && req.method === "GET") {
         const rl = await rateLimitOrNull(req, env, ctx, "teacherStats", 30, origin);
         if (rl) return rl;
-        if (!isAdminRequest(req, env)) {
+        if (!(await isAdminRequest(req, env))) {
           return json({ error: "forbidden" }, 403, origin);
         }
         const nowTW = currentTaiwanYearMonth();
@@ -418,7 +450,7 @@ export default {
       if (url.pathname === "/courseStats" && req.method === "GET") {
         const rl = await rateLimitOrNull(req, env, ctx, "courseStats", 30, origin);
         if (rl) return rl;
-        if (!isAdminRequest(req, env)) {
+        if (!(await isAdminRequest(req, env))) {
           return json({ error: "forbidden" }, 403, origin);
         }
         const nowTW = currentTaiwanYearMonth();
@@ -440,7 +472,7 @@ export default {
       if (url.pathname === "/branchStats" && req.method === "GET") {
         const rl = await rateLimitOrNull(req, env, ctx, "branchStats", 30, origin);
         if (rl) return rl;
-        if (!isAdminRequest(req, env)) {
+        if (!(await isAdminRequest(req, env))) {
           return json({ error: "forbidden" }, 403, origin);
         }
         const nowTW = currentTaiwanYearMonth();
@@ -527,7 +559,7 @@ export default {
       if (url.pathname === "/searchStats" && req.method === "GET") {
         const rl = await rateLimitOrNull(req, env, ctx, "searchStats", 30, origin);
         if (rl) return rl;
-        if (!isAdminRequest(req, env)) {
+        if (!(await isAdminRequest(req, env))) {
           return json({ error: "forbidden" }, 403, origin);
         }
         const stats = await monthlySearchTrend(env.DB);
@@ -539,7 +571,7 @@ export default {
       if (url.pathname === "/queryAccessStats" && req.method === "GET") {
         const rl = await rateLimitOrNull(req, env, ctx, "queryAccessStats", 30, origin);
         if (rl) return rl;
-        if (!isAdminRequest(req, env)) {
+        if (!(await isAdminRequest(req, env))) {
           return json({ error: "forbidden" }, 403, origin);
         }
         const days = parseInt(url.searchParams.get("days") || "7", 10);
@@ -566,7 +598,7 @@ export default {
       if (url.pathname === "/favoriteStats" && req.method === "GET") {
         const rl = await rateLimitOrNull(req, env, ctx, "favoriteStats", 30, origin);
         if (rl) return rl;
-        if (!isAdminRequest(req, env)) {
+        if (!(await isAdminRequest(req, env))) {
           return json({ error: "forbidden" }, 403, origin);
         }
         const stats = await favoriteStatsCombined(env.DB);
@@ -578,7 +610,7 @@ export default {
       if (url.pathname === "/reminderStats" && req.method === "GET") {
         const rl = await rateLimitOrNull(req, env, ctx, "reminderStats", 30, origin);
         if (rl) return rl;
-        if (!isAdminRequest(req, env)) {
+        if (!(await isAdminRequest(req, env))) {
           return json({ error: "forbidden" }, 403, origin);
         }
         const [{ results }, totalRow] = await Promise.all([
@@ -609,10 +641,13 @@ export default {
       if (url.pathname === "/verifyAdminToken" && req.method === "POST") {
         const rl = await rateLimitOrNull(req, env, ctx, "verifyAdminToken", 10, origin);
         if (rl) return rl;
-        if (!isAdminRequest(req, env)) {
+        if (!(await isAdminRequest(req, env))) {
           return json({ error: "forbidden" }, 403, origin);
         }
-        return json({ ok: true }, 200, origin);
+        // 帶密碼或帶還沒過期的 session token 來驗證都會換到一張新的 session token（滑動式延長
+        // 有效期）：只要 7 天內有開過後台，就不用重新輸入密碼；超過 7 天沒用才會真的過期。
+        const sessionToken = await issueAdminSession(env);
+        return json({ ok: true, sessionToken }, 200, origin);
       }
 
       // 手動測試整站爬蟲：GET /scrapeManual?token=...
@@ -621,7 +656,7 @@ export default {
       if (url.pathname === "/scrapeManual" && req.method === "GET") {
         const rl = await rateLimitOrNull(req, env, ctx, "scrapeManual", 5, origin);
         if (rl) return rl;
-        if (!isAdminRequest(req, env)) {
+        if (!(await isAdminRequest(req, env))) {
           return json({ error: "forbidden" }, 403, origin);
         }
         const { readable, writable } = new TransformStream();
@@ -681,7 +716,7 @@ export default {
       if (url.pathname === "/cleanupStaleBranches" && req.method === "POST") {
         const rl = await rateLimitOrNull(req, env, ctx, "cleanupStaleBranches", 5, origin);
         if (rl) return rl;
-        if (!isAdminRequest(req, env)) {
+        if (!(await isAdminRequest(req, env))) {
           return json({ error: "forbidden" }, 403, origin);
         }
         const result = await cleanupStaleBranches(env.DB);
@@ -693,7 +728,7 @@ export default {
       if (url.pathname === "/rollupAnalyticsManual" && req.method === "POST") {
         const rl = await rateLimitOrNull(req, env, ctx, "rollupAnalyticsManual", 5, origin);
         if (rl) return rl;
-        if (!isAdminRequest(req, env)) {
+        if (!(await isAdminRequest(req, env))) {
           return json({ error: "forbidden" }, 403, origin);
         }
         const result = await rollupAnalyticsEvents(env.DB);

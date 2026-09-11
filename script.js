@@ -1066,6 +1066,9 @@ function favoriteLabel(state){
 const FAVORITE_EMPTY_HINTS = [
   "現在可以自訂最愛，選好篩選後按「加到最愛」。",
 ];
+function escapeHtml(str){
+  return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
 function renderFavorites(){
   const grid = document.getElementById("favoriteGrid");
   grid.querySelectorAll(".fav-item, .empty-hint").forEach(el => el.remove());
@@ -1080,7 +1083,7 @@ function renderFavorites(){
     btn.type = "button";
     btn.className = "fav-item";
     btn.style.background = fav.color || "#e8604c";
-    btn.innerHTML = `<i class="fa-solid fa-${fav.icon || "heart"}"></i>${fav.label}`;
+    btn.innerHTML = `<i class="fa-solid fa-${escapeHtml(fav.icon || "heart")}"></i>${escapeHtml(fav.label)}`;
     btn.addEventListener("click", () => {
       applyFilterState(fav.state);
       ["wg_selected_day", "wg_selected_time", "wg_selected_branch", "wg_selected_room", "wg_selected_course", "wg_selected_teacher"].forEach(key => localStorage.removeItem(key));

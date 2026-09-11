@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>二手冷氣出清｜大金 4 年內外機一組</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha384-PPIZEGYM1v8zp5Py7UjFb79S58UeqCL9pYVnVPURKEqvioPROaVAJKKLzvH2rDnI" crossorigin="anonymous">
+<style>
+  :root{
+    --ink:#2b2b2b; --paper:#fff; --sub:#7a7a7a; --line:#ececec;
+    --navy:#3a3a4a; --teal:#3fae8f; --cream:#f5e6a8; --coral:#e8604c;
+    --bg:#f7f5ef;
+  }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; min-height:100vh; background:var(--bg); color:var(--ink);
+    font-family:"Nunito", "PingFang TC", "Microsoft JhengHei", sans-serif;
+    display:flex; justify-content:center; padding:24px 14px 60px;
+  }
+  .card{
+    width:100%; max-width:460px; background:var(--paper); border-radius:22px;
+    padding:22px 18px 26px; box-shadow:0 10px 30px rgba(0,0,0,.06);
+  }
+  .headline{ text-align:center; margin:0 0 4px; font-size:22px; font-weight:900; }
+  .subline{ text-align:center; color:var(--sub); font-size:13px; margin:0 0 18px; }
+
+  .gallery-wrap{ position:relative; margin-bottom:16px; }
+  .gallery{
+    display:flex; overflow-x:auto; scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch;
+    border-radius:16px; scrollbar-width:none;
+  }
+  .gallery::-webkit-scrollbar{ display:none; }
+  .slide{
+    flex:0 0 100%; scroll-snap-align:center; aspect-ratio:4/3; background:#000;
+    display:flex; align-items:center; justify-content:center; overflow:hidden;
+  }
+  .slide img, .slide video{ width:100%; height:100%; object-fit:cover; display:block; }
+
+  .gallery-nav{
+    position:absolute; top:50%; transform:translateY(-50%); width:34px; height:34px;
+    border-radius:50%; border:none; background:rgba(0,0,0,.45); color:#fff; font-size:14px;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  .gallery-nav.prev{ left:8px; } .gallery-nav.next{ right:8px; }
+
+  .dots{ display:flex; justify-content:center; gap:6px; margin-top:10px; }
+  .dot{ width:7px; height:7px; border-radius:50%; background:var(--line); transition:background .2s ease, transform .2s ease; }
+  .dot.active{ background:var(--coral); transform:scale(1.3); }
+
+  .price-row{ display:flex; align-items:baseline; justify-content:center; gap:6px; margin:6px 0 16px; }
+  .price-num{ font-size:34px; font-weight:900; color:var(--coral); }
+  .price-unit{ font-size:15px; font-weight:700; color:var(--sub); }
+
+  .desc{ font-size:14.5px; line-height:1.75; white-space:pre-line; margin:0 0 18px; }
+
+  .info-row{
+    display:flex; align-items:center; gap:10px; padding:11px 12px; border-radius:14px;
+    background:var(--bg); font-size:13.5px; font-weight:700; margin-bottom:8px;
+  }
+  .info-row i{ color:var(--teal); width:16px; text-align:center; }
+
+  .cta{
+    margin-top:16px; text-align:center; padding:14px; border-radius:16px;
+    background:linear-gradient(135deg, var(--coral), #f0895d); color:#fff;
+    font-weight:800; font-size:14.5px; line-height:1.6;
+    border:none; width:100%; cursor:pointer; font-family:inherit;
+  }
+
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,.55); display:flex;
+    align-items:center; justify-content:center; padding:20px; z-index:10;
+  }
+  .modal-box{
+    background:var(--paper); border-radius:20px; padding:22px; max-width:300px; width:100%;
+    text-align:center;
+  }
+  .modal-box img{ width:100%; border-radius:12px; display:block; }
+
+  .sold-card{ text-align:center; padding:40px 10px; }
+  .sold-card .emoji{ font-size:40px; }
+  .sold-card p{ font-size:15px; color:var(--sub); margin-top:10px; }
+
+  [hidden]{ display:none !important; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div id="liveContent">
+    <p class="headline">❄️ 二手冷氣出清</p>
+    <p class="subline">大金 4 年機齡・內外機一組・共 6 組</p>
+
+    <div class="gallery-wrap">
+      <div class="gallery" id="gallery">
+        <div class="slide"><img src="aircon-assets/photo1.jpg" alt="冷氣照片 1" loading="lazy"></div>
+        <div class="slide"><img src="aircon-assets/photo2.jpg" alt="冷氣照片 2" loading="lazy"></div>
+        <div class="slide"><img src="aircon-assets/photo3.jpg" alt="冷氣照片 3" loading="lazy"></div>
+        <div class="slide"><img src="aircon-assets/photo4.jpg" alt="冷氣照片 4" loading="lazy"></div>
+        <div class="slide"><video src="aircon-assets/video.mp4" muted loop playsinline controls></video></div>
+      </div>
+      <button type="button" class="gallery-nav prev" aria-label="上一張"><i class="fa-solid fa-chevron-left"></i></button>
+      <button type="button" class="gallery-nav next" aria-label="下一張"><i class="fa-solid fa-chevron-right"></i></button>
+    </div>
+    <div class="dots" id="dots"></div>
+
+    <div class="price-row">
+      <span class="price-num">6,800</span>
+      <span class="price-unit">元 / 每台</span>
+    </div>
+
+    <p class="desc">大安區仁愛圓環近全新 4 年大金冷氣（內外機一組）限時出清，每台只要 6800 元，9/26–9/30 面交自取快私訊！🏃‍♂️</p>
+
+    <div class="info-row"><i class="fa-solid fa-snowflake"></i>共 6 組，每組內外機一組</div>
+    <div class="info-row"><i class="fa-solid fa-location-dot"></i>大安區仁愛圓環附近</div>
+    <div class="info-row"><i class="fa-solid fa-calendar-days"></i>自取時間：9/26（六）～ 9/30（三）</div>
+    <div class="info-row"><i class="fa-solid fa-hand-holding-hand"></i>面交自取</div>
+
+    <button type="button" class="cta" id="ctaBtn">現在就可以私訊聯絡，約 9/26–9/30 期間面交自取 💬</button>
+  </div>
+
+  <div id="soldContent" class="sold-card" hidden>
+    <div class="emoji">✅</div>
+    <p class="headline" style="margin-top:10px">已出清</p>
+    <p>感謝大家的關注，冷氣已經有人接手囉！</p>
+  </div>
+</div>
+
+<div class="modal-overlay" id="qrModal" hidden>
+  <div class="modal-box">
+    <img src="aircon-assets/line-qrcode.jpg" alt="LINE 聯絡 QR Code">
+  </div>
+</div>
+
+<script>
+(function(){
+  // 台灣時間過了 2026-10-01 就自動換成「已出清」畫面，不用手動回來下架。
+  var LISTING_END = "2026-10-01T00:00:00+08:00";
+  var nowTaiwan = new Date(Date.now() + 8 * 3600 * 1000);
+  var endTaiwan = new Date(new Date(LISTING_END).getTime() + 8 * 3600 * 1000);
+  if (nowTaiwan >= endTaiwan) {
+    document.getElementById("liveContent").hidden = true;
+    document.getElementById("soldContent").hidden = false;
+    return;
+  }
+
+  var gallery = document.getElementById("gallery");
+  var slides = gallery.querySelectorAll(".slide");
+  var dotsWrap = document.getElementById("dots");
+  slides.forEach(function(_, i){
+    var dot = document.createElement("span");
+    dot.className = "dot" + (i === 0 ? " active" : "");
+    dotsWrap.appendChild(dot);
+  });
+  var dots = dotsWrap.querySelectorAll(".dot");
+
+  function goTo(index){
+    index = (index + slides.length) % slides.length;
+    slides[index].scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+  }
+  function currentIndex(){
+    var scrollCenter = gallery.scrollLeft + gallery.clientWidth / 2;
+    var closest = 0, closestDist = Infinity;
+    slides.forEach(function(s, i){
+      var dist = Math.abs((s.offsetLeft + s.clientWidth / 2) - scrollCenter);
+      if (dist < closestDist) { closestDist = dist; closest = i; }
+    });
+    return closest;
+  }
+
+  document.querySelector(".gallery-nav.prev").addEventListener("click", function(){ goTo(currentIndex() - 1); });
+  document.querySelector(".gallery-nav.next").addEventListener("click", function(){ goTo(currentIndex() + 1); });
+
+  var scrollTimer = null;
+  gallery.addEventListener("scroll", function(){
+    if (scrollTimer) clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(function(){
+      var idx = currentIndex();
+      dots.forEach(function(d, i){ d.classList.toggle("active", i === idx); });
+    }, 80);
+  });
+
+  var qrModal = document.getElementById("qrModal");
+  document.getElementById("ctaBtn").addEventListener("click", function(){ qrModal.hidden = false; });
+  qrModal.addEventListener("click", function(e){ if (e.target === qrModal) qrModal.hidden = true; });
+})();
+</script>
+
+</body>
+</html>
