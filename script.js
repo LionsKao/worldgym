@@ -12,9 +12,10 @@ if (new URLSearchParams(location.search).get("pwa") === "1"){
   localStorage.setItem("wg_debug_force_pwa", "1");
 }
 
-// 從舊網域 wgcourse.com 導過來的訪客(Cloudflare 301 redirect 帶 ?utm_source=wgcourse_old)，
+// 從舊網域導過來的訪客(Cloudflare 301 redirect 帶 ?utm_source=wgcourse_old 或 ?utm_source=old_index)，
 // 沿用廣告 banner 的位置顯示「記得改書籤」提示，不顯示其他廣告。
-const cameFromOldDomain = new URLSearchParams(location.search).get("utm_source") === "wgcourse_old";
+const OLD_DOMAIN_UTM_SOURCES = ["wgcourse_old", "old_index"];
+const cameFromOldDomain = OLD_DOMAIN_UTM_SOURCES.includes(new URLSearchParams(location.search).get("utm_source"));
 
 // 廣告文案：內容改由 D1 的 ads table 提供（上下架時間 + enabled 開關），
 // 首頁載入時打 /ads 拿目前生效中的廣告，隨機挑一則顯示，同一個工作階段（頁面沒重整）
