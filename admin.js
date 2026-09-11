@@ -272,7 +272,7 @@ function createDualLineChart(canvas, { data, keyA, labelA, colorA, keyB, labelB,
       responsive: true,
       maintainAspectRatio: true,
       aspectRatio: CHART_W / CHART_H,
-      animation: { duration: 280 },
+      animation: { duration: 1600 },
       interaction: { mode: "index", intersect: false },
       plugins: {
         legend: { display: false },
@@ -321,7 +321,7 @@ function createSingleLineChart(canvas, { data, keyA, labelA, colorA, ariaLabel }
       responsive: true,
       maintainAspectRatio: true,
       aspectRatio: CHART_W / CHART_H,
-      animation: { duration: 280 },
+      animation: { duration: 1600 },
       interaction: { mode: "index", intersect: false },
       plugins: {
         legend: { display: false },

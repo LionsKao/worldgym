@@ -1959,7 +1959,7 @@ function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint
         indexAxis: "y",
         responsive: true,
         maintainAspectRatio: false,
-        animation: { duration: 280 },
+        animation: { duration: 1600 },
         plugins: {
           legend: { display: false },
           tooltip: {
@@ -2074,7 +2074,7 @@ function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint
           responsive: true,
           maintainAspectRatio: true,
           aspectRatio: 560 / 210,
-          animation: { duration: 280 },
+          animation: { duration: 1600 },
           interaction: { mode: "index", intersect: false },
           plugins: {
             legend: { display: false },
