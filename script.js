@@ -153,6 +153,7 @@ function withUtmSource(url){
   try {
     const u = new URL(url);
     u.searchParams.set("utm_source", "worldgym.pages.dev");
+    u.searchParams.set("utm_medium", "referral");
     return u.toString();
   } catch(err){
     return url;
@@ -869,7 +870,7 @@ const copyUrlBtn = document.getElementById("copyUrlBtn");
 copyUrlBtn.addEventListener("click", async (e) => {
   e.stopPropagation();
   try{
-    await navigator.clipboard.writeText(location.origin + "/?utm_source=website_link");
+    await navigator.clipboard.writeText(location.origin + "/?utm_source=website_link&utm_medium=copy_link");
     showPillWarning(copyUrlBtn, "已複製網站網址到剪貼簿", "fa-solid fa-fw fa-clipboard-check");
     trackEvent("copy_site_url", {});
   } catch(err){
