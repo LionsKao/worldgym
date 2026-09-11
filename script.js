@@ -12,6 +12,10 @@ if (new URLSearchParams(location.search).get("pwa") === "1"){
   localStorage.setItem("wg_debug_force_pwa", "1");
 }
 
+// 從舊網域 wgcourse.com 導過來的訪客(Cloudflare 301 redirect 帶 ?utm_source=wgcourse_old)，
+// 沿用廣告 banner 的位置顯示「記得改書籤」提示，不顯示其他廣告。
+const cameFromOldDomain = new URLSearchParams(location.search).get("utm_source") === "wgcourse_old";
+
 // 廣告文案：內容改由 D1 的 ads table 提供（上下架時間 + enabled 開關），
 // 首頁載入時打 /ads 拿目前生效中的廣告，隨機挑一則顯示，同一個工作階段（頁面沒重整）
 // 就固定顯示那一則，不會再輪播切換。每則廣告各自帶自己的連結，換廣告時同步換外層 <a> 的 href。
@@ -160,6 +164,14 @@ function initAdBannerCarousel(){
   const banner = document.getElementById("adBanner");
   const el = document.getElementById("adBannerText");
   if (!banner || !el) return;
+  if (cameFromOldDomain){
+    el.textContent = "📌 網址換囉！記得把新網址 worldgym.pages.dev 加進書籤";
+    banner.removeAttribute("href");
+    const tag = banner.querySelector(".ad-banner-tag");
+    tag.setAttribute("aria-label", "提示");
+    tag.innerHTML = '<i class="fa-solid fa-fw fa-bookmark"></i>';
+    return;
+  }
   if (AD_BANNERS.length === 0) {
     banner.classList.add("hidden");
     return;
@@ -169,12 +181,17 @@ function initAdBannerCarousel(){
   banner.href = withUtmSource(AD_BANNERS[currentAdIndex].url);
   bufferAdImpression(AD_BANNERS[currentAdIndex].id);
 }
-fetch(`${WORKER_BASE}/ads`)
-  .then((res) => (res.ok ? res.json() : { ads: [] }))
-  .then((data) => { AD_BANNERS = Array.isArray(data.ads) ? data.ads : []; })
-  .catch(() => { AD_BANNERS = []; })
-  .finally(initAdBannerCarousel);
+if (cameFromOldDomain){
+  initAdBannerCarousel();
+} else {
+  fetch(`${WORKER_BASE}/ads`)
+    .then((res) => (res.ok ? res.json() : { ads: [] }))
+    .then((data) => { AD_BANNERS = Array.isArray(data.ads) ? data.ads : []; })
+    .catch(() => { AD_BANNERS = []; })
+    .finally(initAdBannerCarousel);
+}
 document.querySelector(".ad-banner")?.addEventListener("click", () => {
+  if (cameFromOldDomain) return;
   trackEvent("click_ad_banner", { ad_text: document.getElementById("adBannerText")?.textContent });
   trackAdClick(AD_BANNERS[currentAdIndex]?.id);
 });
