@@ -86,6 +86,7 @@ async function attemptLogin(){
       showAdminPage();
       loadAdStats();
       loadFavoriteStats();
+      loadReminderStats();
       loadQueryAccessStats();
     } else {
       showLoginError("密碼錯誤");
@@ -112,6 +113,7 @@ adminBackBtn.addEventListener("mouseleave", () => adminBackTooltip.classList.rem
     showAdminPage();
     loadAdStats();
     loadFavoriteStats();
+    loadReminderStats();
     loadQueryAccessStats();
   } else {
     clearStoredToken();
@@ -422,6 +424,40 @@ async function loadFavoriteStats(){
     console.error(e);
     favoriteStatsSummary.textContent = "";
     favoriteTrendWrap.textContent = "載入失敗，請重新登入";
+  }
+}
+
+// --- 提醒功能統計：只看每個月「登記提醒」被觸發幾次，評估功能有沒有人用，不用像最愛那樣分兩個數字。 ---
+const reminderStatsSummary = document.getElementById("reminderStatsSummary");
+const reminderStatsTableWrap = document.getElementById("reminderStatsTableWrap");
+
+function renderReminderStatsTable(monthly){
+  if (!monthly.length){
+    reminderStatsTableWrap.innerHTML = '<span class="empty-hint">目前沒有紀錄</span>';
+    return;
+  }
+  const rows = monthly.map((row) => `<tr><td>${escapeHtml(row.month)}</td><td>${row.count}</td></tr>`).join("");
+  reminderStatsTableWrap.innerHTML = `
+    <table class="access-log-table">
+      <thead><tr><th>月份</th><th>登記次數</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+async function loadReminderStats(){
+  try{
+    const res = await adminFetch("/reminderStats");
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    reminderStatsSummary.innerHTML = `
+      <div class="favorite-stats-item"><div class="favorite-stats-num">${data.total || 0}</div><div class="favorite-stats-label">累積登記次數</div></div>
+    `;
+    renderReminderStatsTable(data.monthly || []);
+  } catch(e){
+    console.error(e);
+    reminderStatsSummary.textContent = "";
+    reminderStatsTableWrap.textContent = "載入失敗，請重新登入";
   }
 }
 

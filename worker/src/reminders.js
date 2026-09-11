@@ -85,7 +85,16 @@ function computeNextOccurrence(dayOfWeek, startTime) {
   return { classAt, remindAt };
 }
 
-async function registerReminder(db, params) {
+// 提醒功能使用量打點：只算「登記提醒」被觸發幾次，不分辨是不是同一人、也不追蹤取消，
+// 純粹讓後台看每個月有多少次登記，藉此評估這個功能有沒有人用。用 waitUntil 背景寫入，
+// 打點失敗不能連帶讓登記提醒本身也失敗。
+function trackReminderAdd(db, ctx) {
+  ctx.waitUntil(
+    db.prepare("INSERT INTO reminder_add_events (createdAt) VALUES (?)").bind(nowTaiwanIso()).run()
+  );
+}
+
+async function registerReminder(db, params, ctx) {
   const { branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, pushSubscription, clickUrl } = params;
   const subscriptionEndpoint = pushSubscription?.endpoint || "";
   if (!subscriptionEndpoint) throw new Error("missing push subscription endpoint");
@@ -116,6 +125,7 @@ async function registerReminder(db, params) {
       nowTaiwanIso()
     )
     .run();
+  trackReminderAdd(db, ctx);
 
   return { id, classAt, remindAt };
 }
