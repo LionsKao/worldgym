@@ -27,12 +27,14 @@ fbq('track', 'PageView');
 <meta property="og:title" content="World Gym 課表查詢">
 <meta property="og:description" content="快速查詢 World Gym 各分店課表、老師、時段，支援課前推播提醒。">
 <meta property="og:url" content="https://worldgym.pages.dev/">
-<meta property="og:image" content="https://worldgym.pages.dev/icons/icon-512.png">
+<meta property="og:image" content="https://worldgym.pages.dev/icons/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
 <meta property="og:locale" content="zh_TW">
-<meta name="twitter:card" content="summary">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="World Gym 課表查詢">
 <meta name="twitter:description" content="快速查詢 World Gym 各分店課表、老師、時段，支援課前推播提醒。">
-<meta name="twitter:image" content="https://worldgym.pages.dev/icons/icon-512.png">
+<meta name="twitter:image" content="https://worldgym.pages.dev/icons/og-image.png">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -89,7 +91,7 @@ fbq('track', 'PageView');
   <div class="sheet" id="favoriteSheet">
     <div class="field-block" style="--accent:var(--coral)">
       <div class="pill-grid" id="favoriteGrid">
-        <span class="section-tag"><i class="fa-solid fa-fw fa-heart"></i></span>
+        <span class="section-tag" aria-label="最愛"><i class="fa-solid fa-fw fa-heart"></i></span>
       </div>
     </div>
   </div>
@@ -99,32 +101,32 @@ fbq('track', 'PageView');
 
       <fieldset class="field-block" style="--accent:var(--teal)">
         <div class="pill-grid" id="dayGrid">
-          <span class="section-tag"><i class="fa-solid fa-fw fa-calendar-day"></i></span>
+          <span class="section-tag" aria-label="星期"><i class="fa-solid fa-fw fa-calendar-day"></i></span>
         </div>
       </fieldset>
 
       <fieldset class="field-block" style="--accent:#e0629b">
         <div class="pill-grid" id="timeGrid">
-          <span class="section-tag"><i class="fa-solid fa-fw fa-clock"></i></span>
+          <span class="section-tag" aria-label="時段"><i class="fa-solid fa-fw fa-clock"></i></span>
         </div>
       </fieldset>
 
       <fieldset class="field-block" style="--accent:#4a90d9">
         <div class="section-head" id="branchSectionHead">
-          <span class="section-tag"><i class="fa-solid fa-fw fa-location-dot"></i></span>
+          <span class="section-tag" aria-label="分店"><i class="fa-solid fa-fw fa-location-dot"></i></span>
         </div>
         <div class="pill-grid" id="branchGrid"><div class="empty-hint">讀取中…</div></div>
       </fieldset>
 
       <fieldset class="field-block" style="--accent:var(--orange)">
         <div class="pill-grid" id="roomGrid">
-          <span class="section-tag"><i class="fa-solid fa-fw fa-store"></i></span>
+          <span class="section-tag" aria-label="教室類型"><i class="fa-solid fa-fw fa-store"></i></span>
         </div>
       </fieldset>
 
       <fieldset class="field-block" style="--accent:#8a6fb3">
         <div class="section-head">
-          <span class="section-tag"><i class="fa-solid fa-fw fa-face-smile"></i></span>
+          <span class="section-tag" aria-label="課程"><i class="fa-solid fa-fw fa-face-smile"></i></span>
         </div>
         <div class="collapsible" id="courseWrap">
           <div class="pill-grid" id="courseGrid"><div class="empty-hint">讀取中…</div></div>
@@ -139,7 +141,7 @@ fbq('track', 'PageView');
 
       <fieldset class="field-block" style="--accent:#c9922e">
         <div class="section-head">
-          <span class="section-tag"><i class="fa-solid fa-fw fa-user"></i></span>
+          <span class="section-tag" aria-label="老師"><i class="fa-solid fa-fw fa-user"></i></span>
         </div>
         <div class="search-wrap">
           <span class="search-icons"><i class="fa-solid fa-magnifying-glass"></i></span>
@@ -290,7 +292,7 @@ fbq('track', 'PageView');
   <div class="sheet" id="settingsSheet">
     <div class="field-block" id="settingsBlock" style="--accent:var(--navy)">
       <div class="pill-grid" id="settingsGrid">
-        <span class="section-tag"><i class="fa-solid fa-fw fa-gear"></i></span>
+        <span class="section-tag" aria-label="設定"><i class="fa-solid fa-fw fa-gear"></i></span>
         <span class="tooltip-wrap" id="addFavoriteBtnWrap">
           <span class="hint-tooltip" id="addFavoriteTooltip"></span>
           <button type="button" class="section-btn" id="addFavoriteBtn" disabled><i class="fa-solid fa-heart"></i>加到最愛</button>
