@@ -7,6 +7,11 @@ const IN_LIMIT = 30;
 // 目前總共只有 106 家分店，不會真的卡到使用者。
 const BRANCH_LIMIT = 150;
 const ROOM_VALUES = new Set(["團體教室", "飛輪教室"]);
+// 前端（script.js 的 RESULT_COUNT_WARN_LIMIT=250）只要 displayedCount 超過 250 筆就整包不渲染，
+// 只顯示「結果太多，請調整篩選條件」。設一個比它高一點的保險絲，篩選條件夠寬時不用真的把
+// 全部符合的資料（目前全表也才 7 千多筆，但沒有理由白白浪費）都撈出來、去重、序列化、傳輸，
+// 反正前端超過 250 就整包丟棄——300 對「真的 <=250 筆」的正常情況完全無感，只在超量時省事。
+const RESULT_HARD_CAP = 300;
 // 時段篩選：值是起始時間的 HH 開頭（跟 startTime 存的 "HHMM" 格式一致），
 // 對應到該時段涵蓋的所有 HH。
 const TIME_SLOT_HOURS = {
@@ -108,8 +113,15 @@ async function queryClasses(db, rawState) {
     && params.length + branch.length <= D1_PARAM_SAFETY_LIMIT;
   if (branchPushedDown) conditions.push(inClause("branchSlug", branch, params));
 
-  const sql = `SELECT id, branchSlug, branchName, date, dayOfWeek, startTime, className, teacherName, roomName, isSubstitute
+  let sql = `SELECT id, branchSlug, branchName, date, dayOfWeek, startTime, className, teacherName, roomName, isSubstitute
     FROM classes WHERE ${conditions.map((c) => `(${c})`).join(" AND ")} ORDER BY date, startTime`;
+  // 分店沒下推進 SQL 的少見情況（見上面 branchPushedDown 的說明）還要在 JS 端另外篩一輪，
+  // 在這裡加 LIMIT 可能會在還沒篩到目標分店前就把額度用完、篩出來的結果比實際少；
+  // 這種情況才不加 SQL 層的 LIMIT，靠下面對 docs 的 slice 收尾即可。
+  if (branch.length === 0 || branchPushedDown) {
+    sql += ` LIMIT ?`;
+    params.push(RESULT_HARD_CAP);
+  }
 
   const { results } = await db.prepare(sql).bind(...params).all();
   let docs = results.map((r) => ({ ...r, isSubstitute: r.isSubstitute === 1 }));
@@ -117,6 +129,7 @@ async function queryClasses(db, rawState) {
     const branchSet = new Set(branch);
     docs = docs.filter((c) => branchSet.has(c.branchSlug));
   }
+  docs = docs.slice(0, RESULT_HARD_CAP);
   const fetchedCount = docs.length;
 
   const rows = buildDisplayRows(docs);
