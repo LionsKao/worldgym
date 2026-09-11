@@ -18,9 +18,21 @@ fbq('track', 'PageView');
 <noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=1037122719034276&ev=PageView&noscript=1"/></noscript>
 <!-- End Facebook Pixel Code -->
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 44'%3E%3Ctext x='22' y='19' text-anchor='middle' font-family='sans-serif' font-weight='900' font-size='16' fill='%23e8604c'%3E課表%3C/text%3E%3Ctext x='22' y='38' text-anchor='middle' font-family='sans-serif' font-weight='900' font-size='16' fill='%233a3a4a'%3E查詢%3C/text%3E%3C/svg%3E">
-<title>💪</title>
-<meta name="description" content="課表查詢">
-<meta name="robots" content="noindex, nofollow">
+<title>💪 World Gym 課表查詢</title>
+<meta name="description" content="快速查詢 World Gym 各分店課表、老師、時段，支援課前推播提醒。">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://worldgym.pages.dev/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="World Gym 課表查詢">
+<meta property="og:title" content="World Gym 課表查詢">
+<meta property="og:description" content="快速查詢 World Gym 各分店課表、老師、時段，支援課前推播提醒。">
+<meta property="og:url" content="https://worldgym.pages.dev/">
+<meta property="og:image" content="https://worldgym.pages.dev/icons/icon-512.png">
+<meta property="og:locale" content="zh_TW">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="World Gym 課表查詢">
+<meta name="twitter:description" content="快速查詢 World Gym 各分店課表、老師、時段，支援課前推播提醒。">
+<meta name="twitter:image" content="https://worldgym.pages.dev/icons/icon-512.png">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -31,8 +43,23 @@ fbq('track', 'PageView');
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha384-PPIZEGYM1v8zp5Py7UjFb79S58UeqCL9pYVnVPURKEqvioPROaVAJKKLzvH2rDnI" crossorigin="anonymous">
-<link rel="stylesheet" href="style.css?v=89">
+<link rel="stylesheet" href="style.css?v=90">
 <style>#loadingOverlay{position:fixed;top:0;left:0;width:100%;height:100%;background:#fff;z-index:9999;}</style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "name": "World Gym 課表查詢",
+  "url": "https://worldgym.pages.dev/",
+  "description": "快速查詢 World Gym 各分店課表、老師、時段，支援課前推播提醒。",
+  "inLanguage": "zh-Hant",
+  "publisher": {
+    "@type": "Organization",
+    "name": "World Gym 課表查詢",
+    "url": "https://worldgym.pages.dev/"
+  }
+}
+</script>
 </head>
 <body>
 
@@ -149,6 +176,7 @@ fbq('track', 'PageView');
 
   <div class="sheet hidden" id="searchTrendSheet">
     <div class="section-head">
+      <h2 class="visually-hidden">查詢量趨勢</h2>
       <span class="section-tag" aria-label="查詢量趨勢" style="--accent:var(--navy)"><i class="fa-solid fa-chart-line"></i><i class="fa-solid fa-fw fa-magnifying-glass"></i></span>
     </div>
     <div id="searchTrendWrap" class="branch-stats-wrap"><div class="empty-hint">讀取中…</div></div>
@@ -160,6 +188,7 @@ fbq('track', 'PageView');
 
   <div class="sheet hidden" id="branchStatsSheet" style="--accent:#4a90d9">
     <div class="section-head">
+      <h2 class="visually-hidden">分店查詢次數排行</h2>
       <span class="section-tag" aria-label="分店查詢排行" style="--accent:#4a90d9"><i class="fa-solid fa-chart-line"></i><i class="fa-solid fa-fw fa-location-dot"></i></span>
     </div>
     <div class="branch-stats-filter-row">
@@ -177,6 +206,7 @@ fbq('track', 'PageView');
 
   <div class="sheet hidden" id="courseStatsSheet" style="--accent:#8a6fb3">
     <div class="section-head">
+      <h2 class="visually-hidden">課程查詢次數排行</h2>
       <span class="section-tag" aria-label="課程查詢排行" style="--accent:#8a6fb3"><i class="fa-solid fa-chart-line"></i><i class="fa-solid fa-fw fa-face-smile"></i></span>
     </div>
     <div class="branch-stats-filter-row">
@@ -194,6 +224,7 @@ fbq('track', 'PageView');
 
   <div class="sheet hidden" id="teacherStatsSheet" style="--accent:#c9922e">
     <div class="section-head">
+      <h2 class="visually-hidden">老師查詢次數排行</h2>
       <span class="section-tag" aria-label="老師查詢排行" style="--accent:#c9922e"><i class="fa-solid fa-chart-line"></i><i class="fa-solid fa-fw fa-user"></i></span>
     </div>
     <div class="branch-stats-filter-row">
