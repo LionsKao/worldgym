@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
-<link rel="stylesheet" href="style.css?v=62">
+<link rel="stylesheet" href="style.css?v=63">
 <style>
   .admin-link-row{ display:flex; gap:6px; flex-wrap:wrap; margin-top:14px; }
   .admin-link-btn{
@@ -188,15 +188,15 @@
           <span class="section-tag"><i class="fa-solid fa-fw fa-chart-simple"></i>廣告</span>
         </div>
         <div class="ad-stats-filter-row">
-          <div id="adStatusFilter" class="custom-select" data-value="active">
+          <div id="adStatusFilter" class="custom-select" data-value="all">
             <button type="button" class="custom-select-trigger">
-              <span class="custom-select-label">上架中</span>
+              <span class="custom-select-label">全部</span>
               <i class="fa-solid fa-chevron-down custom-select-arrow"></i>
             </button>
             <div class="custom-select-menu">
-              <div class="custom-select-option selected" data-value="active">上架中</div>
+              <div class="custom-select-option" data-value="active">上架中</div>
               <div class="custom-select-option" data-value="inactive">已下架</div>
-              <div class="custom-select-option" data-value="all">全部</div>
+              <div class="custom-select-option selected" data-value="all">全部</div>
             </div>
           </div>
           <div id="adStatsSelect" class="custom-select" data-value="">
@@ -233,6 +233,26 @@
         </div>
       </div>
     </div>
+
+    <div class="sheet admin-col">
+      <div class="field-block" style="--accent:var(--orange)">
+        <div class="section-head">
+          <span class="section-tag"><i class="fa-solid fa-fw fa-shield-halved"></i>存取紀錄</span>
+          <div id="accessLogDaysFilter" class="custom-select" data-value="7">
+            <button type="button" class="custom-select-trigger">
+              <span class="custom-select-label">7 天</span>
+              <i class="fa-solid fa-chevron-down custom-select-arrow"></i>
+            </button>
+            <div class="custom-select-menu">
+              <div class="custom-select-option selected" data-value="7">7 天</div>
+              <div class="custom-select-option" data-value="14">14 天</div>
+              <div class="custom-select-option" data-value="30">30 天</div>
+            </div>
+          </div>
+        </div>
+        <div id="accessLogTableWrap" class="access-log-table-wrap"></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -255,6 +275,6 @@
 </div>
 
 <script src="vendor/chart.umd.min.js"></script>
-<script src="admin.js?v=29"></script>
+<script src="admin.js?v=32"></script>
 </body>
 </html>
