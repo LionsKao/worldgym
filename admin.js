@@ -305,6 +305,46 @@ function updateDualLineChart(chart, data, keyA, keyB){
   chart.update();
 }
 
+// 單 Y 軸折線圖工廠：只有一條數列時用這個（提醒登記次數），視覺風格跟雙數列圖共用。
+function createSingleLineChart(canvas, { data, keyA, labelA, colorA, ariaLabel }){
+  canvas.setAttribute("role", "img");
+  canvas.setAttribute("aria-label", ariaLabel);
+  const chart = new Chart(canvas, {
+    type: "line",
+    data: {
+      labels: data.map(monthTickLabel),
+      datasets: [
+        { label: labelA, data: data.map((d) => d[keyA]), borderColor: colorA, backgroundColor: colorA, yAxisID: "yA", tension: 0.3, pointRadius: 4, pointHoverRadius: 5, borderWidth: 3 },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      aspectRatio: CHART_W / CHART_H,
+      animation: { duration: 280 },
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: THEME_INK, titleColor: "#fff", bodyColor: "#fff",
+          titleFont: { size: 11, weight: "700" }, bodyFont: { size: 11 },
+          padding: 8, cornerRadius: 8, displayColors: false,
+          callbacks: {
+            title: (items) => items[0].chart.wgData[items[0].dataIndex].month,
+            label: (item) => `${item.dataset.label} ${item.formattedValue}`,
+          },
+        },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: THEME_SUB, font: { size: 9 } } },
+        yA: { position: "left", beginAtZero: true, ticks: { color: colorA, font: { size: 9 }, count: 5, precision: 0, callback: (v) => Math.round(v) }, grid: { color: THEME_LINE } },
+      },
+    },
+  });
+  chart.wgData = data;
+  return chart;
+}
+
 let adChartInstance = null;
 
 function updateChartNavState(){
@@ -437,26 +477,17 @@ async function loadFavoriteStats(){
 
 // --- 提醒功能統計：只看每個月「登記提醒」被觸發幾次，評估功能有沒有人用，不用像最愛那樣分兩個數字。 ---
 const reminderStatsSummary = document.getElementById("reminderStatsSummary");
-const reminderStatsTableWrap = document.getElementById("reminderStatsTableWrap");
+const reminderTrendWrap = document.getElementById("reminderTrendWrap");
+let reminderTrendChartInstance = null;
 
-// 跟廣告/最愛面板的折線圖同一套邏輯：固定顯示近 CHART_MONTHS 個月，沒紀錄的月份補 0，
-// 不會因為完全沒資料就整個面板空著、讓人誤以為功能壞掉。由新到舊排序，本月排最上面。
+// 跟廣告/最愛面板的折線圖同一套邏輯：固定顯示近 CHART_MONTHS 個月、由舊到新排序，沒紀錄的月份補 0，
+// 不會因為完全沒資料就整個面板空著、讓人誤以為功能壞掉。
 function buildReminderMonthlyWindow(monthly, endMonth){
   const byMonth = {};
   for (const row of monthly) byMonth[row.month] = row.count;
   const months = [];
-  for (let i = 0; i < CHART_MONTHS; i++) months.push(addMonths(endMonth, -i));
+  for (let i = CHART_MONTHS - 1; i >= 0; i--) months.push(addMonths(endMonth, -i));
   return months.map((m) => ({ month: m, count: byMonth[m] || 0 }));
-}
-
-function renderReminderStatsTable(monthly){
-  const rows = monthly.map((row) => `<tr><td>${escapeHtml(row.month)}</td><td>${row.count}</td></tr>`).join("");
-  reminderStatsTableWrap.innerHTML = `
-    <table class="access-log-table">
-      <thead><tr><th>月份</th><th>登記次數</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-  `;
 }
 
 async function loadReminderStats(){
@@ -467,11 +498,17 @@ async function loadReminderStats(){
     reminderStatsSummary.innerHTML = `
       <div class="favorite-stats-item"><div class="favorite-stats-num">${data.total || 0}</div><div class="favorite-stats-label">累積登記次數</div></div>
     `;
-    renderReminderStatsTable(buildReminderMonthlyWindow(data.monthly || [], currentMonthKey()));
+    const data12 = buildReminderMonthlyWindow(data.monthly || [], currentMonthKey());
+    if (reminderTrendChartInstance){ reminderTrendChartInstance.destroy(); reminderTrendChartInstance = null; }
+    reminderTrendWrap.innerHTML = '<div class="ad-chart-viewport"><canvas></canvas></div>';
+    reminderTrendChartInstance = createSingleLineChart(reminderTrendWrap.querySelector("canvas"), {
+      data: data12, keyA: "count", labelA: "登記次數", colorA: "#3fae8f",
+      ariaLabel: `近 ${CHART_MONTHS} 個月提醒登記次數趨勢`,
+    });
   } catch(e){
     console.error(e);
     reminderStatsSummary.textContent = "";
-    reminderStatsTableWrap.textContent = "載入失敗，請重新登入";
+    reminderTrendWrap.textContent = "載入失敗，請重新登入";
   }
 }
 
