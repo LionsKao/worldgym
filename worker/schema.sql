@@ -158,3 +158,88 @@ CREATE TABLE favorite_events (
 
 CREATE INDEX idx_favorite_events_type_createdAt ON favorite_events(type, createdAt);
 CREATE INDEX idx_favorite_events_clientId ON favorite_events(clientId);
+
+-- /issueToken、/queryClasses 這兩個公開端點的存取紀錄：記 IP/UA/是否被流量限制擋下，
+-- 事後才有辦法追查是不是被爬蟲/腳本大量打（search_events 完全沒記來源，查不出是誰）。
+CREATE TABLE query_access_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  endpoint TEXT NOT NULL,
+  ip TEXT NOT NULL,
+  userAgent TEXT,
+  rateLimited INTEGER NOT NULL DEFAULT 0,
+  createdAt TEXT NOT NULL
+);
+
+CREATE INDEX idx_query_access_log_createdAt ON query_access_log(createdAt);
+CREATE INDEX idx_query_access_log_ip ON query_access_log(ip);
+
+-- 提醒功能使用量記錄：每次成功登記一顆提醒（/registerReminder）就記一列，純粹看
+-- 每個月被觸發幾次，用來評估這個功能有沒有人在用；不分辨是不是同一人、也不追蹤取消。
+DROP TABLE IF EXISTS reminder_add_events;
+CREATE TABLE reminder_add_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  createdAt TEXT NOT NULL
+);
+
+CREATE INDEX idx_reminder_add_events_createdAt ON reminder_add_events(createdAt);
+
+-- 分析報表「明細 -> 每月彙總」機制（見 worker/src/analytics.js）：teacher/course/branch
+-- 查詢次數、整體查詢量、我的最愛、廣告曝光/點擊這幾張明細表只保留最近 2 個月，更早的月份
+-- 由每月排程壓縮寫進這裡、刪除明細；報表查詢改成「彙總表 UNION ALL 明細表」。
+DROP TABLE IF EXISTS teacher_search_monthly;
+CREATE TABLE teacher_search_monthly (
+  month TEXT NOT NULL,
+  teacherName TEXT NOT NULL,
+  cnt INTEGER NOT NULL,
+  PRIMARY KEY (month, teacherName)
+);
+
+DROP TABLE IF EXISTS course_search_monthly;
+CREATE TABLE course_search_monthly (
+  month TEXT NOT NULL,
+  courseName TEXT NOT NULL,
+  cnt INTEGER NOT NULL,
+  PRIMARY KEY (month, courseName)
+);
+
+DROP TABLE IF EXISTS branch_search_monthly;
+CREATE TABLE branch_search_monthly (
+  month TEXT NOT NULL,
+  branchName TEXT NOT NULL,
+  cnt INTEGER NOT NULL,
+  PRIMARY KEY (month, branchName)
+);
+
+DROP TABLE IF EXISTS search_monthly;
+CREATE TABLE search_monthly (
+  month TEXT PRIMARY KEY,
+  cnt INTEGER NOT NULL,
+  resultSum INTEGER NOT NULL DEFAULT 0
+);
+
+-- type='add' 的 cnt 是彙總當下算好、凍結的「當月去重人數」；type='apply' 單純加總。
+-- 全時間的去重人數另外看 favorite_client_seen，不受這張表影響。
+DROP TABLE IF EXISTS favorite_monthly;
+CREATE TABLE favorite_monthly (
+  month TEXT NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('add', 'apply')),
+  cnt INTEGER NOT NULL,
+  PRIMARY KEY (month, type)
+);
+
+-- 「全時間去重人數」即時維護（/trackFavorite 每次 type='add' 就 INSERT OR IGNORE 一次），
+-- 不依賴 favorite_events 明細是否還在。表本身只隨「不重複的人數」成長，天生有界。
+DROP TABLE IF EXISTS favorite_client_seen;
+CREATE TABLE favorite_client_seen (
+  clientId TEXT PRIMARY KEY,
+  firstSeenAt TEXT NOT NULL
+);
+
+DROP TABLE IF EXISTS ad_monthly;
+CREATE TABLE ad_monthly (
+  month TEXT NOT NULL,
+  adId TEXT NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('impression', 'click')),
+  cnt INTEGER NOT NULL,
+  PRIMARY KEY (month, adId, type)
+);

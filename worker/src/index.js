@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { queryClasses } from "./queryClasses.js";
 import { runScrape, cleanupStaleBranches } from "./scrape.js";
 import { registerReminder, cancelReminder, listReminders, dispatchDueReminders } from "./reminders.js";
+import { monthlyNameRanking, availableYears, monthlySearchTrend, favoriteStatsCombined, adStatsCombined, rollupAnalyticsEvents } from "./analytics.js";
 
 // 網站是跨網域被呼叫，所以要自己開白名單。
 // 之後如果掛了自訂網域，把新網域加進這個陣列即可。
@@ -75,6 +76,17 @@ function logQueryAccess(env, ctx, endpoint, ip, userAgent, rateLimited) {
       "INSERT INTO query_access_log (endpoint, ip, userAgent, rateLimited, createdAt) VALUES (?, ?, ?, ?, ?)"
     ).bind(endpoint, ip, userAgent, rateLimited ? 1 : 0, nowTaiwanIso()).run()
   );
+}
+
+// 每月排程（見 scheduled()）清一次舊紀錄，避免這張純維運用途的表無限成長——
+// /queryAccessStats 本身預設只查最近 7 天，90 天前的資料早就沒人在看，刪掉也不影響任何功能。
+const QUERY_ACCESS_LOG_RETENTION_DAYS = 90;
+async function cleanupOldQueryAccessLog(db) {
+  const cutoff = new Date(Date.now() + 8 * 3600 * 1000 - QUERY_ACCESS_LOG_RETENTION_DAYS * 86400000)
+    .toISOString()
+    .replace("Z", "+08:00");
+  const res = await db.prepare("DELETE FROM query_access_log WHERE createdAt < ?").bind(cutoff).run();
+  return { deleted: res.meta.changes || 0 };
 }
 
 function base64url(bytes) {
@@ -353,6 +365,15 @@ export default {
         await env.DB.prepare("INSERT INTO favorite_events (clientId, type, createdAt) VALUES (?, ?, ?)")
           .bind(clientId.trim(), type, nowTaiwanIso())
           .run();
+        // 全時間去重人數即時維護在 favorite_client_seen，不依賴 favorite_events 明細是否還在
+        // （見 analytics.js 的說明），才能讓「累積建立人數」在明細被每月排程清掉後依然準確。
+        if (type === "add") {
+          ctx.waitUntil(
+            env.DB.prepare("INSERT OR IGNORE INTO favorite_client_seen (clientId, firstSeenAt) VALUES (?, ?)")
+              .bind(clientId.trim(), nowTaiwanIso())
+              .run()
+          );
+        }
         return json({ ok: true }, 200, origin);
       }
 
@@ -364,35 +385,14 @@ export default {
         if (!isAdminRequest(req, env)) {
           return json({ error: "forbidden" }, 403, origin);
         }
-        const [{ results: ads }, { results: monthly }] = await Promise.all([
-          env.DB.prepare(`
-            SELECT
-              a.id, a.text, a.url, a.startAt, a.endAt, a.enabled, a.sortOrder, a.advertiser,
-              COALESCE(imp.cnt, 0) AS impressions,
-              COALESCE(clk.cnt, 0) AS clicks
-            FROM ads a
-            LEFT JOIN (SELECT adId, COUNT(*) cnt FROM ad_events WHERE type='impression' GROUP BY adId) imp ON imp.adId = a.id
-            LEFT JOIN (SELECT adId, COUNT(*) cnt FROM ad_events WHERE type='click' GROUP BY adId) clk ON clk.adId = a.id
-            ORDER BY a.sortOrder
-          `).all(),
-          env.DB.prepare(`
-            SELECT adId, substr(createdAt, 1, 7) AS month, type, COUNT(*) cnt
-            FROM ad_events
-            GROUP BY adId, month, type
-          `).all(),
-        ]);
-        const monthlyByAd = {};
-        for (const row of monthly) {
-          const bucket = (monthlyByAd[row.adId] ??= {});
-          const entry = (bucket[row.month] ??= { impressions: 0, clicks: 0 });
-          entry[row.type === "impression" ? "impressions" : "clicks"] = row.cnt;
-        }
-        for (const ad of ads) ad.monthly = monthlyByAd[ad.id] || {};
+        const ads = await adStatsCombined(env.DB);
         return json({ ads }, 200, origin);
       }
 
       // admin.html 查詢老師統計面板：回傳指定年月查詢次數前 15 名的老師，
       // 順便回傳所有有紀錄的年份，讓前端動態長出年份下拉選項。
+      // 舊月份的明細會被每月排程搬進 teacher_search_monthly（見 analytics.js），
+      // 這裡一律用「彙總 UNION 明細」的合併查詢，讀起來完全無感。
       if (url.pathname === "/teacherStats" && req.method === "GET") {
         const rl = await rateLimitOrNull(req, env, ctx, "teacherStats", 30, origin);
         if (rl) return rl;
@@ -403,21 +403,14 @@ export default {
         const year = url.searchParams.get("year") || nowTW.year;
         const month = (url.searchParams.get("month") || nowTW.month).padStart(2, "0");
         const monthKey = `${year}-${month}`;
-
-        const [{ results: years }, { results: teachers }] = await Promise.all([
-          env.DB.prepare("SELECT DISTINCT substr(createdAt, 1, 4) AS y FROM teacher_search_events ORDER BY y DESC").all(),
-          env.DB.prepare(`
-            SELECT teacherName, COUNT(*) AS cnt
-            FROM teacher_search_events
-            WHERE substr(createdAt, 1, 7) = ?
-            GROUP BY teacherName
-            ORDER BY cnt DESC
-            LIMIT 15
-          `).bind(monthKey).all(),
+        const tableArgs = { rawTable: "teacher_search_events", nameColumn: "teacherName", monthlyTable: "teacher_search_monthly" };
+        const [years, teachers] = await Promise.all([
+          availableYears(env.DB, tableArgs),
+          monthlyNameRanking(env.DB, { ...tableArgs, monthKey, limit: 15 }),
         ]);
         return json({
-          years: years.map((r) => r.y),
-          teachers: teachers.map((r) => ({ name: r.teacherName, count: r.cnt })),
+          years,
+          teachers: teachers.map((r) => ({ name: r.name, count: r.cnt })),
         }, 200, origin);
       }
 
@@ -432,21 +425,14 @@ export default {
         const year = url.searchParams.get("year") || nowTW.year;
         const month = (url.searchParams.get("month") || nowTW.month).padStart(2, "0");
         const monthKey = `${year}-${month}`;
-
-        const [{ results: years }, { results: courses }] = await Promise.all([
-          env.DB.prepare("SELECT DISTINCT substr(createdAt, 1, 4) AS y FROM course_search_events ORDER BY y DESC").all(),
-          env.DB.prepare(`
-            SELECT courseName, COUNT(*) AS cnt
-            FROM course_search_events
-            WHERE substr(createdAt, 1, 7) = ?
-            GROUP BY courseName
-            ORDER BY cnt DESC
-            LIMIT 15
-          `).bind(monthKey).all(),
+        const tableArgs = { rawTable: "course_search_events", nameColumn: "courseName", monthlyTable: "course_search_monthly" };
+        const [years, courses] = await Promise.all([
+          availableYears(env.DB, tableArgs),
+          monthlyNameRanking(env.DB, { ...tableArgs, monthKey, limit: 15 }),
         ]);
         return json({
-          years: years.map((r) => r.y),
-          courses: courses.map((r) => ({ name: r.courseName, count: r.cnt })),
+          years,
+          courses: courses.map((r) => ({ name: r.name, count: r.cnt })),
         }, 200, origin);
       }
 
@@ -461,21 +447,14 @@ export default {
         const year = url.searchParams.get("year") || nowTW.year;
         const month = (url.searchParams.get("month") || nowTW.month).padStart(2, "0");
         const monthKey = `${year}-${month}`;
-
-        const [{ results: years }, { results: branches }] = await Promise.all([
-          env.DB.prepare("SELECT DISTINCT substr(createdAt, 1, 4) AS y FROM branch_search_events ORDER BY y DESC").all(),
-          env.DB.prepare(`
-            SELECT branchName, COUNT(*) AS cnt
-            FROM branch_search_events
-            WHERE substr(createdAt, 1, 7) = ?
-            GROUP BY branchName
-            ORDER BY cnt DESC
-            LIMIT 15
-          `).bind(monthKey).all(),
+        const tableArgs = { rawTable: "branch_search_events", nameColumn: "branchName", monthlyTable: "branch_search_monthly" };
+        const [years, branches] = await Promise.all([
+          availableYears(env.DB, tableArgs),
+          monthlyNameRanking(env.DB, { ...tableArgs, monthKey, limit: 15 }),
         ]);
         return json({
-          years: years.map((r) => r.y),
-          branches: branches.map((r) => ({ name: r.branchName, count: r.cnt })),
+          years,
+          branches: branches.map((r) => ({ name: r.name, count: r.cnt })),
         }, 200, origin);
       }
 
@@ -483,16 +462,8 @@ export default {
       if (url.pathname === "/publicSearchStats" && req.method === "GET") {
         const rl = await rateLimitOrNull(req, env, ctx, "publicSearchStats", 30, origin);
         if (rl) return rl;
-        const { results } = await env.DB.prepare(
-          "SELECT substr(createdAt, 1, 7) AS month, COUNT(*) AS cnt, SUM(resultCount) AS resultSum FROM search_events GROUP BY month"
-        ).all();
-        const monthly = {};
-        const monthlyResults = {};
-        for (const row of results) {
-          monthly[row.month] = row.cnt;
-          monthlyResults[row.month] = row.resultSum || 0;
-        }
-        return json({ monthly, monthlyResults }, 200, origin);
+        const stats = await monthlySearchTrend(env.DB);
+        return json(stats, 200, origin);
       }
 
       // index.html 公開版老師查詢排行，邏輯跟 /teacherStats 一樣，但不驗證 token（老師名字本來就是課表上的公開資訊）。
@@ -503,21 +474,14 @@ export default {
         const year = url.searchParams.get("year") || nowTW.year;
         const month = (url.searchParams.get("month") || nowTW.month).padStart(2, "0");
         const monthKey = `${year}-${month}`;
-
-        const [{ results: years }, { results: teachers }] = await Promise.all([
-          env.DB.prepare("SELECT DISTINCT substr(createdAt, 1, 4) AS y FROM teacher_search_events ORDER BY y DESC").all(),
-          env.DB.prepare(`
-            SELECT teacherName, COUNT(*) AS cnt
-            FROM teacher_search_events
-            WHERE substr(createdAt, 1, 7) = ?
-            GROUP BY teacherName
-            ORDER BY cnt DESC
-            LIMIT 15
-          `).bind(monthKey).all(),
+        const tableArgs = { rawTable: "teacher_search_events", nameColumn: "teacherName", monthlyTable: "teacher_search_monthly" };
+        const [years, teachers] = await Promise.all([
+          availableYears(env.DB, tableArgs),
+          monthlyNameRanking(env.DB, { ...tableArgs, monthKey, limit: 15 }),
         ]);
         return json({
-          years: years.map((r) => r.y),
-          teachers: teachers.map((r) => ({ name: r.teacherName, count: r.cnt })),
+          years,
+          teachers: teachers.map((r) => ({ name: r.name, count: r.cnt })),
         }, 200, origin);
       }
 
@@ -529,21 +493,14 @@ export default {
         const year = url.searchParams.get("year") || nowTW.year;
         const month = (url.searchParams.get("month") || nowTW.month).padStart(2, "0");
         const monthKey = `${year}-${month}`;
-
-        const [{ results: years }, { results: courses }] = await Promise.all([
-          env.DB.prepare("SELECT DISTINCT substr(createdAt, 1, 4) AS y FROM course_search_events ORDER BY y DESC").all(),
-          env.DB.prepare(`
-            SELECT courseName, COUNT(*) AS cnt
-            FROM course_search_events
-            WHERE substr(createdAt, 1, 7) = ?
-            GROUP BY courseName
-            ORDER BY cnt DESC
-            LIMIT 15
-          `).bind(monthKey).all(),
+        const tableArgs = { rawTable: "course_search_events", nameColumn: "courseName", monthlyTable: "course_search_monthly" };
+        const [years, courses] = await Promise.all([
+          availableYears(env.DB, tableArgs),
+          monthlyNameRanking(env.DB, { ...tableArgs, monthKey, limit: 15 }),
         ]);
         return json({
-          years: years.map((r) => r.y),
-          courses: courses.map((r) => ({ name: r.courseName, count: r.cnt })),
+          years,
+          courses: courses.map((r) => ({ name: r.name, count: r.cnt })),
         }, 200, origin);
       }
 
@@ -555,21 +512,14 @@ export default {
         const year = url.searchParams.get("year") || nowTW.year;
         const month = (url.searchParams.get("month") || nowTW.month).padStart(2, "0");
         const monthKey = `${year}-${month}`;
-
-        const [{ results: years }, { results: branches }] = await Promise.all([
-          env.DB.prepare("SELECT DISTINCT substr(createdAt, 1, 4) AS y FROM branch_search_events ORDER BY y DESC").all(),
-          env.DB.prepare(`
-            SELECT branchName, COUNT(*) AS cnt
-            FROM branch_search_events
-            WHERE substr(createdAt, 1, 7) = ?
-            GROUP BY branchName
-            ORDER BY cnt DESC
-            LIMIT 10
-          `).bind(monthKey).all(),
+        const tableArgs = { rawTable: "branch_search_events", nameColumn: "branchName", monthlyTable: "branch_search_monthly" };
+        const [years, branches] = await Promise.all([
+          availableYears(env.DB, tableArgs),
+          monthlyNameRanking(env.DB, { ...tableArgs, monthKey, limit: 10 }),
         ]);
         return json({
-          years: years.map((r) => r.y),
-          branches: branches.map((r) => ({ name: r.branchName, count: r.cnt })),
+          years,
+          branches: branches.map((r) => ({ name: r.name, count: r.cnt })),
         }, 200, origin);
       }
 
@@ -580,16 +530,8 @@ export default {
         if (!isAdminRequest(req, env)) {
           return json({ error: "forbidden" }, 403, origin);
         }
-        const { results } = await env.DB.prepare(
-          "SELECT substr(createdAt, 1, 7) AS month, COUNT(*) AS cnt, SUM(resultCount) AS resultSum FROM search_events GROUP BY month"
-        ).all();
-        const monthly = {};
-        const monthlyResults = {};
-        for (const row of results) {
-          monthly[row.month] = row.cnt;
-          monthlyResults[row.month] = row.resultSum || 0;
-        }
-        return json({ monthly, monthlyResults }, 200, origin);
+        const stats = await monthlySearchTrend(env.DB);
+        return json(stats, 200, origin);
       }
 
       // 查有沒有被爬蟲/腳本大量打：依 IP 分組列出 /issueToken、/queryClasses 的存取次數與被流量限制擋下的次數，
@@ -619,32 +561,35 @@ export default {
         }, 200, origin);
       }
 
-      // admin.html 最愛統計面板：add 用 COUNT(DISTINCT clientId) 估算「幾個人成功建立過最愛」，
-      // apply 單純累加「總共被按了幾次」，不去重。
+      // admin.html 最愛統計面板：totalAdders 讀 favorite_client_seen（即時維護，不受清理影響，
+      // 永遠是正確的全時間去重人數）；月度趨勢一樣是「彙總 UNION 明細」合併查詢。
       if (url.pathname === "/favoriteStats" && req.method === "GET") {
         const rl = await rateLimitOrNull(req, env, ctx, "favoriteStats", 30, origin);
         if (rl) return rl;
         if (!isAdminRequest(req, env)) {
           return json({ error: "forbidden" }, 403, origin);
         }
-        const [{ results: adderRows }, { results: applyRows }, totalAdderRow, totalApplyRow] = await Promise.all([
+        const stats = await favoriteStatsCombined(env.DB);
+        return json(stats, 200, origin);
+      }
+
+      // admin.html 提醒功能統計面板：單純看每個月「登記提醒」被觸發幾次，評估這個功能有沒有人在用，
+      // 不分辨是不是同一人、不追蹤取消（見 reminders.js 的 trackReminderAdd）。
+      if (url.pathname === "/reminderStats" && req.method === "GET") {
+        const rl = await rateLimitOrNull(req, env, ctx, "reminderStats", 30, origin);
+        if (rl) return rl;
+        if (!isAdminRequest(req, env)) {
+          return json({ error: "forbidden" }, 403, origin);
+        }
+        const [{ results }, totalRow] = await Promise.all([
           env.DB.prepare(
-            "SELECT substr(createdAt, 1, 7) AS month, COUNT(DISTINCT clientId) AS cnt FROM favorite_events WHERE type = 'add' GROUP BY month"
+            "SELECT substr(createdAt, 1, 7) AS month, COUNT(*) AS cnt FROM reminder_add_events GROUP BY month ORDER BY month DESC"
           ).all(),
-          env.DB.prepare(
-            "SELECT substr(createdAt, 1, 7) AS month, COUNT(*) AS cnt FROM favorite_events WHERE type = 'apply' GROUP BY month"
-          ).all(),
-          env.DB.prepare("SELECT COUNT(DISTINCT clientId) AS cnt FROM favorite_events WHERE type = 'add'").first(),
-          env.DB.prepare("SELECT COUNT(*) AS cnt FROM favorite_events WHERE type = 'apply'").first(),
+          env.DB.prepare("SELECT COUNT(*) AS cnt FROM reminder_add_events").first(),
         ]);
-        const monthlyAdders = {};
-        for (const row of adderRows) monthlyAdders[row.month] = row.cnt;
-        const monthlyApplies = {};
-        for (const row of applyRows) monthlyApplies[row.month] = row.cnt;
         return json({
-          monthlyAdders, monthlyApplies,
-          totalAdders: totalAdderRow?.cnt || 0,
-          totalApplies: totalApplyRow?.cnt || 0,
+          monthly: results.map((r) => ({ month: r.month, count: r.cnt })),
+          total: totalRow?.cnt || 0,
         }, 200, origin);
       }
 
@@ -743,6 +688,18 @@ export default {
         return json(result, 200, origin);
       }
 
+      // 手動觸發一次分析報表的月度彙總（見 analytics.js），平常由每月排程自動跑，
+      // 這裡讓後台可以隨時手動確認/補跑，不用等到月初或自己下 SQL。
+      if (url.pathname === "/rollupAnalyticsManual" && req.method === "POST") {
+        const rl = await rateLimitOrNull(req, env, ctx, "rollupAnalyticsManual", 5, origin);
+        if (rl) return rl;
+        if (!isAdminRequest(req, env)) {
+          return json({ error: "forbidden" }, 403, origin);
+        }
+        const result = await rollupAnalyticsEvents(env.DB);
+        return json(result, 200, origin);
+      }
+
       // 課表通知(單次,上課前 30 分鐘):登記一顆課的 Web Push 通知。
       if (url.pathname === "/registerReminder" && req.method === "POST") {
         const rl = await rateLimitOrNull(req, env, ctx, "registerReminder", 60, origin);
@@ -764,7 +721,7 @@ export default {
         }
         const result = await registerReminder(env.DB, {
           branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, pushSubscription, clickUrl,
-        });
+        }, ctx);
         return json(result, 200, origin);
       }
 
@@ -804,6 +761,14 @@ export default {
     // 需要 Workers Paid 方案（單次執行 subrequest 上限 1000）才跑得完；免費方案單次執行上限只有 50，會在跑到一半時失敗。
     if (event.cron === "0 19 * * *" || event.cron === "0 9 * * *") {
       ctx.waitUntil(runScrape(env.DB));
+      return;
+    }
+    // 每月 1 號台灣時間 04:00（UTC 20:00）：清一次 query_access_log 的舊紀錄，
+    // 並把分析報表明細表（teacher/course/branch 查詢次數、查詢量、最愛、廣告事件）超過保留窗口
+    // 的舊月份壓縮成彙總、刪除明細（見 analytics.js 的 rollupAnalyticsEvents）。見 wrangler.toml 的 cron 設定。
+    if (event.cron === "0 20 1 * *") {
+      ctx.waitUntil(cleanupOldQueryAccessLog(env.DB));
+      ctx.waitUntil(rollupAnalyticsEvents(env.DB));
       return;
     }
     // 其餘（每 5 分鐘）用來掃一次課表通知。

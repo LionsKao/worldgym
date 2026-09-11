@@ -20,10 +20,13 @@ id = "27ad85dc0a2f411fbe0bd4f31451fad3"
 # 2026-08-18 帳號升級後，加回每天固定時間自動爬一次。
 # "*/5 * * * *" 每 5 分鐘掃描課表通知（reminders）有沒有到期；
 # "0 19 * * *" / "0 9 * * *" 是每天台灣時間 03:00 / 17:00（UTC+8，換算 UTC 19:00 / 09:00）
-# 各自動重抓一次全部分店。見 src/index.js 的 scheduled()。
+# 各自動重抓一次全部分店；
+# "0 20 1 * *" 是每月 1 號台灣時間 04:00（UTC 20:00）：清一次 query_access_log 90 天前的舊紀錄，
+# 並把分析報表明細表超過保留窗口的舊月份壓縮成彙總、刪除明細（見 src/analytics.js）。
+# 見 src/index.js 的 scheduled()。
 
 [triggers]
-crons = ["*/5 * * * *", "0 19 * * *", "0 9 * * *"]
+crons = ["*/5 * * * *", "0 19 * * *", "0 9 * * *", "0 20 1 * *"]
 
 [vars]
 VAPID_SUBJECT = "mailto:l-kao@jptip.co.jp"
