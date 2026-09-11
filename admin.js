@@ -1,17 +1,27 @@
 const WORKER_BASE = "https://worldgym-api.lions2100.workers.dev";
 const TOKEN_STORAGE_KEY = "worldgym_admin_token";
+const ADMIN_TOKEN_HEADER = "X-Admin-Token";
 
 // 密碼跟 worker 的 MANUAL_SCRAPE_TOKEN secret 對應。登入成功後存在 localStorage，
 // 之後每次操作都帶著送到後端驗證，密碼本身不會寫死在原始碼裡（repo 是公開的）。
+// 一律用 header 帶（不是 URL query string／JSON body），避免 token 被記進網址、外流到瀏覽器紀錄或中介的存取日誌。
 function getStoredToken(){ return localStorage.getItem(TOKEN_STORAGE_KEY) || ""; }
 function setStoredToken(token){ localStorage.setItem(TOKEN_STORAGE_KEY, token); }
 function clearStoredToken(){ localStorage.removeItem(TOKEN_STORAGE_KEY); }
 
+// 已登入後的後台呼叫統一走這個 helper 帶 header，避免每個呼叫點各自組 header 時漏掉。
+function adminFetch(path, options = {}){
+  return fetch(`${WORKER_BASE}${path}`, {
+    ...options,
+    headers: { ...(options.headers || {}), [ADMIN_TOKEN_HEADER]: getStoredToken() },
+  });
+}
+
+// 登入流程驗證的是使用者剛輸入、還沒存起來的密碼，所以不能用 adminFetch（它讀的是已存的 token）。
 async function verifyToken(token){
   const res = await fetch(`${WORKER_BASE}/verifyAdminToken`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token }),
+    headers: { [ADMIN_TOKEN_HEADER]: token },
   });
   return res.ok;
 }
@@ -74,6 +84,9 @@ async function attemptLogin(){
     if (ok){
       setStoredToken(token);
       showAdminPage();
+      loadAdStats();
+      loadFavoriteStats();
+      loadQueryAccessStats();
     } else {
       showLoginError("密碼錯誤");
     }
@@ -99,6 +112,7 @@ adminBackBtn.addEventListener("mouseleave", () => adminBackTooltip.classList.rem
     showAdminPage();
     loadAdStats();
     loadFavoriteStats();
+    loadQueryAccessStats();
   } else {
     clearStoredToken();
     showLoginOverlay();
@@ -359,7 +373,7 @@ function renderAdStatsSelect(){
 
 async function loadAdStats(){
   try{
-    const res = await fetch(`${WORKER_BASE}/adStats?token=${encodeURIComponent(getStoredToken())}`);
+    const res = await adminFetch("/adStats");
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
     AD_STATS = Array.isArray(data.ads) ? data.ads : [];
@@ -390,7 +404,7 @@ function buildFavoriteTrendWindow(monthlyAdders, monthlyApplies, endMonth){
 
 async function loadFavoriteStats(){
   try{
-    const res = await fetch(`${WORKER_BASE}/favoriteStats?token=${encodeURIComponent(getStoredToken())}`);
+    const res = await adminFetch("/favoriteStats");
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
     favoriteStatsSummary.innerHTML = `
@@ -410,6 +424,48 @@ async function loadFavoriteStats(){
     favoriteTrendWrap.textContent = "載入失敗，請重新登入";
   }
 }
+
+// --- 存取紀錄面板：查 /issueToken、/queryClasses 有沒有被單一 IP 異常大量打（爬蟲/腳本），
+// 依 IP 分組列出次數最多的前 30 個，rateLimitedCount > 0（有被流量限制擋過）的列特別標色。
+const accessLogDaysFilter = document.getElementById("accessLogDaysFilter");
+const accessLogTableWrap = document.getElementById("accessLogTableWrap");
+enhanceCustomSelect(accessLogDaysFilter);
+
+function renderAccessLogTable(ips){
+  if (!ips.length){
+    accessLogTableWrap.innerHTML = '<span class="empty-hint">目前沒有存取紀錄</span>';
+    return;
+  }
+  const rows = ips.map((row) => `
+    <tr class="${row.rateLimitedCount > 0 ? "access-log-row-flagged" : ""}">
+      <td>${escapeHtml(row.ip)}</td>
+      <td class="access-log-ua" title="${escapeHtml(row.userAgent || "")}">${escapeHtml(row.userAgent || "(無)")}</td>
+      <td>${row.count}</td>
+      <td>${row.rateLimitedCount}</td>
+      <td>${escapeHtml(row.lastSeen || "")}</td>
+    </tr>
+  `).join("");
+  accessLogTableWrap.innerHTML = `
+    <table class="access-log-table">
+      <thead><tr><th>IP</th><th>User-Agent</th><th>次數</th><th>被擋次數</th><th>最後出現時間</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+async function loadQueryAccessStats(){
+  try{
+    const days = accessLogDaysFilter.value || "7";
+    const res = await adminFetch(`/queryAccessStats?days=${encodeURIComponent(days)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    renderAccessLogTable(data.ips || []);
+  } catch(e){
+    console.error(e);
+    accessLogTableWrap.textContent = "載入失敗，請重新登入";
+  }
+}
+accessLogDaysFilter.addEventListener("change", loadQueryAccessStats);
 
 const modal = document.getElementById("rescrapeModal");
 const modalText = document.getElementById("rescrapeModalText");
@@ -449,7 +505,7 @@ function logToTerminal(text){
 // Cloudflare Worker 自己打官網。回應是 NDJSON 串流（每行一個 JSON 物件），
 // 邊讀邊把 type:"log" 的行丟給 onLog 即時顯示，最後一行是 type:"result" 或 type:"error"。
 async function rescrapeViaCloudflare(onLog){
-  const res = await fetch(`${WORKER_BASE}/scrapeManual?token=${encodeURIComponent(getStoredToken())}`);
+  const res = await adminFetch("/scrapeManual");
   if (!res.ok || !res.body){
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || `HTTP ${res.status}`);
@@ -481,11 +537,7 @@ async function rescrapeViaCloudflare(onLog){
 // 106 家分店那麼久，所以不用真的串流，這裡自己組幾行進度文字丟給 onLog，維持跟終端機一致的體驗。
 async function cleanupStaleBranches(onLog){
   onLog("🔍 比對目前分店清單...");
-  const res = await fetch(`${WORKER_BASE}/cleanupStaleBranches`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token: getStoredToken() }),
-  });
+  const res = await adminFetch("/cleanupStaleBranches", { method: "POST" });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   if (data.staleBranches && data.staleBranches.length){

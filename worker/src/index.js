@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import { queryClasses } from "./queryClasses.js";
 import { runScrape, cleanupStaleBranches } from "./scrape.js";
 import { registerReminder, cancelReminder, listReminders, dispatchDueReminders } from "./reminders.js";
@@ -32,7 +33,7 @@ function currentTaiwanYearMonth() {
 }
 
 function corsHeaders(origin) {
-  const headers = { "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, X-Query-Token" };
+  const headers = { "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, X-Query-Token, X-Admin-Token" };
   if (ALLOWED_ORIGINS.includes(origin)) headers["Access-Control-Allow-Origin"] = origin;
   return headers;
 }
@@ -56,6 +57,24 @@ async function checkRateLimit(env, kvKeyPrefix, ip, limit, ctx) {
   if (current >= limit) return false;
   ctx.waitUntil(env.QUERY_RATE_LIMIT.put(key, String(current + 1), { expirationTtl: 90 }));
   return true;
+}
+
+// 給其餘端點共用的簡化包裝：算 IP、檢查限流，超過就直接回傳 429 response，
+// 沒超過回傳 null 讓呼叫端繼續往下走（`if (rl) return rl;`）。每個端點各自傳不同的 name 當 KV key 前綴。
+async function rateLimitOrNull(req, env, ctx, name, limit, origin) {
+  const ip = req.headers.get("CF-Connecting-IP") || "unknown";
+  const allowed = await checkRateLimit(env, `rl:${name}`, ip, limit, ctx);
+  return allowed ? null : json({ error: "rate_limited" }, 429, origin);
+}
+
+// /issueToken、/queryClasses 存取紀錄，事後才有辦法查是不是被爬蟲/腳本大量打（見 query_access_log）。
+// 用 waitUntil 背景寫入，不擋回應。
+function logQueryAccess(env, ctx, endpoint, ip, userAgent, rateLimited) {
+  ctx.waitUntil(
+    env.DB.prepare(
+      "INSERT INTO query_access_log (endpoint, ip, userAgent, rateLimited, createdAt) VALUES (?, ?, ?, ?, ?)"
+    ).bind(endpoint, ip, userAgent, rateLimited ? 1 : 0, nowTaiwanIso()).run()
+  );
 }
 
 function base64url(bytes) {
@@ -98,6 +117,20 @@ async function verifyQueryToken(env, token) {
   return { ok: true };
 }
 
+// --- 後台驗證：X-Admin-Token header 帶 MANUAL_SCRAPE_TOKEN ---
+// 先各自雜湊成固定長度再用 timingSafeEqual 比較，不能直接 !== 字串比較——
+// JS 字串比較是「比到第一個不同字元就提前返回」，理論上可被時間側channel慢慢猜出 token。
+// 雜湊成固定長度也順便避開 timingSafeEqual 要求兩個 buffer 長度相同的限制。
+const ADMIN_TOKEN_HEADER = "X-Admin-Token";
+function constantTimeEqual(a, b) {
+  const ha = createHash("sha256").update(String(a ?? "")).digest();
+  const hb = createHash("sha256").update(String(b ?? "")).digest();
+  return timingSafeEqual(ha, hb);
+}
+function isAdminRequest(req, env) {
+  return constantTimeEqual(req.headers.get(ADMIN_TOKEN_HEADER), env.MANUAL_SCRAPE_TOKEN);
+}
+
 export default {
   async fetch(req, env, ctx) {
     // 只開放台灣 IP：cf.country 沒有值(如本機開發)就放行，避免擋掉自己測試。
@@ -118,7 +151,9 @@ export default {
       // 這個端點本身也有流量限制（獨立 key 前綴），避免有人瘋狂打這個端點換無限張票。
       if (url.pathname === "/issueToken" && req.method === "GET") {
         const ip = req.headers.get("CF-Connecting-IP") || "unknown";
+        const ua = req.headers.get("User-Agent") || "";
         const allowed = await checkRateLimit(env, "rl:issueToken", ip, 10, ctx);
+        logQueryAccess(env, ctx, "issueToken", ip, ua, !allowed);
         if (!allowed) return json({ error: "rate_limited" }, 429, origin);
         const token = await issueQueryToken(env);
         return json({ token }, 200, origin);
@@ -126,7 +161,9 @@ export default {
 
       if (url.pathname === "/queryClasses" && req.method === "POST") {
         const ip = req.headers.get("CF-Connecting-IP") || "unknown";
+        const ua = req.headers.get("User-Agent") || "";
         const allowed = await checkRateLimit(env, "rl:queryClasses", ip, 20, ctx);
+        logQueryAccess(env, ctx, "queryClasses", ip, ua, !allowed);
         if (!allowed) return json({ error: "rate_limited" }, 429, origin);
 
         const verification = await verifyQueryToken(env, req.headers.get("X-Query-Token"));
@@ -140,6 +177,8 @@ export default {
       // 首頁廣告輪播：只回傳目前在上下架時間內、且 enabled=1 的廣告，順序照 sortOrder。
       // id 要回傳出去，前端輪播才能標記「目前顯示的是哪一則廣告」，用來打曝光/點擊事件。
       if (url.pathname === "/ads" && req.method === "GET") {
+        const rl = await rateLimitOrNull(req, env, ctx, "ads", 60, origin);
+        if (rl) return rl;
         const now = nowTaiwanIso();
         const { results } = await env.DB.prepare(
           "SELECT id, text, url FROM ads WHERE enabled = 1 AND startAt <= ? AND endAt >= ? ORDER BY sortOrder"
@@ -150,6 +189,8 @@ export default {
       // 廣告曝光/點擊打點：訪客觸發的公開動作，不做身分驗證，只驗證 adId 真的存在、type 合法，
       // 避免寫入垃圾資料污染統計。
       if (url.pathname === "/trackAdEvent" && req.method === "POST") {
+        const rl = await rateLimitOrNull(req, env, ctx, "trackAdEvent", 60, origin);
+        if (rl) return rl;
         const body = await req.json().catch(() => ({}));
         const { adId, type } = body || {};
         if (type !== "impression" && type !== "click") {
@@ -169,6 +210,8 @@ export default {
       // （見 script.js 的 flushAdImpressions），避免每次輪播都各自發一個 request + D1 寫入。
       // sendBeacon 送出的 body 是 text/plain，這裡用 req.text() 手動 parse 才能同時吃 fetch 跟 beacon 兩種來源。
       if (url.pathname === "/trackAdEvents" && req.method === "POST") {
+        const rl = await rateLimitOrNull(req, env, ctx, "trackAdEvents", 20, origin);
+        if (rl) return rl;
         const raw = await req.text();
         let body;
         try { body = JSON.parse(raw); } catch { body = {}; }
@@ -200,6 +243,8 @@ export default {
       // 老師查詢次數打點：訪客真的送出查詢（含指定老師）時觸發，不做身分驗證，
       // 只做基本型別/長度防呆。前端已經做 30 分鐘內同老師去重，這裡單純累加寫入。
       if (url.pathname === "/trackTeacherSearch" && req.method === "POST") {
+        const rl = await rateLimitOrNull(req, env, ctx, "trackTeacherSearch", 60, origin);
+        if (rl) return rl;
         const body = await req.json().catch(() => ({}));
         const { teacher } = body || {};
         if (typeof teacher !== "string" || !teacher.trim() || teacher.length > 50) {
@@ -213,6 +258,8 @@ export default {
 
       // 課程查詢次數打點，邏輯跟 /trackTeacherSearch 一樣。
       if (url.pathname === "/trackCourseSearch" && req.method === "POST") {
+        const rl = await rateLimitOrNull(req, env, ctx, "trackCourseSearch", 60, origin);
+        if (rl) return rl;
         const body = await req.json().catch(() => ({}));
         const { course } = body || {};
         if (typeof course !== "string" || !course.trim() || course.length > 50) {
@@ -226,6 +273,8 @@ export default {
 
       // 分店查詢次數打點，邏輯跟 /trackTeacherSearch 一樣。
       if (url.pathname === "/trackBranchSearch" && req.method === "POST") {
+        const rl = await rateLimitOrNull(req, env, ctx, "trackBranchSearch", 60, origin);
+        if (rl) return rl;
         const body = await req.json().catch(() => ({}));
         const { branch } = body || {};
         if (typeof branch !== "string" || !branch.trim() || branch.length > 50) {
@@ -242,6 +291,8 @@ export default {
       // 這裡收整批已經確定要記錄的值，三張表各自組 INSERT 語句、一次 db.batch() 送完，
       // 取代「選了幾個分店/老師/課程就各自發幾個獨立 request + 獨立 INSERT」。
       if (url.pathname === "/trackSearchEvents" && req.method === "POST") {
+        const rl = await rateLimitOrNull(req, env, ctx, "trackSearchEvents", 20, origin);
+        if (rl) return rl;
         const body = await req.json().catch(() => ({}));
         const MAX_ITEMS_PER_KIND = 20;
         function sanitizeList(list) {
@@ -276,6 +327,8 @@ export default {
       // 整體查詢量打點：每次使用者真的送出查詢就打一次，不做去重、不驗證內容，
       // 純粹用來看「每月查詢次數」跟「每月查詢結果數」的使用量趨勢。
       if (url.pathname === "/trackSearch" && req.method === "POST") {
+        const rl = await rateLimitOrNull(req, env, ctx, "trackSearch", 60, origin);
+        if (rl) return rl;
         const body = await req.json().catch(() => ({}));
         const resultCount = Number.isInteger(body?.resultCount) && body.resultCount >= 0 ? body.resultCount : 0;
         await env.DB.prepare("INSERT INTO search_events (createdAt, resultCount) VALUES (?, ?)")
@@ -287,6 +340,8 @@ export default {
       // 「我的最愛」使用打點：type='add' 是成功建立一個最愛、type='apply' 是點最愛套用篩選，
       // clientId 是前端自己產生存在 localStorage 的匿名 id，不做身分驗證，只驗證型別/長度防呆。
       if (url.pathname === "/trackFavorite" && req.method === "POST") {
+        const rl = await rateLimitOrNull(req, env, ctx, "trackFavorite", 60, origin);
+        if (rl) return rl;
         const body = await req.json().catch(() => ({}));
         const { clientId, type } = body || {};
         if (typeof clientId !== "string" || !clientId.trim() || clientId.length > 100) {
@@ -304,7 +359,9 @@ export default {
       // admin.html 廣告統計面板：一次回傳全部廣告（含已下架）+ 累計曝光/點擊數字 + 按月分組的曝光/點擊，
       // 讓前端畫折線圖時可以直接切月份視窗，不用每次切月都重打 API。
       if (url.pathname === "/adStats" && req.method === "GET") {
-        if (url.searchParams.get("token") !== env.MANUAL_SCRAPE_TOKEN) {
+        const rl = await rateLimitOrNull(req, env, ctx, "adStats", 30, origin);
+        if (rl) return rl;
+        if (!isAdminRequest(req, env)) {
           return json({ error: "forbidden" }, 403, origin);
         }
         const [{ results: ads }, { results: monthly }] = await Promise.all([
@@ -337,7 +394,9 @@ export default {
       // admin.html 查詢老師統計面板：回傳指定年月查詢次數前 15 名的老師，
       // 順便回傳所有有紀錄的年份，讓前端動態長出年份下拉選項。
       if (url.pathname === "/teacherStats" && req.method === "GET") {
-        if (url.searchParams.get("token") !== env.MANUAL_SCRAPE_TOKEN) {
+        const rl = await rateLimitOrNull(req, env, ctx, "teacherStats", 30, origin);
+        if (rl) return rl;
+        if (!isAdminRequest(req, env)) {
           return json({ error: "forbidden" }, 403, origin);
         }
         const nowTW = currentTaiwanYearMonth();
@@ -364,7 +423,9 @@ export default {
 
       // admin.html 查詢課程統計面板，邏輯跟 /teacherStats 一樣。
       if (url.pathname === "/courseStats" && req.method === "GET") {
-        if (url.searchParams.get("token") !== env.MANUAL_SCRAPE_TOKEN) {
+        const rl = await rateLimitOrNull(req, env, ctx, "courseStats", 30, origin);
+        if (rl) return rl;
+        if (!isAdminRequest(req, env)) {
           return json({ error: "forbidden" }, 403, origin);
         }
         const nowTW = currentTaiwanYearMonth();
@@ -391,7 +452,9 @@ export default {
 
       // admin.html 查詢分店統計面板，邏輯跟 /teacherStats 一樣。
       if (url.pathname === "/branchStats" && req.method === "GET") {
-        if (url.searchParams.get("token") !== env.MANUAL_SCRAPE_TOKEN) {
+        const rl = await rateLimitOrNull(req, env, ctx, "branchStats", 30, origin);
+        if (rl) return rl;
+        if (!isAdminRequest(req, env)) {
           return json({ error: "forbidden" }, 403, origin);
         }
         const nowTW = currentTaiwanYearMonth();
@@ -418,6 +481,8 @@ export default {
 
       // index.html 公開版查詢量趨勢，邏輯跟 /searchStats 一樣，但不驗證 token（僅回傳每月聚合次數，不含個資）。
       if (url.pathname === "/publicSearchStats" && req.method === "GET") {
+        const rl = await rateLimitOrNull(req, env, ctx, "publicSearchStats", 30, origin);
+        if (rl) return rl;
         const { results } = await env.DB.prepare(
           "SELECT substr(createdAt, 1, 7) AS month, COUNT(*) AS cnt, SUM(resultCount) AS resultSum FROM search_events GROUP BY month"
         ).all();
@@ -432,6 +497,8 @@ export default {
 
       // index.html 公開版老師查詢排行，邏輯跟 /teacherStats 一樣，但不驗證 token（老師名字本來就是課表上的公開資訊）。
       if (url.pathname === "/publicTeacherStats" && req.method === "GET") {
+        const rl = await rateLimitOrNull(req, env, ctx, "publicTeacherStats", 30, origin);
+        if (rl) return rl;
         const nowTW = currentTaiwanYearMonth();
         const year = url.searchParams.get("year") || nowTW.year;
         const month = (url.searchParams.get("month") || nowTW.month).padStart(2, "0");
@@ -456,6 +523,8 @@ export default {
 
       // index.html 公開版課程查詢排行，邏輯跟 /courseStats 一樣，但不驗證 token（僅回傳聚合次數，不含個資）。
       if (url.pathname === "/publicCourseStats" && req.method === "GET") {
+        const rl = await rateLimitOrNull(req, env, ctx, "publicCourseStats", 30, origin);
+        if (rl) return rl;
         const nowTW = currentTaiwanYearMonth();
         const year = url.searchParams.get("year") || nowTW.year;
         const month = (url.searchParams.get("month") || nowTW.month).padStart(2, "0");
@@ -480,6 +549,8 @@ export default {
 
       // index.html 公開版分店查詢排行，邏輯跟 /branchStats 一樣，但不驗證 token（僅回傳聚合次數，不含個資）。
       if (url.pathname === "/publicBranchStats" && req.method === "GET") {
+        const rl = await rateLimitOrNull(req, env, ctx, "publicBranchStats", 30, origin);
+        if (rl) return rl;
         const nowTW = currentTaiwanYearMonth();
         const year = url.searchParams.get("year") || nowTW.year;
         const month = (url.searchParams.get("month") || nowTW.month).padStart(2, "0");
@@ -504,7 +575,9 @@ export default {
 
       // admin.html 查詢量趨勢折線圖：依月分組回傳全部歷史的查詢次數，前端只取最近 12 個月畫圖。
       if (url.pathname === "/searchStats" && req.method === "GET") {
-        if (url.searchParams.get("token") !== env.MANUAL_SCRAPE_TOKEN) {
+        const rl = await rateLimitOrNull(req, env, ctx, "searchStats", 30, origin);
+        if (rl) return rl;
+        if (!isAdminRequest(req, env)) {
           return json({ error: "forbidden" }, 403, origin);
         }
         const { results } = await env.DB.prepare(
@@ -519,10 +592,39 @@ export default {
         return json({ monthly, monthlyResults }, 200, origin);
       }
 
+      // 查有沒有被爬蟲/腳本大量打：依 IP 分組列出 /issueToken、/queryClasses 的存取次數與被流量限制擋下的次數，
+      // 預設抓最近 7 天，只列前 30 個 IP（照總次數排序）。
+      if (url.pathname === "/queryAccessStats" && req.method === "GET") {
+        const rl = await rateLimitOrNull(req, env, ctx, "queryAccessStats", 30, origin);
+        if (rl) return rl;
+        if (!isAdminRequest(req, env)) {
+          return json({ error: "forbidden" }, 403, origin);
+        }
+        const days = parseInt(url.searchParams.get("days") || "7", 10);
+        const sinceDate = new Date(Date.now() + 8 * 3600 * 1000 - days * 86400000);
+        const since = sinceDate.toISOString().replace("Z", "+08:00");
+        const { results } = await env.DB.prepare(`
+          SELECT ip, userAgent, COUNT(*) AS cnt, SUM(rateLimited) AS rateLimitedCnt, MAX(createdAt) AS lastSeen
+          FROM query_access_log
+          WHERE createdAt >= ?
+          GROUP BY ip
+          ORDER BY cnt DESC
+          LIMIT 30
+        `).bind(since).all();
+        return json({
+          since,
+          ips: results.map((r) => ({
+            ip: r.ip, userAgent: r.userAgent, count: r.cnt, rateLimitedCount: r.rateLimitedCnt || 0, lastSeen: r.lastSeen,
+          })),
+        }, 200, origin);
+      }
+
       // admin.html 最愛統計面板：add 用 COUNT(DISTINCT clientId) 估算「幾個人成功建立過最愛」，
       // apply 單純累加「總共被按了幾次」，不去重。
       if (url.pathname === "/favoriteStats" && req.method === "GET") {
-        if (url.searchParams.get("token") !== env.MANUAL_SCRAPE_TOKEN) {
+        const rl = await rateLimitOrNull(req, env, ctx, "favoriteStats", 30, origin);
+        if (rl) return rl;
+        if (!isAdminRequest(req, env)) {
           return json({ error: "forbidden" }, 403, origin);
         }
         const [{ results: adderRows }, { results: applyRows }, totalAdderRow, totalApplyRow] = await Promise.all([
@@ -549,6 +651,8 @@ export default {
       // 讀 meta_filter_options 快取（一列資料），不用每次頁面載入都對 classes 全表重新 GROUP BY。
       // 這張快取只在整輪爬蟲成功、由 /finalizeScrape 寫入時才會更新，見下面的說明。
       if (url.pathname === "/filterOptions" && req.method === "GET") {
+        const rl = await rateLimitOrNull(req, env, ctx, "filterOptions", 60, origin);
+        if (rl) return rl;
         const row = await env.DB.prepare("SELECT classNames, teacherNames FROM meta_filter_options WHERE id = ?")
           .bind("filterOptions")
           .first();
@@ -558,8 +662,9 @@ export default {
 
       // admin.html 登入用：只驗證 token 對不對，不做任何事，讓前端可以在跑真正動作前先確認密碼正確。
       if (url.pathname === "/verifyAdminToken" && req.method === "POST") {
-        const body = await req.json().catch(() => ({}));
-        if (body?.token !== env.MANUAL_SCRAPE_TOKEN) {
+        const rl = await rateLimitOrNull(req, env, ctx, "verifyAdminToken", 10, origin);
+        if (rl) return rl;
+        if (!isAdminRequest(req, env)) {
           return json({ error: "forbidden" }, 403, origin);
         }
         return json({ ok: true }, 200, origin);
@@ -569,7 +674,9 @@ export default {
       // 回傳串流（NDJSON，每行一個 JSON 物件），讓 admin 頁面的終端機能即時顯示進度，
       // 不用等整輪 106 家分店都跑完才拿到結果。最後一行一定是 type:"result" 或 type:"error"。
       if (url.pathname === "/scrapeManual" && req.method === "GET") {
-        if (url.searchParams.get("token") !== env.MANUAL_SCRAPE_TOKEN) {
+        const rl = await rateLimitOrNull(req, env, ctx, "scrapeManual", 5, origin);
+        if (rl) return rl;
+        if (!isAdminRequest(req, env)) {
           return json({ error: "forbidden" }, 403, origin);
         }
         const { readable, writable } = new TransformStream();
@@ -598,6 +705,8 @@ export default {
       // 「寫信給作者」表單：把留言轉發到 Teams 頻道 webhook，不落地存資料。
       // 原本是 Firebase Function sendMessageToAuthor，2026-08-12 搬過來合併成單一部署系統。
       if (url.pathname === "/sendMessageToAuthor" && req.method === "POST") {
+        const rl = await rateLimitOrNull(req, env, ctx, "sendMessageToAuthor", 5, origin);
+        if (rl) return rl;
         const body = await req.json().catch(() => ({}));
         const content = String(body?.content || "").trim();
         if (!content || content.length > 2000) {
@@ -625,8 +734,9 @@ export default {
 
       // 刪除不在目前分店清單裡的舊課表資料（分店關店/從 branches-seed.js 移除後的孤兒資料）。
       if (url.pathname === "/cleanupStaleBranches" && req.method === "POST") {
-        const body = await req.json().catch(() => ({}));
-        if (body?.token !== env.MANUAL_SCRAPE_TOKEN) {
+        const rl = await rateLimitOrNull(req, env, ctx, "cleanupStaleBranches", 5, origin);
+        if (rl) return rl;
+        if (!isAdminRequest(req, env)) {
           return json({ error: "forbidden" }, 403, origin);
         }
         const result = await cleanupStaleBranches(env.DB);
@@ -635,6 +745,8 @@ export default {
 
       // 課表通知(單次,上課前 30 分鐘):登記一顆課的 Web Push 通知。
       if (url.pathname === "/registerReminder" && req.method === "POST") {
+        const rl = await rateLimitOrNull(req, env, ctx, "registerReminder", 60, origin);
+        if (rl) return rl;
         const body = await req.json().catch(() => ({}));
         const { branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, pushSubscription, clickUrl } = body || {};
         if (
@@ -658,6 +770,8 @@ export default {
 
       // 取消一顆已登記的課表通知。
       if (url.pathname === "/cancelReminder" && req.method === "POST") {
+        const rl = await rateLimitOrNull(req, env, ctx, "cancelReminder", 60, origin);
+        if (rl) return rl;
         const body = await req.json().catch(() => ({}));
         const result = await cancelReminder(env.DB, body || {});
         return json(result, 200, origin);
@@ -665,6 +779,8 @@ export default {
 
       // 某個 push subscription 底下所有還沒發送的通知清單(還原鈴鐺狀態/畫「通知」清單用)。
       if (url.pathname === "/myReminders" && req.method === "GET") {
+        const rl = await rateLimitOrNull(req, env, ctx, "myReminders", 60, origin);
+        if (rl) return rl;
         const endpoint = url.searchParams.get("endpoint") || "";
         if (!endpoint) return json({ reminders: [] }, 200, origin);
         const reminders = await listReminders(env.DB, endpoint);
