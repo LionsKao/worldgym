@@ -165,7 +165,7 @@ function initAdBannerCarousel(){
   const el = document.getElementById("adBannerText");
   if (!banner || !el) return;
   if (cameFromOldDomain){
-    el.textContent = "📌 網址換囉！記得把新網址 worldgym.pages.dev 加進書籤";
+    el.textContent = "📌 網址換囉！記得把新網址加進書籤";
     banner.removeAttribute("href");
     const tag = banner.querySelector(".ad-banner-tag");
     tag.setAttribute("aria-label", "提示");
