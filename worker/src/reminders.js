@@ -120,14 +120,22 @@ async function registerReminder(db, params) {
   return { id, classAt, remindAt };
 }
 
+// id 是 FNV-1a 雜湊（見上方 buildReminderId 註解，本來就不是安全用途），不能單獨當刪除授權，
+// 一定要連同 subscriptionEndpoint 一起比對，確認呼叫端真的擁有這個 push subscription，
+// 否則猜中/窮舉 id 就能亂刪別人登記的提醒。
 async function cancelReminder(db, params) {
+  const { subscriptionEndpoint } = params;
   if (params.id) {
-    const res = await db.prepare("DELETE FROM reminders WHERE id = ?").bind(params.id).run();
+    const res = await db.prepare("DELETE FROM reminders WHERE id = ? AND subscriptionEndpoint = ?")
+      .bind(params.id, subscriptionEndpoint)
+      .run();
     return { deleted: res.meta.changes || 0 };
   }
-  const { branchSlug, dayOfWeek, startTime, className, teacherName, subscriptionEndpoint } = params;
+  const { branchSlug, dayOfWeek, startTime, className, teacherName } = params;
   const id = buildReminderId(subscriptionEndpoint, branchSlug, dayOfWeek, startTime, className, teacherName);
-  const res = await db.prepare("DELETE FROM reminders WHERE id = ?").bind(id).run();
+  const res = await db.prepare("DELETE FROM reminders WHERE id = ? AND subscriptionEndpoint = ?")
+    .bind(id, subscriptionEndpoint)
+    .run();
   return { deleted: res.meta.changes || 0 };
 }
 

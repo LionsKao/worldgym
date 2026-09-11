@@ -768,12 +768,16 @@ export default {
         return json(result, 200, origin);
       }
 
-      // 取消一顆已登記的課表通知。
+      // 取消一顆已登記的課表通知。subscriptionEndpoint 是必要欄位，用來驗證呼叫端真的擁有
+      // 這個 push subscription，不能只憑 id（見 reminders.js 的 cancelReminder 說明）。
       if (url.pathname === "/cancelReminder" && req.method === "POST") {
         const rl = await rateLimitOrNull(req, env, ctx, "cancelReminder", 60, origin);
         if (rl) return rl;
         const body = await req.json().catch(() => ({}));
-        const result = await cancelReminder(env.DB, body || {});
+        if (typeof body?.subscriptionEndpoint !== "string" || !body.subscriptionEndpoint) {
+          return json({ error: "invalid cancelReminder" }, 400, origin);
+        }
+        const result = await cancelReminder(env.DB, body);
         return json(result, 200, origin);
       }
 
