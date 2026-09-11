@@ -31,7 +31,7 @@ fbq('track', 'PageView');
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
-<link rel="stylesheet" href="style.css?v=87">
+<link rel="stylesheet" href="style.css?v=89">
 <style>#loadingOverlay{position:fixed;top:0;left:0;width:100%;height:100%;background:#fff;z-index:9999;}</style>
 </head>
 <body>
@@ -324,9 +324,9 @@ fbq('track', 'PageView');
 
 <div id="repeatQueryModal" class="modal-overlay hidden">
   <div class="modal-box">
-    <p class="modal-text">同樣的條件你已經連續查了好幾次囉 👀<br>老師／課程／分店的查詢次數統計每 30 分鐘才會累計一次，短時間內重複查詢不會讓數字增加，可以放心晚點再查～</p>
+    <p class="modal-text">同樣的條件你已經連續查了好幾次囉 👀<br>分店／課程／老師的查詢次數統計每 30 分鐘才會累計一次，短時間內重複查詢不會讓數字增加，可以放心晚點再查～</p>
     <div class="modal-actions">
-      <button type="button" class="modal-btn modal-btn-confirm" id="repeatQueryOkBtn">我知道了</button>
+      <button type="button" class="modal-btn modal-btn-confirm" id="repeatQueryOkBtn">好我乖乖</button>
     </div>
   </div>
 </div>
@@ -337,7 +337,6 @@ fbq('track', 'PageView');
     <p class="modal-text" style="padding-right:24px"><span class="section-tag" aria-label="新增最愛" style="--accent:var(--coral)"><i class="fa-solid fa-heart"></i><i class="fa-solid fa-fw fa-plus"></i></span></p>
 
     <div class="fav-modal-field">
-      <span class="fav-modal-label">圖示</span>
       <div class="fav-icon-options">
         <span class="fav-icon-pill"><input type="radio" name="favIcon" value="star" id="favIcon-star" checked><label for="favIcon-star"><i class="fa-solid fa-star"></i></label></span>
         <span class="fav-icon-pill"><input type="radio" name="favIcon" value="heart" id="favIcon-heart"><label for="favIcon-heart"><i class="fa-solid fa-heart"></i></label></span>
@@ -371,7 +370,6 @@ fbq('track', 'PageView');
     </div>
 
     <div class="fav-modal-field">
-      <span class="fav-modal-label">底色</span>
       <div class="fav-color-options">
         <span class="fav-color-pill"><input type="radio" name="favColor" value="#e8604c" id="favColor-coral" checked><label for="favColor-coral" style="background:#e8604c"></label></span>
         <span class="fav-color-pill"><input type="radio" name="favColor" value="#2f816a" id="favColor-teal"><label for="favColor-teal" style="background:#2f816a"></label></span>
@@ -391,7 +389,6 @@ fbq('track', 'PageView');
     </div>
 
     <div class="fav-modal-field">
-      <span class="fav-modal-label">名稱</span>
       <div class="fav-name-row">
         <div class="fav-name-input-wrap">
           <input type="text" id="favNameInput" class="section-search" placeholder="幫這個最愛命名">
@@ -407,6 +404,6 @@ fbq('track', 'PageView');
   </div>
 </div>
 
-<script src="script.js?v=94"></script>
+<script src="script.js?v=97"></script>
 </body>
 </html>

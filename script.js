@@ -298,10 +298,11 @@ async function cancelReminderForBell(bell){
   bell.classList.add("busy");
   try{
     const id = bell.dataset.reminderId;
+    const sub = await ensurePushSubscription();
     await fetch(`${WORKER_BASE}/cancelReminder`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
+      body: JSON.stringify({ id, subscriptionEndpoint: sub.endpoint }),
     });
     registeredReminders.delete(reminderKeyFromBell(bell));
     syncResultBellsToRegistered();
@@ -386,10 +387,11 @@ document.getElementById("reminderGrid").addEventListener("click", async (e) => {
   const id = row.dataset.reminderId;
   bell.classList.add("busy");
   try{
+    const sub = await ensurePushSubscription();
     await fetch(`${WORKER_BASE}/cancelReminder`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
+      body: JSON.stringify({ id, subscriptionEndpoint: sub.endpoint }),
     });
     let cancelledReminder = null;
     for (const [key, r] of registeredReminders){
@@ -609,7 +611,7 @@ function renderBranchGrid(containerId, options) {
     const selectAllBtn = document.createElement("button");
     selectAllBtn.type = "button";
     selectAllBtn.className = "pill-btn";
-    selectAllBtn.textContent = cityName;
+    selectAllBtn.textContent = `${cityName}全選`;
     selectAllBtn.addEventListener("click", () => {
       const citySlugSet = new Set(citySlugs);
       document.querySelectorAll('input[name="branch"]').forEach(input => {
@@ -639,7 +641,7 @@ function renderBranchGrid(containerId, options) {
     const selectAllBtn = document.createElement("button");
     selectAllBtn.type = "button";
     selectAllBtn.className = "pill-btn";
-    selectAllBtn.textContent = label;
+    selectAllBtn.textContent = `${label}全選`;
     selectAllBtn.addEventListener("click", () => {
       const zoneSlugSet = new Set(zoneSlugs);
       document.querySelectorAll('input[name="branch"]').forEach(input => {
@@ -1279,6 +1281,7 @@ const BRANCH_ORDER = [
   "taipei-dazhi", "taipei-daan", "taipei-tonling", "taipei-neihu-fuhwa", "taipei-guangfu",
   "taipei-nanjing", "taipei-minsheng", "taipei-minsheng-yuanhuan", "taipei-101", "taipei-songren",
   "taipei-songlong", "taipei-neihu", "taipei-neihu-gangqia", "taipei-tienmu", "taipei-tienmu-dexing",
+  "taipei-shilin",
   "taipei-beitou-zhonghe", "new-taipei-sanchong", "new-taipei-yonghe", "new-taipei-yonghe-minquan",
   "new-taipei-banqiao-shuangshi", "new-taipei-banqiao-zhongshan", "new-taipei-banqiao-fuzhong",
   "new-taipei-banciao-chongcing", "new-taipei-zhonghe", "new-taipei-jingping", "new-taipei-hsinzhuang",
@@ -1297,7 +1300,7 @@ const BRANCH_ORDER = [
   "kaohsiung-sogo", "kaohsiung-baocheng", "kaohsiung-datong-heping", "kaohsiung-zhonghua", "pingtung-ziyou",
   "kaohsiung-yangming", "kaohsiung-zuoying", "kaohsiung-fengshan-wujia", "kaohsiung-fengshan-zhongshan",
   "kaohsiung-gangshan", "pingtung-chaozhou",
-  "new-taipei-xizhi", "new-taipei-danshui", "new-taipei-linkou", "keelung-xinyi", "yilan-luodong",
+  "new-taipei-xizhi", "new-taipei-xike", "new-taipei-danshui", "new-taipei-linkou", "keelung-xinyi", "yilan-luodong",
   "yilan-youai", "hualian-guolian", "hualien-jian",
 ];
 function branchRank(slug){
