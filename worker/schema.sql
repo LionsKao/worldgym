@@ -101,6 +101,9 @@ CREATE TABLE ad_events (
 
 CREATE INDEX idx_ad_events_adId_type ON ad_events(adId, type);
 CREATE INDEX idx_ad_events_createdAt ON ad_events(createdAt);
+-- analytics.js 的月度彙總查詢用 substr(createdAt,1,7) 篩選月份，上面 idx_ad_events_createdAt
+-- 是建在原始欄位上，包了 substr() 之後吃不到，另建運算式索引（見 migrations/015）。
+CREATE INDEX idx_ad_events_month ON ad_events(substr(createdAt,1,7));
 
 -- 老師查詢次數記錄。使用者送出查詢（含指定老師）且成功顯示結果（不是 0 筆、也不是超過
 -- RESULT_COUNT_WARN_LIMIT 顯示不出來）時才寫一列，前端已做 30 分鐘內同老師去重，這裡單純累加，不做聚合。
@@ -112,6 +115,10 @@ CREATE TABLE teacher_search_events (
 
 CREATE INDEX idx_teacher_search_events_teacherName ON teacher_search_events(teacherName);
 CREATE INDEX idx_teacher_search_events_createdAt ON teacher_search_events(createdAt);
+-- analytics.js 用 substr(createdAt,1,7)/substr(createdAt,1,4) 篩選月份/年份，上面兩個索引
+-- 是建在原始欄位上，包了 substr() 之後吃不到，另建運算式索引（見 migrations/015）。
+CREATE INDEX idx_teacher_search_events_month ON teacher_search_events(substr(createdAt,1,7));
+CREATE INDEX idx_teacher_search_events_year ON teacher_search_events(substr(createdAt,1,4));
 
 -- 課程查詢次數記錄，邏輯跟 teacher_search_events 一樣：使用者真的送出查詢（含指定課程）時寫一列，
 -- 前端已做 30 分鐘內同課程去重。
@@ -123,6 +130,9 @@ CREATE TABLE course_search_events (
 
 CREATE INDEX idx_course_search_events_courseName ON course_search_events(courseName);
 CREATE INDEX idx_course_search_events_createdAt ON course_search_events(createdAt);
+-- 同 teacher_search_events：另建 substr() 運算式索引（見 migrations/015）。
+CREATE INDEX idx_course_search_events_month ON course_search_events(substr(createdAt,1,7));
+CREATE INDEX idx_course_search_events_year ON course_search_events(substr(createdAt,1,4));
 
 -- 分店查詢次數記錄，邏輯跟 teacher_search_events/course_search_events 一樣。
 CREATE TABLE branch_search_events (
@@ -133,6 +143,9 @@ CREATE TABLE branch_search_events (
 
 CREATE INDEX idx_branch_search_events_branchName ON branch_search_events(branchName);
 CREATE INDEX idx_branch_search_events_createdAt ON branch_search_events(createdAt);
+-- 同 teacher_search_events：另建 substr() 運算式索引（見 migrations/015）。
+CREATE INDEX idx_branch_search_events_month ON branch_search_events(substr(createdAt,1,7));
+CREATE INDEX idx_branch_search_events_year ON branch_search_events(substr(createdAt,1,4));
 
 -- 整體查詢量記錄：每次使用者真的送出查詢就寫一列，不做去重（要看的是真實使用量、不是排行榜），
 -- 用來在 admin.html 畫「每月查詢次數」趨勢折線圖。resultCount 記錄這次查詢實際顯示的課程數，
@@ -144,6 +157,9 @@ CREATE TABLE search_events (
 );
 
 CREATE INDEX idx_search_events_createdAt ON search_events(createdAt);
+-- monthlySearchTrend() 用 substr(createdAt,1,7) 篩選月份，上面索引建在原始欄位上吃不到，
+-- 另建運算式索引（見 migrations/015）。
+CREATE INDEX idx_search_events_month ON search_events(substr(createdAt,1,7));
 
 -- 「我的最愛」使用記錄：clientId 是前端自己產生存在 localStorage 的匿名 id（不是帳號系統，
 -- 沒有登入機制，只能用這個估算「幾個人」）。type='add' 是成功建立一個最愛時記一列，
@@ -158,6 +174,9 @@ CREATE TABLE favorite_events (
 
 CREATE INDEX idx_favorite_events_type_createdAt ON favorite_events(type, createdAt);
 CREATE INDEX idx_favorite_events_clientId ON favorite_events(clientId);
+-- favoriteStatsCombined() 用 substr(createdAt,1,7) 篩選月份，上面索引吃不到，
+-- 另建運算式索引（見 migrations/015）。
+CREATE INDEX idx_favorite_events_month ON favorite_events(substr(createdAt,1,7));
 
 -- /issueToken、/queryClasses 這兩個公開端點的存取紀錄：記 IP/UA/是否被流量限制擋下，
 -- 事後才有辦法追查是不是被爬蟲/腳本大量打（search_events 完全沒記來源，查不出是誰）。
