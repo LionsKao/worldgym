@@ -10,22 +10,15 @@
   gtag('js', new Date());
   gtag('config', 'G-Q7NZN45T0D');
 </script>
-<!-- Facebook Pixel Code -->
-<script>!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
-fbq('init', '1037122719034276');
-fbq('track', 'PageView');
-</script>
-<noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=1037122719034276&ev=PageView&noscript=1"/></noscript>
-<!-- End Facebook Pixel Code -->
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 44'%3E%3Ctext x='22' y='19' text-anchor='middle' font-family='sans-serif' font-weight='900' font-size='16' fill='%23e8604c'%3E課表%3C/text%3E%3Ctext x='22' y='38' text-anchor='middle' font-family='sans-serif' font-weight='900' font-size='16' fill='%233a3a4a'%3E查詢%3C/text%3E%3C/svg%3E">
 <title>💪 課表查詢</title>
-<meta name="description" content="快速查詢 World Gym 各分店課表、老師、時段，支援課前推播提醒。">
+<meta name="description" content="快速查詢 World Gym（WG）各分店課表、老師、時段。">
 <meta name="robots" content="index, follow">
 <link rel="canonical" href="https://worldgym.pages.dev/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="💪 課表查詢">
 <meta property="og:title" content="課表查詢">
-<meta property="og:description" content="快速查詢 World Gym 各分店課表、老師、時段，支援課前推播提醒。">
+<meta property="og:description" content="快速查詢 World Gym 各分店課表、老師、時段。">
 <meta property="og:url" content="https://worldgym.pages.dev/">
 <meta property="og:image" content="https://worldgym.pages.dev/icons/og-image.png">
 <meta property="og:image:width" content="1200">
@@ -33,7 +26,7 @@ fbq('track', 'PageView');
 <meta property="og:locale" content="zh_TW">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="💪 課表查詢">
-<meta name="twitter:description" content="快速查詢 World Gym 各分店課表、老師、時段，支援課前推播提醒。">
+<meta name="twitter:description" content="快速查詢 World Gym 各分店課表、老師、時段。">
 <meta name="twitter:image" content="https://worldgym.pages.dev/icons/og-image.png">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -52,12 +45,14 @@ fbq('track', 'PageView');
   "@context": "https://schema.org",
   "@type": "WebSite",
   "name": "World Gym 課表查詢",
+  "alternateName": "WG課表查詢",
   "url": "https://worldgym.pages.dev/",
-  "description": "快速查詢 World Gym 各分店課表、老師、時段，支援課前推播提醒。",
+  "description": "快速查詢 World Gym 各分店課表、老師、時段。",
   "inLanguage": "zh-Hant",
   "publisher": {
     "@type": "Organization",
     "name": "World Gym 課表查詢",
+    "alternateName": "WG課表查詢",
     "url": "https://worldgym.pages.dev/"
   }
 }
@@ -75,7 +70,7 @@ fbq('track', 'PageView');
 
 <div class="page">
   <div class="hero">
-    <h1><span class="c1">課表</span><span class="c2">查詢</span></h1>
+    <h1><span class="visually-hidden">World Gym（WG）</span><span class="c1">課表</span><span class="c2">查詢</span></h1>
   </div>
   <div class="stripe-bar">
     <span class="s1"></span><span class="s2"></span><span class="s3"></span><span class="s4"></span><span class="s5"></span>
@@ -281,7 +276,7 @@ fbq('track', 'PageView');
     <div class="mail-disclaimer">
       <a href="https://www.worldgymtaiwan.com" target="_blank" rel="noopener" class="section-tag" id="officialSiteLink" aria-label="前往 World Gym 官網" style="--accent:var(--coral)"><i class="fa-solid fa-fw fa-globe"></i>世界健身中心官方網站</a>
       <span class="tooltip-wrap" id="privacyBtnWrap">
-        <span class="hint-tooltip wrap" id="privacyTooltip">本站使用 Google Analytics 與 Facebook Pixel 僅進行匿名統計且不收集個人資料。最愛清單僅保存在你的裝置上。課表資料來自 World Gym 官網僅供參考。本站為非官方工具，正確課表請以世界健身中心官方網站為準。</span>
+        <span class="hint-tooltip wrap" id="privacyTooltip">本站使用 Google Analytics 僅進行匿名統計且不收集個人資料。最愛清單僅保存在你的裝置上。課表資料來自 World Gym 官網僅供參考。本站為非官方工具，正確課表請以世界健身中心官方網站為準。</span>
         <button type="button" class="section-tag" id="privacyBtn" aria-label="隱私說明" style="--accent:#127a76"><i class="fa-solid fa-fw fa-shield-halved"></i>隱私說明</button>
       </span>
       <a class="section-tag" id="githubLinkIcon" href="https://github.com/LionsKao/worldgym" target="_blank" rel="noopener" aria-label="GitHub 原始碼" style="--accent:var(--navy)"><i class="fa-brands fa-fw fa-github"></i>GitHub</a>
@@ -437,6 +432,6 @@ fbq('track', 'PageView');
   </div>
 </div>
 
-<script src="script.js?v=104"></script>
+<script src="script.js?v=105"></script>
 </body>
 </html>

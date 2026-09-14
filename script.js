@@ -16,6 +16,18 @@ if (new URLSearchParams(location.search).get("pwa") === "1"){
 // 沿用廣告 banner 的位置顯示「記得改書籤」提示，不顯示其他廣告。
 const OLD_DOMAIN_UTM_SOURCES = ["wgcourse_old", "old_index"];
 const cameFromOldDomain = OLD_DOMAIN_UTM_SOURCES.includes(new URLSearchParams(location.search).get("utm_source"));
+if (cameFromOldDomain){
+  // 提示文案講「加完書籤這行就會消失」，所以要讓「使用者當下把網址列加進書籤」存到的是乾淨網址，
+  // 不然書籤存到的還是帶著 utm_source=wgcourse_old 的網址，下次打開又會命中同一組參數、提示又跳出來。
+  // 延遲 2 秒才清是為了讓 GA4 已經送出這次工作階段的第一個 pageview（歸因用得到這組 utm）
+  // 之後才動網址列，不影響既有的來源歸因；清之前重新檢查一次，避免蓋掉使用者這 2 秒內自己觸發的網址變化
+  // (例如送出查詢後 runSearchAndShowResults 已經把網址換成分享用網址)。
+  setTimeout(() => {
+    if (OLD_DOMAIN_UTM_SOURCES.includes(new URLSearchParams(location.search).get("utm_source"))){
+      history.replaceState(null, "", location.pathname);
+    }
+  }, 2000);
+}
 
 // 廣告文案：內容改由 D1 的 ads table 提供（上下架時間 + enabled 開關），
 // 首頁載入時打 /ads 拿目前生效中的廣告，隨機挑一則顯示，同一個工作階段（頁面沒重整）
@@ -167,7 +179,7 @@ function initAdBannerCarousel(){
   const el = document.getElementById("adBannerText");
   if (!banner || !el) return;
   if (cameFromOldDomain){
-    el.textContent = "📌 網址換囉！記得把新網址加進書籤";
+    el.textContent = "📌 網址換囉！記得把新網址加進書籤，加完這行就會消失";
     banner.removeAttribute("href");
     const tag = banner.querySelector(".ad-banner-tag");
     tag.setAttribute("aria-label", "提示");
