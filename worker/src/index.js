@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { queryClasses } from "./queryClasses.js";
 import { runScrape, cleanupStaleBranches } from "./scrape.js";
 import { registerReminder, cancelReminder, listReminders, dispatchDueReminders } from "./reminders.js";
-import { monthlyNameRanking, availableYears, monthlySearchTrend, favoriteStatsCombined, adStatsCombined, rollupAnalyticsEvents } from "./analytics.js";
+import { monthlyNameRanking, availableYears, monthlySearchTrend, favoriteStatsCombined, adStatsCombined, reminderStatsCombined, rollupAnalyticsEvents } from "./analytics.js";
 
 // 網站是跨網域被呼叫，所以要自己開白名單。
 // 之後如果掛了自訂網域，把新網域加進這個陣列即可。
@@ -607,22 +607,16 @@ export default {
 
       // admin.html 提醒功能統計面板：單純看每個月「登記提醒」被觸發幾次，評估這個功能有沒有人在用，
       // 不分辨是不是同一人、不追蹤取消（見 reminders.js 的 trackReminderAdd）。
+      // 舊月份的明細會被每月排程搬進 reminder_add_monthly（見 analytics.js），這裡一律用
+      // 「彙總 UNION 明細」的合併查詢，讀起來完全無感。
       if (url.pathname === "/reminderStats" && req.method === "GET") {
         const rl = await rateLimitOrNull(req, env, ctx, "reminderStats", 30, origin);
         if (rl) return rl;
         if (!(await isAdminRequest(req, env))) {
           return json({ error: "forbidden" }, 403, origin);
         }
-        const [{ results }, totalRow] = await Promise.all([
-          env.DB.prepare(
-            "SELECT substr(createdAt, 1, 7) AS month, COUNT(*) AS cnt FROM reminder_add_events GROUP BY month ORDER BY month DESC"
-          ).all(),
-          env.DB.prepare("SELECT COUNT(*) AS cnt FROM reminder_add_events").first(),
-        ]);
-        return json({
-          monthly: results.map((r) => ({ month: r.month, count: r.cnt })),
-          total: totalRow?.cnt || 0,
-        }, 200, origin);
+        const stats = await reminderStatsCombined(env.DB);
+        return json(stats, 200, origin);
       }
 
       // 讀 meta_filter_options 快取（一列資料），不用每次頁面載入都對 classes 全表重新 GROUP BY。

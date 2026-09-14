@@ -201,10 +201,13 @@ CREATE TABLE reminder_add_events (
 );
 
 CREATE INDEX idx_reminder_add_events_createdAt ON reminder_add_events(createdAt);
+-- reminderStatsCombined()/rollupAnalyticsEvents() 用 substr(createdAt,1,7) 篩選月份，
+-- 上面索引建在原始欄位上吃不到，另建運算式索引（見 migrations/016）。
+CREATE INDEX idx_reminder_add_events_month ON reminder_add_events(substr(createdAt,1,7));
 
 -- 分析報表「明細 -> 每月彙總」機制（見 worker/src/analytics.js）：teacher/course/branch
--- 查詢次數、整體查詢量、我的最愛、廣告曝光/點擊這幾張明細表只保留最近 2 個月，更早的月份
--- 由每月排程壓縮寫進這裡、刪除明細；報表查詢改成「彙總表 UNION ALL 明細表」。
+-- 查詢次數、整體查詢量、我的最愛、廣告曝光/點擊、提醒登記這幾張明細表只保留當月，上個月一結束
+-- 就由每月排程壓縮寫進這裡、刪除明細；報表查詢改成「彙總表 UNION ALL 明細表」。
 DROP TABLE IF EXISTS teacher_search_monthly;
 CREATE TABLE teacher_search_monthly (
   month TEXT NOT NULL,
@@ -234,6 +237,13 @@ CREATE TABLE search_monthly (
   month TEXT PRIMARY KEY,
   cnt INTEGER NOT NULL,
   resultSum INTEGER NOT NULL DEFAULT 0
+);
+
+-- reminder_add_events 的月度彙總，沒有名稱維度，邏輯跟 search_monthly 一樣。
+DROP TABLE IF EXISTS reminder_add_monthly;
+CREATE TABLE reminder_add_monthly (
+  month TEXT PRIMARY KEY,
+  cnt INTEGER NOT NULL
 );
 
 -- type='add' 的 cnt 是彙總當下算好、凍結的「當月去重人數」；type='apply' 單純加總。

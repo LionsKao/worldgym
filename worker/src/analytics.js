@@ -145,6 +145,30 @@ async function adStatsCombined(db) {
   return ads;
 }
 
+// --- 提醒功能使用量(reminder_add_events / reminder_add_monthly)，沒有名稱維度，邏輯跟 search_events 一樣 ---
+async function reminderStatsCombined(db) {
+  const [{ results }, totalRow] = await Promise.all([
+    db.prepare(`
+      SELECT month, SUM(cnt) AS cnt FROM (
+        SELECT month, cnt FROM reminder_add_monthly
+        UNION ALL
+        SELECT substr(createdAt, 1, 7) AS month, COUNT(*) AS cnt FROM reminder_add_events GROUP BY month
+      ) GROUP BY month ORDER BY month DESC
+    `).all(),
+    db.prepare(`
+      SELECT SUM(cnt) AS cnt FROM (
+        SELECT cnt FROM reminder_add_monthly
+        UNION ALL
+        SELECT COUNT(*) AS cnt FROM reminder_add_events
+      )
+    `).first(),
+  ]);
+  return {
+    monthly: results.map((r) => ({ month: r.month, count: r.cnt })),
+    total: totalRow?.cnt || 0,
+  };
+}
+
 // --- 每月排程：把保留窗口以外的舊明細壓縮成彙總、刪除明細 ---
 // 只保留當月的明細，上個月一結束就處理。每次都抓「明細裡所有比保留窗口舊的月份」整批
 // 處理，不是只處理特定一個月——就算某次排程漏跑、失敗，下次照樣會把積欠的月份一次補齊，
@@ -220,6 +244,24 @@ async function rollupAnalyticsEvents(db) {
     summary.favorite_events = { monthsRolledUp: months.length };
   }
 
+  // reminder_add_events：沒有名稱維度，直接彙總成 (month -> cnt)，邏輯跟 search_events 一樣。
+  {
+    const { results: months } = await db.prepare(
+      "SELECT DISTINCT substr(createdAt, 1, 7) AS month FROM reminder_add_events WHERE substr(createdAt, 1, 7) < ?"
+    ).bind(cutoff).all();
+    for (const { month } of months) {
+      const row = await db.prepare(
+        "SELECT COUNT(*) AS cnt FROM reminder_add_events WHERE substr(createdAt, 1, 7) = ?"
+      ).bind(month).first();
+      await db.batch([
+        db.prepare("INSERT OR REPLACE INTO reminder_add_monthly (month, cnt) VALUES (?, ?)")
+          .bind(month, row.cnt),
+        db.prepare("DELETE FROM reminder_add_events WHERE substr(createdAt, 1, 7) = ?").bind(month),
+      ]);
+    }
+    summary.reminder_add_events = { monthsRolledUp: months.length };
+  }
+
   // ad_events：(month, adId, type) 三個維度都要留。
   {
     const { results: months } = await db.prepare(
@@ -248,5 +290,6 @@ export {
   monthlySearchTrend,
   favoriteStatsCombined,
   adStatsCombined,
+  reminderStatsCombined,
   rollupAnalyticsEvents,
 };
