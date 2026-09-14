@@ -54,71 +54,8 @@
   #adminLoginBackBtnWrap{ z-index:1500; }
 
   .ad-stats-filter-row{ display:flex; gap:8px; margin-bottom:14px; }
-  #teacherStatsWrap, #courseStatsWrap, #branchStatsWrap, #searchTrendWrap{ font-size:12.5px; overflow:hidden; }
   .ad-stats-filter-row #adStatusFilter{ flex:0 0 100px; min-width:100px; }
   .ad-stats-filter-row #adStatsSelect{ flex:1 1 0; min-width:0; }
-  .ad-stats-filter-row #teacherYearSelect,
-  .ad-stats-filter-row #teacherMonthSelect,
-  .ad-stats-filter-row #courseYearSelect,
-  .ad-stats-filter-row #courseMonthSelect,
-  .ad-stats-filter-row #branchYearSelect,
-  .ad-stats-filter-row #branchMonthSelect{ flex:1; min-width:0; }
-  /* 手機維持 col-6/col-6（撐滿一行）；桌面版寬度夠，兩個下拉縮成 col-3/col-3，不用佔滿整行。 */
-  @media (min-width:640px){
-    .ad-stats-filter-row #teacherYearSelect,
-    .ad-stats-filter-row #teacherMonthSelect,
-    .ad-stats-filter-row #courseYearSelect,
-    .ad-stats-filter-row #courseMonthSelect,
-    .ad-stats-filter-row #branchYearSelect,
-    .ad-stats-filter-row #branchMonthSelect{ flex:0 0 25%; }
-  }
-
-  .custom-select{ position:relative; }
-  .custom-select-trigger{
-    display:flex; align-items:center; justify-content:space-between; gap:8px;
-    width:100%; height:31px; box-sizing:border-box; font-size:13px; padding:0 14px;
-    border:1.5px solid var(--line); border-radius:999px; background:var(--paper);
-    font-family:inherit; font-weight:600; color:var(--ink);
-    cursor:pointer; text-align:left;
-  }
-  .custom-select-trigger:hover,
-  .custom-select.open .custom-select-trigger{ border-style:dashed; border-color:var(--accent); color:var(--accent); }
-  .custom-select-trigger:focus{ outline:none; border-color:var(--accent); }
-  .custom-select-label{ flex:1; min-width:0; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .custom-select-arrow{ flex:none; font-size:11px; color:var(--sub); transition:transform .15s ease; }
-  .custom-select.open .custom-select-arrow{ transform:rotate(180deg); }
-  .custom-select-menu{
-    display:none; position:absolute; top:calc(100% + 6px); left:0; right:0; z-index:20;
-    background:var(--paper); border:1.5px solid var(--line); border-radius:14px;
-    box-shadow:0 8px 24px rgba(0,0,0,0.12); padding:6px; max-height:240px; overflow-y:auto;
-  }
-  .custom-select.open .custom-select-menu{ display:block; }
-  .custom-select-option{
-    padding:8px 12px; border-radius:10px; font-size:12.5px; font-weight:600; color:var(--ink);
-    cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-  }
-  /* 月份選單固定 12 個選項，排成 4 欄 3 列的格狀，不要拉成一條長長的直式列表。 */
-  #teacherMonthSelect.open .custom-select-menu,
-  #courseMonthSelect.open .custom-select-menu,
-  #branchMonthSelect.open .custom-select-menu{
-    display:grid; grid-template-columns:repeat(4, 1fr); gap:4px;
-  }
-  #teacherMonthSelect .custom-select-option,
-  #courseMonthSelect .custom-select-option,
-  #branchMonthSelect .custom-select-option{
-    padding:12px 3px; font-size:12.5px; text-align:center;
-  }
-  .custom-select-option:hover{ background:rgba(0,0,0,0.05); }
-  .custom-select-option.selected{ color:var(--accent); background:color-mix(in srgb, var(--accent) 12%, transparent); }
-  #adStatusFilter .custom-select-option,
-  #adStatsSelect .custom-select-option{
-    text-align:center;
-  }
-  #teacherYearSelect .custom-select-option,
-  #courseYearSelect .custom-select-option,
-  #branchYearSelect .custom-select-option{
-    text-align:center; font-size:12.5px;
-  }
 
   #adStatsDetail{ font-size:12.5px; line-height:1.7; color:var(--sub); }
 
@@ -137,9 +74,6 @@
   .ad-chart-nav:hover:not(:disabled){ background:#4a4a5a; border-color:#4a4a5a; }
   .ad-chart-nav:disabled{ opacity:.3; cursor:not-allowed; }
   .ad-chart-viewport{ position:relative; flex:1; min-width:0; aspect-ratio:560/210; overflow:hidden; }
-  .ad-chart-legend{ display:flex; justify-content:center; gap:16px; margin-top:14px; font-size:12px; color:var(--sub); }
-  .ad-chart-legend-item{ display:flex; align-items:center; gap:6px; }
-  .ad-chart-legend-swatch{ width:14px; height:5px; border-radius:3px; display:inline-block; }
 </style>
 </head>
 <body>
@@ -213,9 +147,9 @@
           <div class="ad-chart-viewport" id="adChartViewport"></div>
           <button type="button" class="ad-chart-nav" id="adChartNextBtn" aria-label="更晚月份"><i class="fa-solid fa-chevron-right"></i></button>
         </div>
-        <div class="ad-chart-legend">
-          <span class="ad-chart-legend-item"><span class="ad-chart-legend-swatch" style="background:#2a78d6"></span>曝光次數</span>
-          <span class="ad-chart-legend-item"><span class="ad-chart-legend-swatch" style="background:#eb6834"></span>點擊次數</span>
+        <div class="stats-chart-legend">
+          <span class="stats-chart-legend-item"><span class="stats-chart-legend-swatch" style="background:#2a78d6"></span>曝光次數</span>
+          <span class="stats-chart-legend-item"><span class="stats-chart-legend-swatch" style="background:#eb6834"></span>點擊次數</span>
         </div>
       </div>
     </div>
@@ -227,9 +161,9 @@
         </div>
         <div id="favoriteStatsSummary" class="favorite-stats-summary"></div>
         <div id="favoriteTrendWrap"></div>
-        <div class="ad-chart-legend">
-          <span class="ad-chart-legend-item"><span class="ad-chart-legend-swatch" style="background:#2a78d6"></span>建立人數</span>
-          <span class="ad-chart-legend-item"><span class="ad-chart-legend-swatch" style="background:#eb6834"></span>使用次數</span>
+        <div class="stats-chart-legend">
+          <span class="stats-chart-legend-item"><span class="stats-chart-legend-swatch" style="background:#2a78d6"></span>建立人數</span>
+          <span class="stats-chart-legend-item"><span class="stats-chart-legend-swatch" style="background:#eb6834"></span>使用次數</span>
         </div>
       </div>
     </div>
@@ -241,8 +175,8 @@
         </div>
         <div id="reminderStatsSummary" class="favorite-stats-summary"></div>
         <div id="reminderTrendWrap"></div>
-        <div class="ad-chart-legend">
-          <span class="ad-chart-legend-item"><span class="ad-chart-legend-swatch" style="background:#3fae8f"></span>登記次數</span>
+        <div class="stats-chart-legend">
+          <span class="stats-chart-legend-item"><span class="stats-chart-legend-swatch" style="background:#3fae8f"></span>登記次數</span>
         </div>
       </div>
     </div>
