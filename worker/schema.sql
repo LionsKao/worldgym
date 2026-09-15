@@ -117,7 +117,9 @@ CREATE INDEX idx_teacher_search_events_teacherName ON teacher_search_events(teac
 CREATE INDEX idx_teacher_search_events_createdAt ON teacher_search_events(createdAt);
 -- analytics.js 用 substr(createdAt,1,7)/substr(createdAt,1,4) 篩選月份/年份，上面兩個索引
 -- 是建在原始欄位上，包了 substr() 之後吃不到，另建運算式索引（見 migrations/015）。
-CREATE INDEX idx_teacher_search_events_month ON teacher_search_events(substr(createdAt,1,7));
+-- monthlyNameRanking() 要 GROUP BY teacherName，複合索引把 teacherName 也蓋進去做成
+-- covering index，不然還要每一筆回頭查表本身拿 teacherName，等於多讀一倍（見 migrations/017）。
+CREATE INDEX idx_teacher_search_events_month ON teacher_search_events(substr(createdAt,1,7), teacherName);
 CREATE INDEX idx_teacher_search_events_year ON teacher_search_events(substr(createdAt,1,4));
 
 -- 課程查詢次數記錄，邏輯跟 teacher_search_events 一樣：使用者真的送出查詢（含指定課程）時寫一列，
@@ -131,7 +133,8 @@ CREATE TABLE course_search_events (
 CREATE INDEX idx_course_search_events_courseName ON course_search_events(courseName);
 CREATE INDEX idx_course_search_events_createdAt ON course_search_events(createdAt);
 -- 同 teacher_search_events：另建 substr() 運算式索引（見 migrations/015）。
-CREATE INDEX idx_course_search_events_month ON course_search_events(substr(createdAt,1,7));
+-- 同 teacher_search_events：複合索引蓋進 courseName 做成 covering index（見 migrations/017）。
+CREATE INDEX idx_course_search_events_month ON course_search_events(substr(createdAt,1,7), courseName);
 CREATE INDEX idx_course_search_events_year ON course_search_events(substr(createdAt,1,4));
 
 -- 分店查詢次數記錄，邏輯跟 teacher_search_events/course_search_events 一樣。
@@ -144,7 +147,8 @@ CREATE TABLE branch_search_events (
 CREATE INDEX idx_branch_search_events_branchName ON branch_search_events(branchName);
 CREATE INDEX idx_branch_search_events_createdAt ON branch_search_events(createdAt);
 -- 同 teacher_search_events：另建 substr() 運算式索引（見 migrations/015）。
-CREATE INDEX idx_branch_search_events_month ON branch_search_events(substr(createdAt,1,7));
+-- 同 teacher_search_events：複合索引蓋進 branchName 做成 covering index（見 migrations/017）。
+CREATE INDEX idx_branch_search_events_month ON branch_search_events(substr(createdAt,1,7), branchName);
 CREATE INDEX idx_branch_search_events_year ON branch_search_events(substr(createdAt,1,4));
 
 -- 整體查詢量記錄：每次使用者真的送出查詢就寫一列，不做去重（要看的是真實使用量、不是排行榜），
