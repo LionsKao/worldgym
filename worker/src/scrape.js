@@ -44,10 +44,12 @@ function addDays(date, days) {
   return d;
 }
 
+// 用 Asia/Taipei 而不是執行環境的 UTC，避免台北時間 00:00~08:00 這段區間算出「昨天」，
+// 導致這次抓到的資料整批往前錯位一天（近 7 天/13 天視窗的邊界也跟著錯位）——
+// 跟 queryClasses.js 的 todayIsoTaipei() 是同一個原因、同一個修法。
 function todayAtMidnight() {
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  return now;
+  const taiwanDateStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei" }).format(new Date());
+  return new Date(`${taiwanDateStr}T00:00:00Z`);
 }
 
 // Chinese convention: Monday=1 ... Sunday=7 (JS getDay() is Sunday=0 ... Saturday=6).
