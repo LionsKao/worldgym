@@ -74,6 +74,12 @@
   .ad-chart-nav:hover:not(:disabled){ background:#4a4a5a; border-color:#4a4a5a; }
   .ad-chart-nav:disabled{ opacity:.3; cursor:not-allowed; }
   .ad-chart-viewport{ position:relative; flex:1; min-width:0; aspect-ratio:560/210; overflow:hidden; }
+
+  /* 觸發按鈕跟著目前選到的文字（「7 天」）縮到最窄，選單寬度預設又跟觸發按鈕一樣寬，
+     導致「14 天」「30 天」被裁成「14 ...」。選單固定拉寬、貼右對齊，不受觸發按鈕寬度限制。 */
+  #accessLogDaysFilter.open .custom-select-menu{
+    left:auto; right:0; width:max(100%, 90px);
+  }
 </style>
 </head>
 <body>
