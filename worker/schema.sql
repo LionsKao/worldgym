@@ -104,6 +104,9 @@ CREATE INDEX idx_ad_events_createdAt ON ad_events(createdAt);
 -- analytics.js 的月度彙總查詢用 substr(createdAt,1,7) 篩選月份，上面 idx_ad_events_createdAt
 -- 是建在原始欄位上，包了 substr() 之後吃不到，另建運算式索引（見 migrations/015）。
 CREATE INDEX idx_ad_events_month ON ad_events(substr(createdAt,1,7));
+-- adStatsCombined() 的「依廣告分月明細」查詢要 GROUP BY adId, month, type，上面兩個索引都沒
+-- 蓋到這個組合，複合 covering index 才不用回頭查表本身（見 migrations/018）。
+CREATE INDEX idx_ad_events_adId_month_type ON ad_events(adId, substr(createdAt,1,7), type);
 
 -- 老師查詢次數記錄。使用者送出查詢（含指定老師）且成功顯示結果（不是 0 筆、也不是超過
 -- RESULT_COUNT_WARN_LIMIT 顯示不出來）時才寫一列，前端已做 30 分鐘內同老師去重，這裡單純累加，不做聚合。
@@ -176,7 +179,10 @@ CREATE TABLE favorite_events (
   createdAt TEXT NOT NULL
 );
 
-CREATE INDEX idx_favorite_events_type_createdAt ON favorite_events(type, createdAt);
+-- favoriteStatsCombined() 的 add/apply 月度趨勢查詢都是 WHERE type=? GROUP BY substr(createdAt,1,7)
+-- （add 那條還要 COUNT DISTINCT clientId），複合 covering index 蓋滿這些欄位，
+-- 不用回頭查表本身（見 migrations/018）。
+CREATE INDEX idx_favorite_events_type_month_clientId ON favorite_events(type, substr(createdAt,1,7), clientId);
 CREATE INDEX idx_favorite_events_clientId ON favorite_events(clientId);
 -- favoriteStatsCombined() 用 substr(createdAt,1,7) 篩選月份，上面索引吃不到，
 -- 另建運算式索引（見 migrations/015）。
@@ -193,8 +199,10 @@ CREATE TABLE query_access_log (
   createdAt TEXT NOT NULL
 );
 
-CREATE INDEX idx_query_access_log_createdAt ON query_access_log(createdAt);
-CREATE INDEX idx_query_access_log_ip ON query_access_log(ip);
+-- /queryAccessStats 是 WHERE createdAt >= ? GROUP BY ip ORDER BY cnt DESC，複合 covering
+-- index（createdAt 開頭，蓋滿 ip/userAgent/rateLimited）讓它照日期範圍 seek，不會像單獨的
+-- ip 索引那樣被查詢規劃器拿去整表按 ip 排序掃過去、完全無視日期篩選（見 migrations/018）。
+CREATE INDEX idx_query_access_log_createdAt_covering ON query_access_log(createdAt, ip, userAgent, rateLimited);
 
 -- 提醒功能使用量記錄：每次成功登記一顆提醒（/registerReminder）就記一列，純粹看
 -- 每個月被觸發幾次，用來評估這個功能有沒有人在用；不分辨是不是同一人、也不追蹤取消。
