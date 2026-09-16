@@ -3,6 +3,7 @@ import { queryClasses } from "./queryClasses.js";
 import { runScrape, cleanupStaleBranches } from "./scrape.js";
 import { registerReminder, cancelReminder, listReminders, dispatchDueReminders } from "./reminders.js";
 import { monthlyNameRanking, availableYears, monthlySearchTrend, favoriteStatsCombined, adStatsCombined, reminderStatsCombined, rollupAnalyticsEvents } from "./analytics.js";
+import { scanForNewBranches } from "./branchScan.js";
 
 // 網站是跨網域被呼叫，所以要自己開白名單。
 // 之後如果掛了自訂網域，把新網域加進這個陣列即可。
@@ -706,6 +707,17 @@ export default {
         return json({ ok: true }, 200, origin);
       }
 
+      // 手動觸發一次分店清單月度掃描（平常由每月排程自動跑），方便隨時確認 branches-seed.js 是否過期。
+      if (url.pathname === "/scanNewBranches" && req.method === "POST") {
+        const rl = await rateLimitOrNull(req, env, ctx, "scanNewBranches", 5, origin);
+        if (rl) return rl;
+        if (!(await isAdminRequest(req, env))) {
+          return json({ error: "forbidden" }, 403, origin);
+        }
+        const result = await scanForNewBranches(env);
+        return json(result, 200, origin);
+      }
+
       // 刪除不在目前分店清單裡的舊課表資料（分店關店/從 branches-seed.js 移除後的孤兒資料）。
       if (url.pathname === "/cleanupStaleBranches" && req.method === "POST") {
         const rl = await rateLimitOrNull(req, env, ctx, "cleanupStaleBranches", 5, origin);
@@ -798,6 +810,12 @@ export default {
     if (event.cron === "0 20 1 * *") {
       ctx.waitUntil(cleanupOldQueryAccessLog(env.DB));
       ctx.waitUntil(rollupAnalyticsEvents(env.DB));
+      return;
+    }
+    // 每月 2 號台灣時間 05:00（UTC 21:00）：跟官網 sitemap 比對一次分店清單有沒有新增/疑似下架，
+    // 有差異才發 Teams 通知，不會自動改資料，見 branchScan.js 的說明。見 wrangler.toml 的 cron 設定。
+    if (event.cron === "0 21 2 * *") {
+      ctx.waitUntil(scanForNewBranches(env));
       return;
     }
     // 其餘（每 5 分鐘）用來掃一次課表通知。
