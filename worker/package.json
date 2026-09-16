@@ -2,7 +2,7 @@
   "name": "worldgym-api",
   "private": true,
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "wrangler dev --remote",
     "deploy": "wrangler deploy",
     "tail": "wrangler tail"
   },

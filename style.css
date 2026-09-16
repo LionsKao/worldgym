@@ -65,7 +65,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 .row-pair{ display:flex; gap:24px; flex-wrap:wrap; }
 .row-pair fieldset{ flex:1 1 200px; }
 .field-block{ --accent:#000; }
-.section-head{ display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
+.section-head{ display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap; align-content:flex-start; }
 #mailDisclaimerSheet .section-head{ margin-bottom:0; }
 .section-tag{
   display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; gap:6px;
@@ -106,7 +106,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 .search-wrap .search-clear.visible{ display:flex; }
 .search-wrap .search-clear:hover{ color:var(--ink); }
 
-.pill-grid{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.pill-grid{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; align-content:flex-start; }
 .grid-break{ flex-basis:100%; height:0; }
 .pill{ display:inline-block; }
 .pill input{ position:absolute; opacity:0; width:0; height:0; }
@@ -362,7 +362,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 .fav-name-input-wrap .search-clear.visible{ display:flex; }
 .fav-name-input-wrap .search-clear:hover{ color:var(--ink); }
 .fav-modal-label{ display:block; font-size:12.5px; font-weight:800; color:var(--sub); margin-bottom:8px; }
-.fav-icon-options, .fav-color-options{ display:flex; gap:8px; flex-wrap:wrap; }
+.fav-icon-options, .fav-color-options{ display:flex; gap:8px; flex-wrap:wrap; justify-content:space-between; }
 .fav-icon-options input, .fav-color-options input{ position:absolute; opacity:0; width:0; height:0; }
 .fav-icon-options label{
   display:flex; align-items:center; justify-content:center;
@@ -472,7 +472,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 .reminder-row.fading-out{ opacity:0; }
 .reminder-text{ min-width:0; }
 .reminder-teacher{ color:var(--ink); }
-.reminder-notify-time{ font-size:11px; font-weight:500; color:var(--sub); margin-top:2px; }
+.reminder-notify-time{ font-size:11px; font-weight:600; color:var(--sub); margin-top:2px; }
 .reminder-cancel-bell{ color:#f0b400; cursor:pointer; padding-left:10px; flex-shrink:0; }
 .reminder-cancel-bell.busy{ opacity:.5; pointer-events:none; }
 .reminder-cancel-overlay{
@@ -483,10 +483,30 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 }
 .reminder-cancel-overlay.visible{ opacity:1; }
 
+.access-log-table-wrap{ overflow-x:auto; }
+.access-log-table{ width:100%; border-collapse:collapse; font-size:12.5px; white-space:nowrap; }
+.access-log-table th, .access-log-table td{
+  padding:7px 10px; border-bottom:1px solid var(--line); text-align:left;
+}
+.access-log-table th{ color:var(--sub); font-weight:700; }
+.access-log-table td.access-log-ua{
+  max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:help;
+}
+.access-log-table tr.access-log-row-flagged td{ background:color-mix(in srgb, var(--coral) 12%, transparent); }
+.access-log-table tr.access-log-row-flagged td:first-child{ font-weight:800; color:var(--coral); }
+
+/* 分店清單靠 branches.json fetch 非同步載入渲染，載入完成前先用 min-height 佔住預估空間，
+   減少從「讀取中…」一行文字撐開成完整清單時造成的版面位移（CLS）。數值是實測抓來的粗略估計，
+   分店數量大幅增減或改版面斷點時要重新量測調整。 */
+#branchSectionHead{ min-height:31px; }
+#branchGrid{ min-height:190px; }
+
 @media (max-width:480px){
   body{ padding:20px 10px 100px; }
   .sheet{ padding:18px 14px 20px; border-radius:16px; }
   .hero h1{ font-size:24px; }
+  #branchSectionHead{ min-height:90px; }
+  #branchGrid{ min-height:450px; }
 }
 
 .visually-hidden{

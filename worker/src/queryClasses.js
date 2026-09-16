@@ -113,7 +113,7 @@ async function queryClasses(db, rawState) {
     && params.length + branch.length <= D1_PARAM_SAFETY_LIMIT;
   if (branchPushedDown) conditions.push(inClause("branchSlug", branch, params));
 
-  let sql = `SELECT id, branchSlug, branchName, date, dayOfWeek, startTime, className, teacherName, roomName, isSubstitute
+  let sql = `SELECT id, branchSlug, branchName, date, dayOfWeek, startTime, className, teacherName, roomName, isSubstitute, scrapedAt
     FROM classes WHERE ${conditions.map((c) => `(${c})`).join(" AND ")} ORDER BY date, startTime`;
   // 分店沒下推進 SQL 的少見情況（見上面 branchPushedDown 的說明）還要在 JS 端另外篩一輪，
   // 在這裡加 LIMIT 可能會在還沒篩到目標分店前就把額度用完、篩出來的結果比實際少；
@@ -133,7 +133,10 @@ async function queryClasses(db, rawState) {
   const fetchedCount = docs.length;
 
   const rows = buildDisplayRows(docs);
-  return { rows, fetchedCount, displayedCount: rows.length };
+  const oldestScrapedAt = docs.length > 0
+    ? docs.reduce((min, c) => (c.scrapedAt < min ? c.scrapedAt : min), docs[0].scrapedAt)
+    : null;
+  return { rows, fetchedCount, displayedCount: rows.length, oldestScrapedAt };
 }
 
 export { queryClasses };

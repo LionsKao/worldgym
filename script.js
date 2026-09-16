@@ -559,6 +559,7 @@ function renderGrid(containerId, defaultName, options){
     grid.insertAdjacentHTML("beforeend", '<span class="empty-hint">目前沒有資料</span>');
     return;
   }
+  const fragment = document.createDocumentFragment();
   let lastRegion = undefined;
   options.forEach(opt => {
     if (opt.region !== undefined && opt.region !== lastRegion){
@@ -568,12 +569,13 @@ function renderGrid(containerId, defaultName, options){
         const line = document.createElement("span");
         line.className = "region-line";
         sub.appendChild(line);
-        grid.appendChild(sub);
+        fragment.appendChild(sub);
       }
       lastRegion = opt.region;
     }
-    grid.appendChild(makePill(opt.name || defaultName, opt.value, opt.label, opt.checked));
+    fragment.appendChild(makePill(opt.name || defaultName, opt.value, opt.label, opt.checked));
   });
+  grid.appendChild(fragment);
 }
 
 function getZoneState(zoneName, isTaipei) {
@@ -693,6 +695,7 @@ function renderBranchGrid(containerId, options) {
 
   let lastZone = undefined;
   let currentGroup = null;
+  const fragment = document.createDocumentFragment();
 
   options.forEach(opt => {
     if (opt.region !== lastZone) {
@@ -710,7 +713,7 @@ function renderBranchGrid(containerId, options) {
       toggle.type = "button";
       toggle.className = isExpanded ? "zone-toggle expanded" : "zone-toggle";
       toggle.innerHTML = `${zoneLabel} <i class="fa-solid fa-chevron-down"></i>`;
-      grid.appendChild(toggle);
+      fragment.appendChild(toggle);
       zoneToggles[zoneName] = { toggle };
 
       toggle.addEventListener("click", () => {
@@ -738,10 +741,11 @@ function renderBranchGrid(containerId, options) {
         }
       });
 
-      grid.appendChild(currentGroup);
+      fragment.appendChild(currentGroup);
     }
     currentGroup.appendChild(makePill(opt.name || "branch", opt.value, opt.label, opt.checked));
   });
+  grid.appendChild(fragment);
 }
 
 document.querySelectorAll(".section-btn").forEach(btn => {
@@ -1418,6 +1422,23 @@ function renderActiveFilters(state){
   if (!any) box.insertAdjacentHTML("beforeend", '<span class="active-filter-tag">未設定篩選條件，顯示全部</span>');
 }
 
+// 爬蟲排程每天 03:00/17:00（台灣時間）各跑一次，30 小時等於「今天兩次都沒跑成功」才會示警。
+const STALE_DATA_THRESHOLD_HOURS = 30;
+function appendStaleNoticeTag(box, oldestScrapedAt){
+  if (!oldestScrapedAt) return;
+  const ageHours = (Date.now() - new Date(oldestScrapedAt).getTime()) / 3600000;
+  if (ageHours <= STALE_DATA_THRESHOLD_HOURS) return;
+  // oldestScrapedAt 格式固定為 nowTaiwanIso() 產生的 "YYYY-MM-DDTHH:mm:ss.sss+08:00"，
+  // 直接切字串取值，不透過 Date 的 getMonth/getHours（那些回傳裝置當地時區，不是台灣時間）。
+  const [datePart, timePart] = oldestScrapedAt.split("T");
+  const [, mm, dd] = datePart.split("-");
+  const [hh, min] = timePart.split(":");
+  const tag = document.createElement("span");
+  tag.className = "active-filter-tag";
+  tag.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i>資料更新 ${mm}/${dd} ${hh}:${min}`;
+  box.appendChild(tag);
+}
+
 class QueryTimeoutError extends Error {}
 // 伺服器有回應但狀態碼不是 2xx（例如 500），跟「根本連不上／CORS 被擋」的網路錯誤要分開顯示。
 class QueryHttpError extends Error {
@@ -1504,7 +1525,7 @@ async function runScheduleQuery(state, isRetry){
     }
     throw err;
   }
-  // 回傳格式：{ rows, fetchedCount, displayedCount }
+  // 回傳格式：{ rows, fetchedCount, displayedCount, oldestScrapedAt }
 }
 
 let lastResultRows = [];
@@ -1691,7 +1712,7 @@ async function runSearchAndShowResults(state){
   // 送給後端查詢時才 resolve 成實際星期幾，後端只認得 1-7 的數字。
   const queryState = resolveQueryState(state);
   try{
-    const { rows, displayedCount } = await runScheduleQuery(queryState);
+    const { rows, displayedCount, oldestScrapedAt } = await runScheduleQuery(queryState);
     logSearchEvent(displayedCount);
     if (displayedCount === 0){
       showPillWarning(submitBtn, "查無符合條件的課程，請調整篩選條件");
@@ -1711,6 +1732,7 @@ async function runSearchAndShowResults(state){
       showResultView();
       history.replaceState(null, "", buildShareUrl(state));
       renderActiveFilters(state);
+      appendStaleNoticeTag(document.getElementById("activeFiltersBox"), oldestScrapedAt);
       renderScheduleResults(rows, state.teacher.length === 1 ? state.teacher[0] : null);
     }
   } catch(err){

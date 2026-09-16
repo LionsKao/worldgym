@@ -8,9 +8,25 @@
 <title>⚡</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha384-PPIZEGYM1v8zp5Py7UjFb79S58UeqCL9pYVnVPURKEqvioPROaVAJKKLzvH2rDnI" crossorigin="anonymous">
-<link rel="stylesheet" href="style.css?v=63">
+<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
+<style>
+/* cdnjs 的 Font Awesome all.min.css 把圖示字型設成 font-display:block（載入完成前圖示直接不顯示）。
+   瀏覽器對重複 @font-face 是「先宣告的贏」，所以這段要排在下面 Font Awesome <link> 之前，
+   才能用同樣的 family/weight/style/src 把 font-display 換成 swap。
+   只覆寫實際會用到的 fa-solid 跟 fa-brands，不動 regular（沒在用）。*/
+@font-face{
+  font-family:"Font Awesome 6 Free"; font-style:normal; font-weight:900; font-display:swap;
+  src:url(https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/webfonts/fa-solid-900.woff2) format("woff2");
+}
+@font-face{
+  font-family:"Font Awesome 6 Brands"; font-style:normal; font-weight:400; font-display:swap;
+  src:url(https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/webfonts/fa-brands-400.woff2) format("woff2");
+}
+</style>
+<link rel="preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha384-PPIZEGYM1v8zp5Py7UjFb79S58UeqCL9pYVnVPURKEqvioPROaVAJKKLzvH2rDnI" crossorigin="anonymous" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha384-PPIZEGYM1v8zp5Py7UjFb79S58UeqCL9pYVnVPURKEqvioPROaVAJKKLzvH2rDnI" crossorigin="anonymous"></noscript>
+<link rel="stylesheet" href="style.css?v=71">
 <style>
   .admin-link-row{ display:flex; gap:6px; flex-wrap:wrap; margin-top:14px; }
   .admin-link-btn{
@@ -81,6 +97,7 @@
     left:auto; right:0; width:max(100%, 90px);
   }
 </style>
+<!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "8513ca23d1fc42f2af05b18ff29c709d"}'></script><!-- End Cloudflare Web Analytics -->
 </head>
 <body>
 
