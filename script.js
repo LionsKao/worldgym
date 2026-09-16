@@ -467,12 +467,14 @@ async function preloadRegisteredReminders(){
   }
 }
 
-// slug -> Google Maps 連結，從 branches.json 的 mapUrl 欄位讀進來（不是每間分店都有）。
+// slug -> Google Maps 連結，從 #branchGrid 分店 checkbox 的 data-map-url 讀進來（不是每間分店都有）。
 let BRANCH_MAP_URLS = {};
-// 分店 slug 在網址參數裡很長，選很多間會讓網址爆長，改用 branches.json 陣列的順序位置當短代碼。
+// 分店 slug 在網址參數裡很長，選很多間會讓網址爆長，改用這份固定順序表的位置當短代碼。
+// 順序要保持不變（原本是 branches.json 的陣列順序），不然舊的分享網址會解碼出錯的分店。
+const BRANCH_SLUG_ORDER = ["taipei-101","taipei-minsheng","taipei-gongguan","taipei-station","taipei-dazhi","taipei-changchun","taipei-minquan-east","taipei-nanjing","taipei-daan","taipei-tonling","taipei-guangfu","taipei-ximen","taipei-songren","taipei-songlong","taipei-tienmu-dexing","taipei-shilin","taipei-tienmu","taipei-beitou-zhonghe","taipei-neihu","taipei-neihu-fuhwa","new-taipei-banqiao-shuangshi","new-taipei-banciao-chongcing","new-taipei-banqiao-fuzhong","new-taipei-banqiao-zhongshan","new-taipei-xizhi","new-taipei-xike","new-taipei-hsindian","new-taipei-yonghe","new-taipei-yonghe-minquan","new-taipei-zhonghe","new-taipei-jingping","new-taipei-tucheng","new-taipei-sanchong","new-taipei-beihsinzhuang","new-taipei-hsinzhuang","new-taipei-danshui","new-taipei-linkou","taoyuan-taimall","taoyuan-neili","taoyuan-pingzhen","taoyuan-dayou","taoyuan-fuxing","taoyuan-guoqiang","hsinchu-zhonghua","hsinchu-zhongzheng","hsinchu-zhubei","miaoli-yuanli","taichung-xuefu","taichung-meicun","taichung-e-chung","taichung-chongde","taichung-dongshan","taichung-xitun","taichung-liming","taichung-wuri","taichung-fengyuan","taichung-qingshui","taichung-dajia","nantou-caotun","changhua-heping","changhua-yuanlin","chiayi-minzu","tainan-focus","tainan-shulin","tainan-ximen","tainan-yongkang","tainan-shanhua","kaohsiung-zhonghua","kaohsiung-datong-heping","kaohsiung-sogo","kaohsiung-baocheng","kaohsiung-gangshan","kaohsiung-fengshan-zhongshan","pingtung-ziyou","pingtung-chaozhou","yilan-youai","yilan-luodong","hualian-guolian","keelung-xinyi","changhua-lukang","kaohsiung-yangming","yunlin-douliu","taichung-daya","taipei-minsheng-yuanhuan","taipei-neihu-gangqia","taichung-shalu","taoyuan-yangmei","taoyuan-zhongli-zhongyuan","taichung-taiping","miaoli-zhunan","miaoli-toufen","new-taipei-tucheng-haishan","hualien-jian","tainan-rende","tainan-yongkang-yongda","yunlin-huwei","tainan-haian","tainan-annan","tainan-xinying","tainan-anping","hsinchu-xinfeng","hsinchu-zhubei-huaxing","kaohsiung-zuoying","kaohsiung-fengshan-wujia","chiayi-xingye","hsinchu-xiangshan","tainan-zhonghua-east"];
 let BRANCH_URL_CODE = {};
 let BRANCH_URL_DECODE = {};
-// slug -> { lat, lng }，供依目前位置篩選分店（1km/3km/5km）使用。
+// slug -> { lat, lng }，供依目前位置篩選分店（1km/3km/5km）使用，從 data-lat/data-lng 讀進來。
 let BRANCH_COORDS = {};
 
 function trackEvent(name, params){
@@ -617,135 +619,110 @@ function sortByClickCount(items, key, getValue = (x) => x) {
   return [...items].sort((a, b) => (counts[getValue(b)] || 0) - (counts[getValue(a)] || 0));
 }
 
-function renderBranchGrid(containerId, options) {
-  const grid = document.getElementById(containerId);
-  grid.innerHTML = "";
-  if (options.length === 0) {
-    grid.insertAdjacentHTML("beforeend", '<span class="empty-hint">目前沒有資料</span>');
-    return;
-  }
+// 分店 pill、1/3/5km 距離按鈕、全選按鈕都已經寫死在 index.html 裡（不再 fetch branches.json 動態產生），
+// 這裡只負責讀出寫死的 data-* 屬性、把事件綁上去，並套用使用者的分區展開狀態跟分店點擊次數排序。
+function initBranchGrid(){
+  const grid = document.getElementById("branchGrid");
   const branchSectionHead = document.getElementById("branchSectionHead");
-  branchSectionHead.querySelectorAll(".pill-btn").forEach(el => el.remove());
-  const zoneToggles = {};
-  if (navigator.geolocation) {
-    [1, 3, 5].forEach(radiusKm => {
-      const geoBtn = document.createElement("button");
-      geoBtn.type = "button";
-      geoBtn.className = "pill-btn geo-filter-btn";
-      geoBtn.textContent = `${radiusKm}km`;
-      geoBtn.addEventListener("click", () => requestGeoFilter(radiusKm));
-      branchSectionHead.appendChild(geoBtn);
+
+  BRANCH_URL_CODE = Object.fromEntries(BRANCH_SLUG_ORDER.map((slug, i) => [slug, String(i)]));
+  BRANCH_URL_DECODE = Object.fromEntries(BRANCH_SLUG_ORDER.map((slug, i) => [String(i), slug]));
+
+  const branchInputs = [...grid.querySelectorAll('input[name="branch"]')];
+  BRANCH_MAP_URLS = Object.fromEntries(
+    branchInputs.filter(input => input.dataset.mapUrl).map(input => [input.value, input.dataset.mapUrl])
+  );
+  BRANCH_COORDS = Object.fromEntries(
+    branchInputs.filter(input => input.dataset.lat && input.dataset.lng)
+      .map(input => [input.value, { lat: Number(input.dataset.lat), lng: Number(input.dataset.lng) }])
+  );
+
+  if (!navigator.geolocation) {
+    branchSectionHead.querySelectorAll(".geo-filter-btn").forEach(el => el.remove());
+  } else {
+    branchSectionHead.querySelectorAll(".geo-filter-btn").forEach(btn => {
+      btn.addEventListener("click", () => requestGeoFilter(Number(btn.dataset.radiusKm)));
     });
   }
 
-  ["台北", "新北"].forEach(cityName => {
-    const citySlugs = options.filter(opt => opt.cityName === cityName).map(opt => opt.value);
-    if (citySlugs.length === 0) return;
-    const selectAllBtn = document.createElement("button");
-    selectAllBtn.type = "button";
-    selectAllBtn.className = "pill-btn";
-    selectAllBtn.textContent = `${cityName}全選`;
-    selectAllBtn.addEventListener("click", () => {
-      const citySlugSet = new Set(citySlugs);
-      document.querySelectorAll('input[name="branch"]').forEach(input => {
-        if (citySlugSet.has(input.value)) input.checked = true;
-      });
-      saveSelection("wg_selected_branch", ["branch"]);
-      updateResetButtonState();
-      updateSubmitState();
-      trackEvent("select_all_branch", { city_name: cityName });
+  const zoneToggles = {};
+  grid.querySelectorAll(".zone-toggle").forEach(toggle => {
+    const zoneName = toggle.dataset.zoneName;
+    zoneToggles[zoneName] = { toggle };
+    toggle.addEventListener("click", () => {
+      const group = toggle.nextElementSibling;
+      const isCollapsing = !group.classList.contains("collapsed");
 
-      const zoneName = ZONE_MAP[cityName] || cityName;
-      const zoneToggle = zoneToggles[zoneName];
-      if (zoneToggle && !zoneToggle.toggle.classList.contains("expanded")) {
-        zoneToggle.toggle.click();
+      saveZoneState(zoneName, !isCollapsing);
+
+      if (isCollapsing) {
+        group.classList.add("hidden-opacity");
+        toggle.classList.remove("expanded");
+
+        setTimeout(() => {
+          if (group.classList.contains("hidden-opacity")) {
+            group.classList.add("collapsed");
+          }
+        }, 250);
+      } else {
+        group.classList.remove("collapsed");
+        toggle.classList.add("expanded");
+
+        setTimeout(() => {
+          group.classList.remove("hidden-opacity");
+        }, 10);
       }
     });
-    branchSectionHead.appendChild(selectAllBtn);
   });
 
-  [
-    { label: "台中", zoneName: "台中區" },
-    { label: "台南", zoneName: "台南區" },
-    { label: "高屏", zoneName: "高屏區" },
-  ].forEach(({ label, zoneName }) => {
-    const zoneSlugs = options.filter(opt => opt.region === zoneName).map(opt => opt.value);
-    if (zoneSlugs.length === 0) return;
-    const selectAllBtn = document.createElement("button");
-    selectAllBtn.type = "button";
-    selectAllBtn.className = "pill-btn";
-    selectAllBtn.textContent = `${label}全選`;
-    selectAllBtn.addEventListener("click", () => {
-      const zoneSlugSet = new Set(zoneSlugs);
-      document.querySelectorAll('input[name="branch"]').forEach(input => {
-        if (zoneSlugSet.has(input.value)) input.checked = true;
-      });
-      saveSelection("wg_selected_branch", ["branch"]);
-      updateResetButtonState();
-      updateSubmitState();
-      trackEvent("select_all_branch", { city_name: label });
-
-      const zoneToggle = zoneToggles[zoneName];
-      if (zoneToggle && !zoneToggle.toggle.classList.contains("expanded")) {
-        zoneToggle.toggle.click();
-      }
-    });
-    branchSectionHead.appendChild(selectAllBtn);
+  // 套用使用者上次留下的分區展開/收合狀態，可能跟寫死的預設值（只有台北區展開）不同。
+  grid.querySelectorAll(".zone-group").forEach(group => {
+    const zoneName = group.dataset.zoneName;
+    const toggle = zoneToggles[zoneName]?.toggle;
+    if (!toggle) return;
+    const isExpanded = getZoneState(zoneName, zoneName === "台北區");
+    group.classList.toggle("collapsed", !isExpanded);
+    group.classList.remove("hidden-opacity");
+    toggle.classList.toggle("expanded", isExpanded);
   });
 
-  let lastZone = undefined;
-  let currentGroup = null;
-  const fragment = document.createDocumentFragment();
+  function selectAllAndExpand(inputs, trackLabel, zoneName){
+    inputs.forEach(input => { input.checked = true; });
+    saveSelection("wg_selected_branch", ["branch"]);
+    updateResetButtonState();
+    updateSubmitState();
+    trackEvent("select_all_branch", { city_name: trackLabel });
 
-  options.forEach(opt => {
-    if (opt.region !== lastZone) {
-      lastZone = opt.region;
-      const zoneName = lastZone;
-      const isTaipei = zoneName === "台北區";
-      const zoneLabel = zoneName.replace(/區$/, "");
-
-      const isExpanded = getZoneState(zoneName, isTaipei);
-
-      currentGroup = document.createElement("span");
-      currentGroup.className = isExpanded ? "zone-group" : "zone-group collapsed hidden-opacity";
-
-      const toggle = document.createElement("button");
-      toggle.type = "button";
-      toggle.className = isExpanded ? "zone-toggle expanded" : "zone-toggle";
-      toggle.innerHTML = `${zoneLabel} <i class="fa-solid fa-chevron-down"></i>`;
-      fragment.appendChild(toggle);
-      zoneToggles[zoneName] = { toggle };
-
-      toggle.addEventListener("click", () => {
-        const group = toggle.nextElementSibling;
-        const isCollapsing = !group.classList.contains("collapsed");
-
-        saveZoneState(zoneName, !isCollapsing);
-
-        if (isCollapsing) {
-          group.classList.add("hidden-opacity");
-          toggle.classList.remove("expanded");
-
-          setTimeout(() => {
-            if (group.classList.contains("hidden-opacity")) {
-              group.classList.add("collapsed");
-            }
-          }, 250);
-        } else {
-          group.classList.remove("collapsed");
-          toggle.classList.add("expanded");
-
-          setTimeout(() => {
-            group.classList.remove("hidden-opacity");
-          }, 10);
-        }
-      });
-
-      fragment.appendChild(currentGroup);
+    const zoneToggle = zoneToggles[zoneName];
+    if (zoneToggle && !zoneToggle.toggle.classList.contains("expanded")) {
+      zoneToggle.toggle.click();
     }
-    currentGroup.appendChild(makePill(opt.name || "branch", opt.value, opt.label, opt.checked));
+  }
+
+  branchSectionHead.querySelectorAll("[data-select-all-city]").forEach(btn => {
+    const cityName = btn.dataset.selectAllCity;
+    btn.addEventListener("click", () => {
+      const inputs = branchInputs.filter(input => input.dataset.city === cityName);
+      selectAllAndExpand(inputs, cityName, ZONE_MAP[cityName] || cityName);
+    });
   });
-  grid.appendChild(fragment);
+
+  branchSectionHead.querySelectorAll("[data-select-all-zone]").forEach(btn => {
+    const zoneName = btn.dataset.selectAllZone;
+    const label = btn.dataset.selectAllLabel;
+    btn.addEventListener("click", () => {
+      const inputs = [...grid.querySelector(`.zone-group[data-zone-name="${zoneName}"]`).querySelectorAll('input[name="branch"]')];
+      selectAllAndExpand(inputs, label, zoneName);
+    });
+  });
+
+  // 分店在各分區內再依使用者點擊次數重排（常用分店排前面），改成搬動既有節點，不用重新產生 DOM。
+  const branchClicks = getClickCounts("wg_branch_clicks");
+  grid.querySelectorAll(".zone-group").forEach(group => {
+    [...group.querySelectorAll(".pill")]
+      .sort((a, b) => (branchClicks[b.querySelector("input").value] || 0) - (branchClicks[a.querySelector("input").value] || 0))
+      .forEach(pill => group.appendChild(pill));
+  });
 }
 
 document.querySelectorAll(".section-btn").forEach(btn => {
@@ -1284,8 +1261,7 @@ function runGeoFilter(radiusKm){
 
 renderFavorites();
 
-// 分店排序：先依 World Gym 官方六大分區，區內再依這個地區順序排列。
-const REGION_ORDER = ["台北", "新北", "基隆", "宜蘭", "花蓮", "桃園", "新竹", "苗栗", "台中", "彰化", "南投", "雲林", "台南", "嘉義", "高雄", "屏東"];
+// 分店的縣市 -> World Gym 官方六大分區（分區展開/收合、分區全選按鈕在用）。
 const ZONE_MAP = {
   "台北": "台北區", "新北": "台北區", "基隆": "台北區", "宜蘭": "台北區", "花蓮": "台北區",
   "桃園": "桃園區",
@@ -1294,15 +1270,6 @@ const ZONE_MAP = {
   "台南": "台南區", "嘉義": "台南區",
   "高雄": "高屏區", "屏東": "高屏區",
 };
-const ZONE_ORDER = ["台北區", "桃園區", "新竹區", "台中區", "台南區", "高屏區"];
-function regionRank(region){
-  const idx = REGION_ORDER.indexOf(region);
-  return idx === -1 ? REGION_ORDER.length : idx;
-}
-function zoneRank(region){
-  const idx = ZONE_ORDER.indexOf(ZONE_MAP[region]);
-  return idx === -1 ? ZONE_ORDER.length : idx;
-}
 
 function distanceKm(lat1, lng1, lat2, lng2){
   const R = 6371;
@@ -1311,39 +1278,6 @@ function distanceKm(lat1, lng1, lat2, lng2){
   const dLng = toRad(lng2 - lng1);
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.asin(Math.sqrt(a));
-}
-
-// 分店自訂排序（依 slug），未列在此清單的分店退回 region 排序。
-const BRANCH_ORDER = [
-  "taipei-station", "taipei-gongguan", "taipei-ximen", "taipei-changchun", "taipei-minquan-east",
-  "taipei-dazhi", "taipei-daan", "taipei-tonling", "taipei-neihu-fuhwa", "taipei-guangfu",
-  "taipei-nanjing", "taipei-minsheng", "taipei-minsheng-yuanhuan", "taipei-101", "taipei-songren",
-  "taipei-songlong", "taipei-neihu", "taipei-neihu-gangqia", "taipei-tienmu", "taipei-tienmu-dexing",
-  "taipei-shilin",
-  "taipei-beitou-zhonghe", "new-taipei-sanchong", "new-taipei-yonghe", "new-taipei-yonghe-minquan",
-  "new-taipei-banqiao-shuangshi", "new-taipei-banqiao-zhongshan", "new-taipei-banqiao-fuzhong",
-  "new-taipei-banciao-chongcing", "new-taipei-zhonghe", "new-taipei-jingping", "new-taipei-hsinzhuang",
-  "new-taipei-beihsinzhuang", "new-taipei-hsindian", "new-taipei-tucheng", "new-taipei-tucheng-haishan",
-  "taoyuan-fuxing", "taoyuan-dayou", "taoyuan-guoqiang", "taoyuan-taimall", "taoyuan-neili",
-  "taoyuan-zhongli-zhongyuan", "taoyuan-pingzhen", "taoyuan-yangmei",
-  "hsinchu-zhongzheng", "hsinchu-zhonghua", "hsinchu-xiangshan", "hsinchu-zhubei-huaxing",
-  "hsinchu-zhubei", "hsinchu-xinfeng", "miaoli-toufen", "miaoli-yuanli",
-  "taichung-e-chung", "taichung-meicun", "taichung-chongde", "taichung-xuefu", "taichung-dongshan",
-  "taichung-taiping", "taichung-xitun", "taichung-liming", "changhua-heping", "taichung-daya",
-  "taichung-wuri", "taichung-fengyuan", "taichung-shalu", "taichung-qingshui", "taichung-dajia",
-  "nantou-caotun", "changhua-yuanlin", "changhua-lukang", "yunlin-douliu", "yunlin-huwei",
-  "tainan-focus", "chiayi-minzu", "tainan-haian", "tainan-ximen", "tainan-zhonghua-east",
-  "tainan-anping", "tainan-annan", "tainan-yongkang", "tainan-rende", "tainan-yongkang-yongda",
-  "tainan-shanhua", "tainan-xinying", "chiayi-xingye", "tainan-shulin",
-  "kaohsiung-sogo", "kaohsiung-baocheng", "kaohsiung-datong-heping", "kaohsiung-zhonghua", "pingtung-ziyou",
-  "kaohsiung-yangming", "kaohsiung-zuoying", "kaohsiung-fengshan-wujia", "kaohsiung-fengshan-zhongshan",
-  "kaohsiung-gangshan", "pingtung-chaozhou",
-  "new-taipei-xizhi", "new-taipei-xike", "new-taipei-danshui", "new-taipei-linkou", "keelung-xinyi", "yilan-luodong",
-  "yilan-youai", "hualian-guolian", "hualien-jian",
-];
-function branchRank(slug){
-  const idx = BRANCH_ORDER.indexOf(slug);
-  return idx === -1 ? BRANCH_ORDER.length : idx;
 }
 
 // 同頁查詢結果：按查詢後不換頁，改成隱藏篩選 pill、顯示結果，按返回再換回來。
@@ -1842,26 +1776,13 @@ async function init(){
     const defaultRoomInput = document.querySelector('input[name="room"][value="團體教室"]');
     if (defaultRoomInput) defaultRoomInput.checked = true;
   }
-  // branches.json 跟 /filterOptions 彼此獨立，同時發出去、各自等待，
-  // 不要一個抓完才抓下一個，不然畫面等待時間會是兩個請求時間相加。
-  const branchesPromise = withRetryTimeout(() => fetch("branches.json").then(r => r.json()), QUERY_RETRY_AFTER_MS, QUERY_GIVE_UP_AFTER_MS);
+  // 分店資料已經寫死在 index.html，不用再 fetch branches.json，只剩 /filterOptions 需要等。
   const filterOptionsPromise = withRetryTimeout(() => fetch(`${WORKER_BASE}/filterOptions`).then(r => r.json()), QUERY_RETRY_AFTER_MS, QUERY_GIVE_UP_AFTER_MS);
   // 頁面載入就先預熱一張查詢用的 token，大部分情況使用者按查詢時早就備好了，不用多等。
   fetchFreshQueryToken().catch(e => console.error("issueToken 預熱失敗", e));
 
   try{
-    const branches = await branchesPromise;
-    BRANCH_MAP_URLS = Object.fromEntries(branches.filter(b => b.mapUrl).map(b => [b.slug, b.mapUrl]));
-    BRANCH_URL_CODE = Object.fromEntries(branches.map((b, i) => [b.slug, String(i)]));
-    BRANCH_URL_DECODE = Object.fromEntries(branches.map((b, i) => [String(i), b.slug]));
-    BRANCH_COORDS = Object.fromEntries(branches.filter(b => b.lat != null && b.lng != null).map(b => [b.slug, { lat: b.lat, lng: b.lng }]));
-    const branchClicks = getClickCounts("wg_branch_clicks");
-    const branchOptions = branches
-      .sort((a, b) => zoneRank(a.region) - zoneRank(b.region)
-        || (branchClicks[b.slug] || 0) - (branchClicks[a.slug] || 0)
-        || branchRank(a.slug) - branchRank(b.slug) || regionRank(a.region) - regionRank(b.region))
-      .map(b => ({ value: b.slug, label: b.name, region: ZONE_MAP[b.region] || b.region, cityName: b.region }));
-    renderBranchGrid("branchGrid", branchOptions);
+    initBranchGrid();
     if (urlState && urlState.branch) urlState.branch = urlState.branch.map(v => BRANCH_URL_DECODE[v] || v);
     if (urlState) applyStateToInputs(urlState, ["branch"]);
     else applySavedSelection("wg_selected_branch", ["branch"]);

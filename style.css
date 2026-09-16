@@ -495,18 +495,10 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 .access-log-table tr.access-log-row-flagged td{ background:color-mix(in srgb, var(--coral) 12%, transparent); }
 .access-log-table tr.access-log-row-flagged td:first-child{ font-weight:800; color:var(--coral); }
 
-/* 分店清單靠 branches.json fetch 非同步載入渲染，載入完成前先用 min-height 佔住預估空間，
-   減少從「讀取中…」一行文字撐開成完整清單時造成的版面位移（CLS）。數值是實測抓來的粗略估計，
-   分店數量大幅增減或改版面斷點時要重新量測調整。 */
-#branchSectionHead{ min-height:31px; }
-#branchGrid{ min-height:190px; }
-
 @media (max-width:480px){
   body{ padding:20px 10px 100px; }
   .sheet{ padding:18px 14px 20px; border-radius:16px; }
   .hero h1{ font-size:24px; }
-  #branchSectionHead{ min-height:90px; }
-  #branchGrid{ min-height:450px; }
 }
 
 .visually-hidden{
