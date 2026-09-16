@@ -109,4 +109,7 @@ export default [
   { slug: "chiayi-xingye", name: "興業", region: "嘉義" },
   { slug: "hsinchu-xiangshan", name: "香山", region: "新竹" },
   { slug: "tainan-zhonghua-east", name: "中華東", region: "台南" },
+  { slug: "taoyuan-yiwen", name: "藝文", region: "桃園" },
+  { slug: "miaoli-zhongzheng", name: "苗栗中正", region: "苗栗" },
+  { slug: "changhua-xihu", name: "溪湖", region: "彰化" },
 ];
