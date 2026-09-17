@@ -12,6 +12,9 @@
     var s = document.createElement('script');
     s.async = true;
     s.src = 'https://www.googletagmanager.com/gtag/js?id=G-Q7NZN45T0D';
+    // gtag.js 真的載入完成才觸發這個事件，讓 script.js 清網址上的 utm_source 時機
+    // 跟著 GA4 實際送出 pageview 的時機走，不要用寫死的秒數瞎猜（見 script.js 開頭的說明）。
+    s.onload = function () { window.dispatchEvent(new Event('wg-ga-loaded')); };
     document.head.appendChild(s);
   });
 </script>
@@ -591,6 +594,6 @@
   </div>
 </div>
 
-<script src="script.js?v=110"></script>
+<script src="script.js?v=111"></script>
 </body>
 </html>

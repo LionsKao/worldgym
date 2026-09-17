@@ -19,14 +19,19 @@ const cameFromOldDomain = OLD_DOMAIN_UTM_SOURCES.includes(new URLSearchParams(lo
 if (cameFromOldDomain){
   // 提示文案講「加完書籤這行就會消失」，所以要讓「使用者當下把網址列加進書籤」存到的是乾淨網址，
   // 不然書籤存到的還是帶著 utm_source=wgcourse_old 的網址，下次打開又會命中同一組參數、提示又跳出來。
-  // 延遲 2 秒才清是為了讓 GA4 已經送出這次工作階段的第一個 pageview（歸因用得到這組 utm）
-  // 之後才動網址列，不影響既有的來源歸因；清之前重新檢查一次，避免蓋掉使用者這 2 秒內自己觸發的網址變化
-  // (例如送出查詢後 runSearchAndShowResults 已經把網址換成分享用網址)。
-  setTimeout(() => {
+  // 清網址前要先讓 GA4 送出這次工作階段的第一個 pageview（歸因用得到這組 utm），不然 GA4 抓到的會是
+  // 已經清乾淨、不帶 utm_source 的網址，變成「(not set)」。GA4 的 gtag.js 現在延遲到 window.load
+  // 才開始載入（見 index.html），時間不固定，所以改成等 index.html 送出的 wg-ga-loaded 事件
+  // （gtag.js 真的載入完成）才清，而不是猜一個固定秒數；保底逾時是防呆，避免 GA 被瀏覽器擋掉
+  // （廣告攔截等）或載入失敗時網址永遠清不掉。清之前重新檢查一次，避免蓋掉使用者這段時間內
+  // 自己觸發的網址變化（例如送出查詢後 runSearchAndShowResults 已經把網址換成分享用網址）。
+  const cleanOldDomainUtmFromUrl = () => {
     if (OLD_DOMAIN_UTM_SOURCES.includes(new URLSearchParams(location.search).get("utm_source"))){
       history.replaceState(null, "", location.pathname);
     }
-  }, 2000);
+  };
+  window.addEventListener("wg-ga-loaded", () => setTimeout(cleanOldDomainUtmFromUrl, 500), { once: true });
+  setTimeout(cleanOldDomainUtmFromUrl, 20000);
 }
 
 // 廣告文案：內容改由 D1 的 ads table 提供（上下架時間 + enabled 開關），
