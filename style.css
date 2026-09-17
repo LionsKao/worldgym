@@ -150,7 +150,8 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 
 .branch-stats-filter-row{ display:flex; gap:8px; margin-bottom:14px; }
 .branch-stats-select{ flex:1; min-width:0; }
-.branch-stats-wrap{ font-size:12.5px; overflow:hidden; text-align:center; }
+/* 圖表資料回來前只顯示「讀取中…」文字，載入後 Chart.js 撐開高度，先保留高度避免版面被推開造成 CLS。 */
+.branch-stats-wrap{ font-size:12.5px; overflow:hidden; text-align:center; min-height:200px; }
 
 /* 自製下拉選單：外觀跟 .section-btn 一致，但不用原生 <select>（原生下拉的箭頭位置/樣式沒辦法客製）。 */
 .custom-select{ position:relative; }
