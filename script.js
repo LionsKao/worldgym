@@ -55,16 +55,19 @@ function trackAdClick(adId){
   }).catch(() => {});
 }
 
-// 曝光是輪播自動觸發的高頻事件（每 5 秒一次），不能每次都各自發一個 request/D1 寫入，
-// 先攢在記憶體裡，定時或離開頁面時才一次 batch 送出，見 flushAdImpressions()。
+// 廣告一個工作階段只隨機挑一則顯示（不輪播），曝光先攢在記憶體裡，
+// 使用者切到背景或離開頁面時才送出，見 flushAdImpressions()。
 let adImpressionBuffer = [];
 function bufferAdImpression(adId){
   if (!adId || isAdTrackingExcluded()) return;
   adImpressionBuffer.push(adId);
 }
 
-// useBeacon: 分頁切到背景/即將卸載時呼叫，用 sendBeacon 確保即使頁面馬上關閉也送得出去；
-// 一般定時 flush 用 fetch 就好。清空 buffer 前先複製一份，避免送出中途又有新曝光被吃掉。
+// useBeacon: 分頁切到背景/即將卸載時呼叫，用 sendBeacon 確保即使頁面馬上關閉也送得出去。
+// 清空 buffer 前先複製一份，避免送出中途又有新曝光被吃掉。
+// 曾經用 setInterval 每 30 秒定時 flush 一次（廣告輪播年代留下的保險機制），拿掉了：
+// 現在一個工作階段最多只有 1 筆曝光，visibilitychange／pagehide 這兩個事件已經夠涵蓋所有離開頁面
+// 的情境，不需要手機上一直醒著的計時器（省電）。
 function flushAdImpressions(useBeacon){
   if (adImpressionBuffer.length === 0) return;
   const events = adImpressionBuffer.map((adId) => ({ adId, type: "impression" }));
@@ -80,8 +83,6 @@ function flushAdImpressions(useBeacon){
     body: payload,
   }).catch(() => {});
 }
-const AD_IMPRESSION_FLUSH_INTERVAL_MS = 30000;
-setInterval(() => flushAdImpressions(false), AD_IMPRESSION_FLUSH_INTERVAL_MS);
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) flushAdImpressions(true);
 });
