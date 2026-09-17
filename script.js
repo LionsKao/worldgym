@@ -530,21 +530,6 @@ function resolveQueryState(state){
   return { ...state, day: [...new Set((state.day || []).map(resolveDayValue))] };
 }
 
-const DAY_OPTIONS = [
-  { name: "day", value: "today", label: "今天" },
-  { name: "day", value: "tomorrow", label: "明天" },
-  { name: "day", value: "1", label: "一" },
-  { name: "day", value: "2", label: "二" },
-  { name: "day", value: "3", label: "三" },
-  { name: "day", value: "4", label: "四" },
-  { name: "day", value: "5", label: "五" },
-  { name: "day", value: "6", label: "六" },
-  { name: "day", value: "7", label: "日" },
-];
-const ROOM_OPTIONS = [
-  { name: "room", value: "團體教室", label: "團體" },
-  { name: "room", value: "飛輪教室", label: "飛輪" },
-];
 const TIME_OPTIONS = [
   { name: "time", value: "0600", label: "06 - 11" },
   { name: "time", value: "1200", label: "12 - 17" },
@@ -1776,15 +1761,14 @@ document.getElementById("shareUrlBtn").addEventListener("click", () => {
 async function init(){
   await preloadRegisteredReminders();
   const urlState = getUrlFilterState();
-  renderGrid("dayGrid", "day", DAY_OPTIONS);
+  // 星期/時段/教室類型的選項是固定的，已經寫死在 index.html（同分店清單那次的做法），
+  // 不用再用 JS 重新產生 pill，避免頁面剛載入、JS 還沒跑完時 fieldset 是空的造成 CLS。
   if (urlState) applyStateToInputs(urlState, ["day"]);
   else applySavedSelection("wg_selected_day", ["day"]);
 
-  renderGrid("timeGrid", "time", TIME_OPTIONS);
   if (urlState) applyStateToInputs(urlState, ["time"]);
   else applySavedSelection("wg_selected_time", ["time"]);
 
-  renderGrid("roomGrid", "room", ROOM_OPTIONS);
   if (urlState) applyStateToInputs(urlState, ["room"]);
   else if (localStorage.getItem("wg_selected_room")) applySavedSelection("wg_selected_room", ["room"]);
   else {

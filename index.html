@@ -122,12 +122,24 @@
       <fieldset class="field-block" style="--accent:var(--teal)">
         <div class="pill-grid" id="dayGrid">
           <span class="section-tag" role="img" aria-label="星期"><i class="fa-solid fa-fw fa-calendar-day"></i></span>
+          <span class="pill"><input type="checkbox" name="day" value="today" id="day-today"><label for="day-today">今天</label></span>
+          <span class="pill"><input type="checkbox" name="day" value="tomorrow" id="day-tomorrow"><label for="day-tomorrow">明天</label></span>
+          <span class="pill"><input type="checkbox" name="day" value="1" id="day-1"><label for="day-1">一</label></span>
+          <span class="pill"><input type="checkbox" name="day" value="2" id="day-2"><label for="day-2">二</label></span>
+          <span class="pill"><input type="checkbox" name="day" value="3" id="day-3"><label for="day-3">三</label></span>
+          <span class="pill"><input type="checkbox" name="day" value="4" id="day-4"><label for="day-4">四</label></span>
+          <span class="pill"><input type="checkbox" name="day" value="5" id="day-5"><label for="day-5">五</label></span>
+          <span class="pill"><input type="checkbox" name="day" value="6" id="day-6"><label for="day-6">六</label></span>
+          <span class="pill"><input type="checkbox" name="day" value="7" id="day-7"><label for="day-7">日</label></span>
         </div>
       </fieldset>
 
       <fieldset class="field-block" style="--accent:#e0629b">
         <div class="pill-grid" id="timeGrid">
           <span class="section-tag" role="img" aria-label="時段"><i class="fa-solid fa-fw fa-clock"></i></span>
+          <span class="pill"><input type="checkbox" name="time" value="0600" id="time-0600"><label for="time-0600">06 - 11</label></span>
+          <span class="pill"><input type="checkbox" name="time" value="1200" id="time-1200"><label for="time-1200">12 - 17</label></span>
+          <span class="pill"><input type="checkbox" name="time" value="1800" id="time-1800"><label for="time-1800">18 - 23</label></span>
         </div>
       </fieldset>
 
@@ -278,6 +290,8 @@
       <fieldset class="field-block" style="--accent:var(--orange)">
         <div class="pill-grid" id="roomGrid">
           <span class="section-tag" role="img" aria-label="教室類型"><i class="fa-solid fa-fw fa-store"></i></span>
+          <span class="pill"><input type="checkbox" name="room" value="團體教室" id="room-團體教室"><label for="room-團體教室">團體</label></span>
+          <span class="pill"><input type="checkbox" name="room" value="飛輪教室" id="room-飛輪教室"><label for="room-飛輪教室">飛輪</label></span>
         </div>
       </fieldset>
 
@@ -594,6 +608,6 @@
   </div>
 </div>
 
-<script src="script.js?v=112"></script>
+<script src="script.js?v=113"></script>
 </body>
 </html>
