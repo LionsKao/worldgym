@@ -1473,6 +1473,16 @@ function renderTeacherGrid(){
   const checked = new Set(Array.from(document.querySelectorAll('input[name="teacher"]:checked')).map(i => i.value));
   renderGrid("teacherGrid", "teacher", sortByClickCount(TEACHER_NAMES, "wg_teacher_clicks").map(n => ({ value: n, label: n, checked: checked.has(n) })));
 }
+// 從結果頁按「返回」時只需要依最新點擊次數重新排序既有的老師 pill，不用整個砍掉重建 DOM
+// （這裡曾經每次都呼叫 renderTeacherGrid() 整個重建，Cloudflare Web Analytics 抓到 #backBtn 的
+// INP 卡在 250ms 左右、#mainFormSheet 也跟著有 CLS，兩個問題都是同一個重建動作造成的）。
+function reorderTeacherGrid(){
+  const grid = document.getElementById("teacherGrid");
+  const clicks = getClickCounts("wg_teacher_clicks");
+  [...grid.querySelectorAll(".pill")]
+    .sort((a, b) => (clicks[b.querySelector("input").value] || 0) - (clicks[a.querySelector("input").value] || 0))
+    .forEach(pill => grid.appendChild(pill));
+}
 function renderScheduleResults(rows, onlyTeacher){
   const area = document.getElementById("resultArea");
   lastResultRows = rows;
@@ -1608,7 +1618,7 @@ function showFilterView(){
   fadeInView(document.getElementById("filterForm"));
   document.getElementById("settingsSheet").classList.remove("hidden");
   document.getElementById("favoriteSheet").classList.remove("hidden");
-  renderTeacherGrid();
+  reorderTeacherGrid();
   history.replaceState(null, "", location.pathname);
 }
 document.getElementById("notifyBtn").addEventListener("click", showMailView);
