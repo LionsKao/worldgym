@@ -1600,10 +1600,15 @@ function showFilterView(){
   document.getElementById("mailContent").disabled = false;
   document.getElementById("mailSentOverlay").classList.add("hidden");
   document.getElementById("mailSendBtn").disabled = false;
-  fadeInView(document.getElementById("mainFormSheet"));
-  fadeInView(document.getElementById("filterForm"));
+  // settingsSheet/favoriteSheet 在 DOM 順序上排在 mainFormSheet 前面，
+  // 要先讓它們恢復顯示、版面高度定案，mainFormSheet 才不會在自己淡入之後又被
+  // 前面冒出來的 favoriteSheet 推擠位置，造成 Cloudflare Web Analytics 抓到的
+  // #mainFormSheet CLS（mainFormSheet 本身沒有淡入效果，CSS 只對 filterForm 那層
+  // 做 opacity 動畫，所以這裡直接切 hidden 就好，不用呼叫 fadeInView 多強制一次 reflow）。
   document.getElementById("settingsSheet").classList.remove("hidden");
   document.getElementById("favoriteSheet").classList.remove("hidden");
+  document.getElementById("mainFormSheet").classList.remove("hidden");
+  fadeInView(document.getElementById("filterForm"));
   reorderTeacherGrid();
   history.replaceState(null, "", location.pathname);
 }
@@ -2046,8 +2051,11 @@ function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint
         },
         options: {
           responsive: true,
-          maintainAspectRatio: true,
-          aspectRatio: 560 / 210,
+          // 用固定寬高比（原本 560/210 是照桌機寬度抓的）縮放的話，手機版容器變窄，
+          // 算出來的圖表高度會比 .branch-stats-wrap 的 min-height:200px 矮一截，
+          // 下面就會留白；改成不維持比例，直接撐滿容器本身的高度（由 CSS min-height 決定，
+          // 不是這裡動態設定，才不會又造成 CLS）。
+          maintainAspectRatio: false,
           animation: { duration: 1600 },
           interaction: { mode: "index", intersect: false },
           plugins: {
