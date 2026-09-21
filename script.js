@@ -1600,6 +1600,10 @@ function showFilterView(){
   document.getElementById("mailContent").disabled = false;
   document.getElementById("mailSentOverlay").classList.add("hidden");
   document.getElementById("mailSendBtn").disabled = false;
+  // reorderTeacherGrid() 用 appendChild 重排 #teacherGrid 裡寬度不一的 pill（flex-wrap），
+  // 排序結果會改變換行位置、進而改變 grid 高度；一定要趁 mainFormSheet 還是 display:none
+  // 時排完，翻牌後才不會又造成一次 Cloudflare Web Analytics 抓到的 #mainFormSheet CLS。
+  reorderTeacherGrid();
   // settingsSheet/favoriteSheet 在 DOM 順序上排在 mainFormSheet 前面，
   // 要先讓它們恢復顯示、版面高度定案，mainFormSheet 才不會在自己淡入之後又被
   // 前面冒出來的 favoriteSheet 推擠位置，造成 Cloudflare Web Analytics 抓到的
@@ -1609,7 +1613,6 @@ function showFilterView(){
   document.getElementById("favoriteSheet").classList.remove("hidden");
   document.getElementById("mainFormSheet").classList.remove("hidden");
   fadeInView(document.getElementById("filterForm"));
-  reorderTeacherGrid();
   history.replaceState(null, "", location.pathname);
 }
 document.getElementById("notifyBtn").addEventListener("click", showMailView);
