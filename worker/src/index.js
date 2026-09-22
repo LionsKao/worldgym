@@ -176,6 +176,26 @@ async function isAdminRequest(req, env) {
   return constantTimeEqual(header, env.MANUAL_SCRAPE_TOKEN);
 }
 
+// --- 登入連續失敗鎖定：只保護 /verifyAdminToken，擋暴力破解密碼 ---
+// 跟 rate limit 共用同一個 KV，但這裡算的是「連續失敗次數」而不是「單位時間請求數」：
+// 密碼答對就整組歸零，答錯才累加，鎖定期間內不管密碼對不對都直接拒絕（不做真正驗證，
+// 避免鎖定期間還能靠 timing 之類側管道再多試探）。TTL 到期自動解鎖，不用額外清理。
+const ADMIN_LOCKOUT_THRESHOLD = 5;
+const ADMIN_LOCKOUT_TTL_SEC = 15 * 60; // 連續失敗達門檻後鎖定 15 分鐘
+function adminFailKey(ip) {
+  return `admin-fail:${ip}`;
+}
+async function getAdminFailCount(env, ip) {
+  return parseInt((await env.QUERY_RATE_LIMIT.get(adminFailKey(ip))) || "0", 10);
+}
+async function recordAdminFailure(env, ctx, ip) {
+  const count = (await getAdminFailCount(env, ip)) + 1;
+  ctx.waitUntil(env.QUERY_RATE_LIMIT.put(adminFailKey(ip), String(count), { expirationTtl: ADMIN_LOCKOUT_TTL_SEC }));
+}
+function clearAdminFailures(env, ctx, ip) {
+  ctx.waitUntil(env.QUERY_RATE_LIMIT.delete(adminFailKey(ip)));
+}
+
 export default {
   async fetch(req, env, ctx) {
     // 只開放台灣 IP：cf.country 沒有值(如本機開發)就放行，避免擋掉自己測試。
@@ -636,9 +656,15 @@ export default {
       if (url.pathname === "/verifyAdminToken" && req.method === "POST") {
         const rl = await rateLimitOrNull(req, env, ctx, "verifyAdminToken", 10, origin);
         if (rl) return rl;
+        const ip = req.headers.get("CF-Connecting-IP") || "unknown";
+        if ((await getAdminFailCount(env, ip)) >= ADMIN_LOCKOUT_THRESHOLD) {
+          return json({ error: "locked" }, 423, origin);
+        }
         if (!(await isAdminRequest(req, env))) {
+          await recordAdminFailure(env, ctx, ip);
           return json({ error: "forbidden" }, 403, origin);
         }
+        clearAdminFailures(env, ctx, ip);
         // 帶密碼或帶還沒過期的 session token 來驗證都會換到一張新的 session token（滑動式延長
         // 有效期）：只要 7 天內有開過後台，就不用重新輸入密碼；超過 7 天沒用才會真的過期。
         const sessionToken = await issueAdminSession(env);

@@ -22,14 +22,16 @@ function adminFetch(path, options = {}){
 // 登入流程驗證的是使用者剛輸入、還沒存起來的密碼，所以不能用 adminFetch（它讀的是已存的 token）。
 // 驗證成功會換到一張有效期限的 session token（見 worker 的 issueAdminSession），之後改存/送
 // 這張，不是原始密碼本身——降低密碼實際被送出網路的次數。
+// 回傳 { sessionToken } 表示成功、{ locked: true } 表示連續失敗次數過多被鎖定、null 表示單純密碼錯誤。
 async function verifyToken(token){
   const res = await fetch(`${WORKER_BASE}/verifyAdminToken`, {
     method: "POST",
     headers: { [ADMIN_TOKEN_HEADER]: token },
   });
+  if (res.status === 423) return { locked: true };
   if (!res.ok) return null;
   const data = await res.json().catch(() => null);
-  return data?.sessionToken || null;
+  return data?.sessionToken ? { sessionToken: data.sessionToken } : null;
 }
 
 const loginOverlay = document.getElementById("adminLoginOverlay");
@@ -86,14 +88,16 @@ async function attemptLogin(){
   loginBtn.disabled = true;
   hideLoginError();
   try{
-    const sessionToken = await verifyToken(token);
-    if (sessionToken){
-      setStoredToken(sessionToken);
+    const result = await verifyToken(token);
+    if (result?.sessionToken){
+      setStoredToken(result.sessionToken);
       showAdminPage();
       loadAdStats();
       loadFavoriteStats();
       loadReminderStats();
       loadQueryAccessStats();
+    } else if (result?.locked){
+      showLoginError("嘗試次數過多，已暫時鎖定，請稍後再試");
     } else {
       showLoginError("密碼錯誤");
     }
@@ -115,9 +119,9 @@ adminBackBtn.addEventListener("mouseleave", () => adminBackTooltip.classList.rem
 
 (async function initAuth(){
   const stored = getStoredToken();
-  const refreshed = stored && await verifyToken(stored).catch(() => null);
-  if (refreshed){
-    setStoredToken(refreshed); // 換到新的 session token，滑動延長 7 天效期
+  const result = stored && await verifyToken(stored).catch(() => null);
+  if (result?.sessionToken){
+    setStoredToken(result.sessionToken); // 換到新的 session token，滑動延長 7 天效期
     showAdminPage();
     loadAdStats();
     loadFavoriteStats();
