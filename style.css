@@ -506,3 +506,9 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
   position:absolute; width:1px; height:1px; padding:0; margin:-1px;
   overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0;
 }
+
+.site-about{
+  margin-top:24px; padding:14px 16px; text-align:center;
+  color:var(--sub); font-size:12px; line-height:1.6;
+}
+.site-about p{ max-width:520px; margin:0 auto; }

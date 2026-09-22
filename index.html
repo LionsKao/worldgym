@@ -38,6 +38,31 @@
 <meta name="twitter:image" content="https://worldgym.pages.dev/icons/og-image.png">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "name": "課表查詢",
+      "url": "https://worldgym.pages.dev/",
+      "description": "快速查詢 World Gym（WG）各分店課表、老師、時段。",
+      "inLanguage": "zh-Hant-TW"
+    },
+    {
+      "@type": "WebApplication",
+      "name": "課表查詢",
+      "url": "https://worldgym.pages.dev/",
+      "description": "快速查詢 World Gym（WG）各分店課表、老師、時段，可設定課前推播提醒。",
+      "applicationCategory": "LifestyleApplication",
+      "operatingSystem": "Any (Web)",
+      "browserRequirements": "Requires JavaScript",
+      "inLanguage": "zh-Hant-TW",
+      "isAccessibleForFree": true
+    }
+  ]
+}
+</script>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="課表查詢">
@@ -62,7 +87,7 @@
 </style>
 <link rel="preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha384-PPIZEGYM1v8zp5Py7UjFb79S58UeqCL9pYVnVPURKEqvioPROaVAJKKLzvH2rDnI" crossorigin="anonymous" onload="this.onload=null;this.rel='stylesheet'">
 <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha384-PPIZEGYM1v8zp5Py7UjFb79S58UeqCL9pYVnVPURKEqvioPROaVAJKKLzvH2rDnI" crossorigin="anonymous"></noscript>
-<link rel="stylesheet" href="style.css?v=101">
+<link rel="stylesheet" href="style.css?v=102">
 <style>#loadingOverlay{position:fixed;top:0;left:0;width:100%;height:100%;background:#fff;z-index:9999;}</style>
 <script type="application/ld+json">
 {
@@ -472,6 +497,10 @@
       </div>
     </div>
   </div>
+
+  <footer class="site-about visually-hidden">
+    <p>「課表查詢」是一個<strong>非官方</strong>的 World Gym（WG）團體課表查詢工具，可依分店、地區、時段、課程種類、教練快速篩選台灣各分店的團體課課表，並支援課前推播提醒、自訂常用篩選為「我的最愛」。課表資料每日自動從官網更新，本站與 World Gym 官方無隸屬關係。</p>
+  </footer>
 </div>
 
 <div class="submit-btn-wrap back-btn-wrap hidden" id="backBtnWrap">
