@@ -40,6 +40,11 @@ function sanitizeStringArray(value, maxLen) {
   return value.filter((v) => typeof v === "string" && v.length > 0 && v.length < 200).slice(0, maxLen);
 }
 
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+function sanitizeDateArray(value, maxLen) {
+  return sanitizeStringArray(value, maxLen).filter((v) => ISO_DATE_PATTERN.test(v));
+}
+
 // 7 天內同一個「分店+星期+時間+課程+老師」的固定班表只留一筆（不顯示日期）；
 // 代課(isSubstitute)不保證下週還是同一個老師，所以撈到的 8~14 天代課每一筆都保留、標示 flagged。
 function buildDisplayRows(rows) {
@@ -88,6 +93,11 @@ async function queryClasses(db, rawState) {
   const day = sanitizeStringArray(rawState.day, 7)
     .map(Number)
     .filter((n) => Number.isInteger(n) && n >= 1 && n <= 7);
+  // exactDates 是前端 "今天"/"明天" 這兩個字面日期 resolve 出來的實際日期（見 script.js
+  // 的 resolveQueryState），跟 day（明確勾選的星期幾）分開處理：字面上選「今天」的人
+  // 只想看今天，不該連帶把 7~14 天後同星期的代課也撈出來（那是 day 才有的行為，見下面
+  // skipFarWindow 的說明）。
+  const exactDates = sanitizeDateArray(rawState.exactDates, 2);
 
   const from = todayIsoTaipei();
   const normalTo = addDaysIso(from, NORMAL_DAYS_AHEAD);
@@ -98,7 +108,6 @@ async function queryClasses(db, rawState) {
   const baseParams = [];
   if (course.length > 0) baseConditions.push(inClause("className", course, baseParams));
   if (teacher.length > 0) baseConditions.push(inClause("teacherName", teacher, baseParams));
-  if (day.length > 0) baseConditions.push(inClause("dayOfWeek", day, baseParams));
   if (room.length > 0) baseConditions.push(inClause("roomName", room, baseParams));
   if (time.length > 0){
     const hours = [...new Set(time.flatMap((v) => TIME_SLOT_HOURS[v]))];
@@ -110,14 +119,35 @@ async function queryClasses(db, rawState) {
     && baseParams.length + branch.length <= D1_PARAM_SAFETY_LIMIT;
   if (branchPushedDown) baseConditions.push(inClause("branchSlug", branch, baseParams));
 
+  // 星期幾/日期篩選跟其他篩選條件分開組，因為近/遠兩個時間窗要套用不同的規則（見下面）。
+  // includeExactDates=true（近 7 天窗）：明確星期幾（day）跟今天/明天的實際日期（exactDates）
+  // 是 OR 關係，兩種篩選都要看得到當下這幾天的班表。
+  // includeExactDates=false（8~14 天代課窗）：只看 day，不看 exactDates——今天/明天指定的
+  // 是「這一天」，不代表使用者想看 7 天後同一個星期幾的代課。
+  function buildDayCondition(includeExactDates) {
+    const conds = [];
+    const params = [];
+    if (day.length > 0) conds.push(inClause("dayOfWeek", day, params));
+    if (includeExactDates && exactDates.length > 0) conds.push(inClause("date", exactDates, params));
+    if (conds.length === 0) return null;
+    return { sql: conds.length === 1 ? conds[0] : `(${conds.join(" OR ")})`, params };
+  }
+  // 只選了「今天/明天」、沒有另外勾明確星期幾時，代課窗（7~14 天後）要整個跳過，
+  // 不能因為 day 是空的就退回「不篩星期幾、全部代課都顯示」的預設行為。
+  const skipFarWindow = exactDates.length > 0 && day.length === 0;
+
   // 近/遠兩個日期區間分開下 LIMIT，而不是合成一個 OR 條件共用一個 LIMIT：
   // 近 7 天（不分正常班/代課）單一個熱門星期在 100 多間分店的資料量就可能超過
   // RESULT_HARD_CAP，若跟遠區間（8~14 天，只有代課）共用同一個 LIMIT 並用
   // ORDER BY date 排序，近區間會把額度全部用完，導致遠區間本來該顯示的代課
-  // （例如今天選星期日，下週日的代課）完全撈不到、被誤判成「沒有代課」。
-  async function runWindow(dateCondition, dateParams) {
+  // （例如選星期日，下週日的代課）完全撈不到、被誤判成「沒有代課」。
+  async function runWindow(dateCondition, dateParams, dayCondition) {
     const conditions = [dateCondition, ...baseConditions];
     const params = [...dateParams, ...baseParams];
+    if (dayCondition) {
+      conditions.push(dayCondition.sql);
+      params.push(...dayCondition.params);
+    }
     let sql = `SELECT id, branchSlug, branchName, date, dayOfWeek, startTime, className, teacherName, roomName, isSubstitute, scrapedAt
       FROM classes WHERE ${conditions.map((c) => `(${c})`).join(" AND ")} ORDER BY date, startTime`;
     // 分店沒下推進 SQL 的少見情況（見上面 branchPushedDown 的說明）還要在 JS 端另外篩一輪，
@@ -137,8 +167,10 @@ async function queryClasses(db, rawState) {
   }
 
   const [nearDocs, farDocs] = await Promise.all([
-    runWindow("(date >= ? AND date <= ?)", [from, normalTo]),
-    runWindow("(date >= ? AND date <= ? AND isSubstitute = 1)", [subFrom, subTo]),
+    runWindow("(date >= ? AND date <= ?)", [from, normalTo], buildDayCondition(true)),
+    skipFarWindow
+      ? Promise.resolve([])
+      : runWindow("(date >= ? AND date <= ? AND isSubstitute = 1)", [subFrom, subTo], buildDayCondition(false)),
   ]);
   const docs = nearDocs.concat(farDocs);
   const fetchedCount = docs.length;

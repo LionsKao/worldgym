@@ -521,14 +521,19 @@ function weekdayOfIso(iso){
   return jsDay === 0 ? 7 : jsDay;
 }
 // "today"/"tomorrow" 是相對值：存最愛、存分享網址時保留原始字串，
-// 只有在真的要送查詢給後端之前才 resolve 成當下的星期幾（見 resolveQueryState）。
-function resolveDayValue(v){
-  if (v === "today") return String(weekdayOfIso(todayIso()));
-  if (v === "tomorrow") return String(weekdayOfIso(addDaysIso(todayIso(), 1)));
-  return v;
-}
+// 只有在真的要送查詢給後端之前才 resolve（見 resolveQueryState）。
+// "今天"/"明天" resolve 成實際日期（exactDates），不是星期幾——這兩個字面上就是指「這一天」，
+// 不該像明確勾選的星期幾一樣，連帶把 7~14 天後同星期的代課也撈出來（那是給「星期日」這種
+// 明確星期幾篩選用的，見 worker/src/queryClasses.js 的 SUBSTITUTE_DAYS_AHEAD 說明）。
 function resolveQueryState(state){
-  return { ...state, day: [...new Set((state.day || []).map(resolveDayValue))] };
+  const weekdays = [];
+  const exactDates = [];
+  for (const v of (state.day || [])){
+    if (v === "today") exactDates.push(todayIso());
+    else if (v === "tomorrow") exactDates.push(addDaysIso(todayIso(), 1));
+    else weekdays.push(v);
+  }
+  return { ...state, day: [...new Set(weekdays)], exactDates: [...new Set(exactDates)] };
 }
 
 const TIME_OPTIONS = [
@@ -1652,7 +1657,7 @@ async function runSearchAndShowResults(state){
   submitBtn.classList.add("busy");
   submitIcon.className = "fa-solid fa-spinner fa-spin";
   // state 本身保留 "today"/"tomorrow" 原始值（分享網址、篩選摘要都要看得到相對值）；
-  // 送給後端查詢時才 resolve 成實際星期幾，後端只認得 1-7 的數字。
+  // 送給後端查詢時才 resolve：明確星期幾送 day（1-7 數字），"今天"/"明天" 送 exactDates（實際日期）。
   const queryState = resolveQueryState(state);
   try{
     const { rows, displayedCount, oldestScrapedAt } = await runScheduleQuery(queryState);
