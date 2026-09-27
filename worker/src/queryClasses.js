@@ -11,7 +11,7 @@ const ROOM_VALUES = new Set(["團體教室", "飛輪教室"]);
 // 只顯示「結果太多，請調整篩選條件」。設一個比它高一點的保險絲，篩選條件夠寬時不用真的把
 // 全部符合的資料（目前全表也才 7 千多筆，但沒有理由白白浪費）都撈出來、去重、序列化、傳輸，
 // 反正前端超過 250 就整包丟棄——300 對「真的 <=250 筆」的正常情況完全無感，只在超量時省事。
-const RESULT_HARD_CAP = 300;
+const RESULT_HARD_CAP = 600;
 // 時段篩選：值是起始時間的 HH 開頭（跟 startTime 存的 "HHMM" 格式一致），
 // 對應到該時段涵蓋的所有 HH。
 const TIME_SLOT_HOURS = {
@@ -94,42 +94,53 @@ async function queryClasses(db, rawState) {
   const subFrom = addDaysIso(normalTo, 1);
   const subTo = addDaysIso(from, SUBSTITUTE_DAYS_AHEAD);
 
-  const params = [];
-  // 未來 7 天內不分正常班/代課全部顯示；8~14 天只顯示已知的代課，藉此把讀取量砍半。
-  const conditions = [`((date >= ? AND date <= ?) OR (date >= ? AND date <= ? AND isSubstitute = 1))`];
-  params.push(from, normalTo, subFrom, subTo);
-
-  if (course.length > 0) conditions.push(inClause("className", course, params));
-  if (teacher.length > 0) conditions.push(inClause("teacherName", teacher, params));
-  if (day.length > 0) conditions.push(inClause("dayOfWeek", day, params));
-  if (room.length > 0) conditions.push(inClause("roomName", room, params));
+  const baseConditions = [];
+  const baseParams = [];
+  if (course.length > 0) baseConditions.push(inClause("className", course, baseParams));
+  if (teacher.length > 0) baseConditions.push(inClause("teacherName", teacher, baseParams));
+  if (day.length > 0) baseConditions.push(inClause("dayOfWeek", day, baseParams));
+  if (room.length > 0) baseConditions.push(inClause("roomName", room, baseParams));
   if (time.length > 0){
     const hours = [...new Set(time.flatMap((v) => TIME_SLOT_HOURS[v]))];
-    conditions.push(inClause("startHour", hours, params));
+    baseConditions.push(inClause("startHour", hours, baseParams));
   }
 
   const branchPushedDown = branch.length > 0
     && branch.length <= BRANCH_PUSHDOWN_LIMIT
-    && params.length + branch.length <= D1_PARAM_SAFETY_LIMIT;
-  if (branchPushedDown) conditions.push(inClause("branchSlug", branch, params));
+    && baseParams.length + branch.length <= D1_PARAM_SAFETY_LIMIT;
+  if (branchPushedDown) baseConditions.push(inClause("branchSlug", branch, baseParams));
 
-  let sql = `SELECT id, branchSlug, branchName, date, dayOfWeek, startTime, className, teacherName, roomName, isSubstitute, scrapedAt
-    FROM classes WHERE ${conditions.map((c) => `(${c})`).join(" AND ")} ORDER BY date, startTime`;
-  // 分店沒下推進 SQL 的少見情況（見上面 branchPushedDown 的說明）還要在 JS 端另外篩一輪，
-  // 在這裡加 LIMIT 可能會在還沒篩到目標分店前就把額度用完、篩出來的結果比實際少；
-  // 這種情況才不加 SQL 層的 LIMIT，靠下面對 docs 的 slice 收尾即可。
-  if (branch.length === 0 || branchPushedDown) {
-    sql += ` LIMIT ?`;
-    params.push(RESULT_HARD_CAP);
+  // 近/遠兩個日期區間分開下 LIMIT，而不是合成一個 OR 條件共用一個 LIMIT：
+  // 近 7 天（不分正常班/代課）單一個熱門星期在 100 多間分店的資料量就可能超過
+  // RESULT_HARD_CAP，若跟遠區間（8~14 天，只有代課）共用同一個 LIMIT 並用
+  // ORDER BY date 排序，近區間會把額度全部用完，導致遠區間本來該顯示的代課
+  // （例如今天選星期日，下週日的代課）完全撈不到、被誤判成「沒有代課」。
+  async function runWindow(dateCondition, dateParams) {
+    const conditions = [dateCondition, ...baseConditions];
+    const params = [...dateParams, ...baseParams];
+    let sql = `SELECT id, branchSlug, branchName, date, dayOfWeek, startTime, className, teacherName, roomName, isSubstitute, scrapedAt
+      FROM classes WHERE ${conditions.map((c) => `(${c})`).join(" AND ")} ORDER BY date, startTime`;
+    // 分店沒下推進 SQL 的少見情況（見上面 branchPushedDown 的說明）還要在 JS 端另外篩一輪，
+    // 在這裡加 LIMIT 可能會在還沒篩到目標分店前就把額度用完、篩出來的結果比實際少；
+    // 這種情況才不加 SQL 層的 LIMIT，靠下面對 docs 的 slice 收尾即可。
+    if (branch.length === 0 || branchPushedDown) {
+      sql += ` LIMIT ?`;
+      params.push(RESULT_HARD_CAP);
+    }
+    const { results } = await db.prepare(sql).bind(...params).all();
+    let docs = results.map((r) => ({ ...r, isSubstitute: r.isSubstitute === 1 }));
+    if (branch.length > 0 && !branchPushedDown) {
+      const branchSet = new Set(branch);
+      docs = docs.filter((c) => branchSet.has(c.branchSlug));
+    }
+    return docs.slice(0, RESULT_HARD_CAP);
   }
 
-  const { results } = await db.prepare(sql).bind(...params).all();
-  let docs = results.map((r) => ({ ...r, isSubstitute: r.isSubstitute === 1 }));
-  if (branch.length > 0 && !branchPushedDown) {
-    const branchSet = new Set(branch);
-    docs = docs.filter((c) => branchSet.has(c.branchSlug));
-  }
-  docs = docs.slice(0, RESULT_HARD_CAP);
+  const [nearDocs, farDocs] = await Promise.all([
+    runWindow("(date >= ? AND date <= ?)", [from, normalTo]),
+    runWindow("(date >= ? AND date <= ? AND isSubstitute = 1)", [subFrom, subTo]),
+  ]);
+  const docs = nearDocs.concat(farDocs);
   const fetchedCount = docs.length;
 
   const rows = buildDisplayRows(docs);
