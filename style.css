@@ -495,6 +495,8 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 }
 .access-log-table tr.access-log-row-flagged td{ background:color-mix(in srgb, var(--coral) 12%, transparent); }
 .access-log-table tr.access-log-row-flagged td:first-child{ font-weight:800; color:var(--coral); }
+.access-log-table tr.access-log-row-regular td{ background:color-mix(in srgb, var(--orange) 14%, transparent); }
+.access-log-table tr.access-log-row-regular td:first-child{ font-weight:800; color:var(--orange); }
 
 @media (max-width:480px){
   body{ padding:20px 10px 100px; }

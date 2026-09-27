@@ -79,6 +79,22 @@ function logQueryAccess(env, ctx, endpoint, ip, userAgent, rateLimited) {
   );
 }
 
+// 判斷一個 IP 是不是「規律爬蟲」：算同一 IP 相鄰兩次請求間隔（秒）的變異係數
+// (CV = 標準差 / 平均值)。真人點擊間隔忽長忽短，CV 通常偏大；腳本固定 sleep()
+// 打法，間隔幾乎一樣，CV 會很接近 0。樣本太少時 CV 沒有意義，門檻由呼叫端控制
+// （只對次數夠多的 IP 算）。回傳 null 表示樣本不足或間隔全為 0，算不出有意義的值。
+function intervalCV(timestampsMs) {
+  if (timestampsMs.length < 3) return null;
+  const intervals = [];
+  for (let i = 1; i < timestampsMs.length; i++) {
+    intervals.push(timestampsMs[i] - timestampsMs[i - 1]);
+  }
+  const mean = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+  if (mean <= 0) return null;
+  const variance = intervals.reduce((a, b) => a + (b - mean) ** 2, 0) / intervals.length;
+  return Math.sqrt(variance) / mean;
+}
+
 // 每月排程（見 scheduled()）清一次舊紀錄，避免這張純維運用途的表無限成長——
 // /queryAccessStats 本身預設只查最近 7 天，90 天前的資料早就沒人在看，刪掉也不影響任何功能。
 const QUERY_ACCESS_LOG_RETENTION_DAYS = 90;
@@ -606,10 +622,33 @@ export default {
           ORDER BY cnt DESC
           LIMIT 30
         `).bind(since).all();
+
+        // 樣本數太少（< 10 次）算出來的變異係數沒有意義，容易誤判，只對次數夠多的 IP 額外查時間戳序列。
+        const MIN_SAMPLES_FOR_CV = 10;
+        const candidateIps = results.filter((r) => r.cnt >= MIN_SAMPLES_FOR_CV).map((r) => r.ip);
+        const cvByIp = new Map();
+        if (candidateIps.length > 0) {
+          const placeholders = candidateIps.map(() => "?").join(",");
+          const { results: logRows } = await env.DB.prepare(`
+            SELECT ip, createdAt FROM query_access_log
+            WHERE createdAt >= ? AND ip IN (${placeholders})
+            ORDER BY ip, createdAt
+          `).bind(since, ...candidateIps).all();
+          const timestampsByIp = new Map();
+          for (const row of logRows) {
+            if (!timestampsByIp.has(row.ip)) timestampsByIp.set(row.ip, []);
+            timestampsByIp.get(row.ip).push(new Date(row.createdAt).getTime());
+          }
+          for (const [ip, timestamps] of timestampsByIp) {
+            cvByIp.set(ip, intervalCV(timestamps));
+          }
+        }
+
         return json({
           since,
           ips: results.map((r) => ({
             ip: r.ip, userAgent: r.userAgent, count: r.cnt, rateLimitedCount: r.rateLimitedCnt || 0, lastSeen: r.lastSeen,
+            intervalCV: cvByIp.has(r.ip) ? cvByIp.get(r.ip) : null,
           })),
         }, 200, origin);
       }

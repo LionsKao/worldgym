@@ -522,23 +522,40 @@ const accessLogDaysFilter = document.getElementById("accessLogDaysFilter");
 const accessLogTableWrap = document.getElementById("accessLogTableWrap");
 enhanceCustomSelect(accessLogDaysFilter);
 
+// 間隔變異係數(CV = 標準差 / 平均值)低於這個門檻，視為「間隔異常規律」，UI 特別標色提醒——
+// 只是輔助判斷的信號，不是自動封鎖依據，見 worker/src/index.js 的 intervalCV()。
+const REGULAR_CV_THRESHOLD = 0.3;
+
+function formatIntervalCV(cv){
+  if (cv === null || cv === undefined) return "-";
+  return cv.toFixed(2);
+}
+
 function renderAccessLogTable(ips){
   if (!ips.length){
     accessLogTableWrap.innerHTML = '<span class="empty-hint">目前沒有存取紀錄</span>';
     return;
   }
-  const rows = ips.map((row) => `
-    <tr class="${row.rateLimitedCount > 0 ? "access-log-row-flagged" : ""}">
+  const rows = ips.map((row) => {
+    const isRegular = typeof row.intervalCV === "number" && row.intervalCV < REGULAR_CV_THRESHOLD;
+    const rowClasses = [
+      row.rateLimitedCount > 0 ? "access-log-row-flagged" : "",
+      isRegular ? "access-log-row-regular" : "",
+    ].filter(Boolean).join(" ");
+    return `
+    <tr class="${rowClasses}">
       <td>${escapeHtml(row.ip)}</td>
       <td class="access-log-ua" title="${escapeHtml(row.userAgent || "")}">${escapeHtml(row.userAgent || "(無)")}</td>
       <td>${row.count}</td>
       <td>${row.rateLimitedCount}</td>
+      <td title="間隔變異係數，越接近 0 代表請求間隔越規律；樣本數 < 10 不計算">${formatIntervalCV(row.intervalCV)}</td>
       <td>${escapeHtml(row.lastSeen || "")}</td>
     </tr>
-  `).join("");
+  `;
+  }).join("");
   accessLogTableWrap.innerHTML = `
     <table class="access-log-table">
-      <thead><tr><th>IP</th><th>User-Agent</th><th>次數</th><th>被擋次數</th><th>最後出現時間</th></tr></thead>
+      <thead><tr><th>IP</th><th>User-Agent</th><th>次數</th><th>被擋次數</th><th>規律性</th><th>最後出現時間</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   `;
