@@ -6,7 +6,14 @@
 // 之前沒放行導致從海外機房發出的即時測試一律 403（GoogleOther 是 Google 另一支通用爬蟲，一併補上）。
 const CRAWLER_UA_PATTERN = /Googlebot|Google-InspectionTool|GoogleOther|Google-Extended|AdsBot-Google|Mediapartners-Google|APIs-Google|bingbot|BingPreview|Baiduspider|YandexBot|DuckDuckBot|GPTBot|ChatGPT-User|OAI-SearchBot|anthropic-ai|ClaudeBot|Claude-Web|PerplexityBot|CCBot|Bytespider|Amazonbot|Applebot|Meta-ExternalAgent|facebookexternalhit|LinkedInBot|Slackbot|TelegramBot|WhatsApp|Diffbot/i;
 
+// robots.txt / sitemap.xml 本來就是公開給爬蟲讀的，一律放行，不看 UA 也不看 IP：
+// Search Console 抓 sitemap 的 UA 不一定在上面的白名單內，海外抓取被 403 會顯示「無法讀取 Sitemap」。
+const PUBLIC_CRAWLER_PATHS = new Set(["/robots.txt", "/sitemap.xml"]);
+
 export async function onRequest(context) {
+  if (PUBLIC_CRAWLER_PATHS.has(new URL(context.request.url).pathname)) {
+    return context.next();
+  }
   const country = context.request.cf?.country;
   if (country && country !== "TW") {
     const ua = context.request.headers.get("User-Agent") || "";
