@@ -94,6 +94,26 @@ function trackReminderAdd(db, ctx) {
   );
 }
 
+// Worker 之後會對 subscription.endpoint 發 POST（見 dispatchDueReminders），endpoint 又是呼叫端自己填的，
+// 不限制的話等於讓任何人指定 Worker 去打任意網址。只放行主流瀏覽器實際使用的 push service：
+// Chrome/Edge/Android（FCM）、Firefox（Mozilla autopush）、Safari（Apple）、Windows（WNS）。
+const PUSH_ENDPOINT_HOST_SUFFIXES = [
+  "fcm.googleapis.com",
+  "push.services.mozilla.com",
+  "push.apple.com",
+  "notify.windows.com",
+];
+function isAllowedPushEndpoint(endpoint) {
+  let u;
+  try {
+    u = new URL(endpoint);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== "https:" || u.port || u.username || u.password) return false;
+  return PUSH_ENDPOINT_HOST_SUFFIXES.some((s) => u.hostname === s || u.hostname.endsWith(`.${s}`));
+}
+
 async function registerReminder(db, params, ctx) {
   const { branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, pushSubscription, clickUrl } = params;
   const subscriptionEndpoint = pushSubscription?.endpoint || "";
@@ -180,6 +200,11 @@ async function dispatchDueReminders(db, env) {
   for (const r of results) {
     try {
       const subscription = JSON.parse(r.pushSubscription);
+      // 登記時已檢查過，這裡再擋一次，以防白名單上線前就已經存在的資料。
+      if (!isAllowedPushEndpoint(subscription.endpoint)) {
+        console.error("[reminders] endpoint not allowed, dropped", r.id);
+        continue;
+      }
       const title = `${r.className} ${r.teacherName}`;
       const body = `${r.branchName} 週${WEEKDAY_LABEL[r.dayOfWeek]} ${formatHHmm(r.startTime)}`;
       const message = { data: JSON.stringify({ title, body, url: r.clickUrl || "/" }), options: { ttl: 3600 } };
@@ -200,4 +225,4 @@ async function dispatchDueReminders(db, env) {
   return { dispatched, scanned: results.length };
 }
 
-export { computeNextOccurrence, registerReminder, cancelReminder, listReminders, dispatchDueReminders };
+export { computeNextOccurrence, isAllowedPushEndpoint, registerReminder, cancelReminder, listReminders, dispatchDueReminders };

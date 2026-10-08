@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { queryClasses } from "./queryClasses.js";
 import { runScrape, cleanupStaleBranches } from "./scrape.js";
-import { registerReminder, cancelReminder, listReminders, dispatchDueReminders } from "./reminders.js";
+import { registerReminder, isAllowedPushEndpoint, cancelReminder, listReminders, dispatchDueReminders } from "./reminders.js";
 import { monthlyNameRanking, availableYears, monthlySearchTrend, favoriteStatsCombined, adStatsCombined, reminderStatsCombined, rollupAnalyticsEvents } from "./analytics.js";
 import { scanForNewBranches } from "./branchScan.js";
 
@@ -46,6 +46,18 @@ function json(data, status, origin) {
     headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
   });
 }
+
+// 給公開、不含個資的統計端點用：讓瀏覽器在 maxAge 秒內重複請求直接吃本機快取，不用再打到 Worker/D1。
+// 注意這只是瀏覽器端快取：API 走 workers.dev 網域，Cloudflare 邊緣不會替 Worker 回應做共用快取，
+// 所以不同使用者之間不會互相省到查詢。回應的 CORS 標頭會隨 Origin 變，必須加 Vary: Origin，
+// 不然瀏覽器可能把某個來源的快取回應拿給另一個來源用。
+function jsonCached(data, status, origin, maxAge) {
+  const res = json(data, status, origin);
+  res.headers.set("Cache-Control", `public, max-age=${maxAge}`);
+  res.headers.set("Vary", "Origin");
+  return res;
+}
+const PUBLIC_STATS_CACHE_SECONDS = 300;
 
 // --- /queryClasses 防濫用：流量限制(KV) + 短效 HMAC token ---
 // 只是拉高濫用成本，不是真的能擋住所有非瀏覽器直接呼叫（見 README 相關討論），
@@ -159,7 +171,7 @@ function constantTimeEqual(a, b) {
 // 登入成功後換一張有效期限的簽章 session token，之後的請求都送這張，不用每次都把真正的密碼
 // 傳一次（降低密碼在網路上被送出的次數）。簽章金鑰是從 MANUAL_SCRAPE_TOKEN 雜湊衍生出來、
 // 不是直接拿密碼當 HMAC key，這樣就算 session token 外流也推不回密碼本身。
-// isAdminRequest 兩種憑證都認：舊的直接帶密碼（相容既有呼叫方式）、新的帶 session token。
+// 後台端點只認 session token（isAdminRequest），原始密碼只有 /verifyAdminToken 收（isAdminLoginRequest）。
 const ADMIN_SESSION_TTL_MS = 7 * 24 * 3600 * 1000; // 7 天，過期要重新輸入密碼
 async function adminSessionKey(env) {
   const material = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`admin-session:${env.MANUAL_SCRAPE_TOKEN}`));
@@ -186,7 +198,13 @@ async function verifyAdminSession(env, token) {
   if (!valid) return false;
   return typeof payload.exp === "number" && Date.now() <= payload.exp;
 }
+// 一般後台端點只認 session token。原始密碼只能在 /verifyAdminToken 這個唯一入口拿來換 session——
+// 那裡有連續失敗鎖定；如果其他端點也接受原始密碼，就等於繞過鎖定，可以對任一端點慢慢猜密碼。
 async function isAdminRequest(req, env) {
+  return verifyAdminSession(env, req.headers.get(ADMIN_TOKEN_HEADER));
+}
+// 登入入口專用：session token 或原始密碼都可以（session 用來滑動延長效期）。
+async function isAdminLoginRequest(req, env) {
   const header = req.headers.get(ADMIN_TOKEN_HEADER);
   if (await verifyAdminSession(env, header)) return true;
   return constantTimeEqual(header, env.MANUAL_SCRAPE_TOKEN);
@@ -532,7 +550,7 @@ export default {
         const rl = await rateLimitOrNull(req, env, ctx, "publicSearchStats", 30, origin);
         if (rl) return rl;
         const stats = await monthlySearchTrend(env.DB);
-        return json(stats, 200, origin);
+        return jsonCached(stats, 200, origin, PUBLIC_STATS_CACHE_SECONDS);
       }
 
       // index.html 公開版老師查詢排行，邏輯跟 /teacherStats 一樣，但不驗證 token（老師名字本來就是課表上的公開資訊）。
@@ -548,10 +566,10 @@ export default {
           availableYears(env.DB, tableArgs),
           monthlyNameRanking(env.DB, { ...tableArgs, monthKey, limit: 15 }),
         ]);
-        return json({
+        return jsonCached({
           years,
           teachers: teachers.map((r) => ({ name: r.name, count: r.cnt })),
-        }, 200, origin);
+        }, 200, origin, PUBLIC_STATS_CACHE_SECONDS);
       }
 
       // index.html 公開版課程查詢排行，邏輯跟 /courseStats 一樣，但不驗證 token（僅回傳聚合次數，不含個資）。
@@ -567,10 +585,10 @@ export default {
           availableYears(env.DB, tableArgs),
           monthlyNameRanking(env.DB, { ...tableArgs, monthKey, limit: 15 }),
         ]);
-        return json({
+        return jsonCached({
           years,
           courses: courses.map((r) => ({ name: r.name, count: r.cnt })),
-        }, 200, origin);
+        }, 200, origin, PUBLIC_STATS_CACHE_SECONDS);
       }
 
       // index.html 公開版分店查詢排行，邏輯跟 /branchStats 一樣，但不驗證 token（僅回傳聚合次數，不含個資）。
@@ -586,10 +604,10 @@ export default {
           availableYears(env.DB, tableArgs),
           monthlyNameRanking(env.DB, { ...tableArgs, monthKey, limit: 10 }),
         ]);
-        return json({
+        return jsonCached({
           years,
           branches: branches.map((r) => ({ name: r.name, count: r.cnt })),
-        }, 200, origin);
+        }, 200, origin, PUBLIC_STATS_CACHE_SECONDS);
       }
 
       // admin.html 查詢量趨勢折線圖：依月分組回傳全部歷史的查詢次數，前端只取最近 12 個月畫圖。
@@ -688,7 +706,12 @@ export default {
           .bind("filterOptions")
           .first();
         if (!row) return json({ classNames: [], teacherNames: [] }, 200, origin);
-        return json({ classNames: JSON.parse(row.classNames), teacherNames: JSON.parse(row.teacherNames) }, 200, origin);
+        // 這份清單一天只在爬蟲跑完時更新兩次，但每次載入頁面都會讀，加短時間的瀏覽器快取。
+        // 上面「還沒有資料」的空回應刻意不快取，免得把暫時狀態卡在使用者瀏覽器裡。
+        return jsonCached(
+          { classNames: JSON.parse(row.classNames), teacherNames: JSON.parse(row.teacherNames) },
+          200, origin, PUBLIC_STATS_CACHE_SECONDS
+        );
       }
 
       // admin.html 登入用：只驗證 token 對不對，不做任何事，讓前端可以在跑真正動作前先確認密碼正確。
@@ -699,7 +722,7 @@ export default {
         if ((await getAdminFailCount(env, ip)) >= ADMIN_LOCKOUT_THRESHOLD) {
           return json({ error: "locked" }, 423, origin);
         }
-        if (!(await isAdminRequest(req, env))) {
+        if (!(await isAdminLoginRequest(req, env))) {
           await recordAdminFailure(env, ctx, ip);
           return json({ error: "forbidden" }, 403, origin);
         }
@@ -749,7 +772,7 @@ export default {
         if (rl) return rl;
         const body = await req.json().catch(() => ({}));
         const content = String(body?.content || "").trim();
-        if (!content || content.length > 2000) {
+        if (!content || content.length > 500) {
           return json({ error: "invalid content" }, 400, origin);
         }
         const teamsRes = await fetch(env.TEAMS_WEBHOOK_URL, {
@@ -821,6 +844,7 @@ export default {
           !Number.isInteger(dayOfWeek) || dayOfWeek < 1 || dayOfWeek > 7 ||
           typeof startTime !== "string" || !/^\d{4}$/.test(startTime) ||
           !pushSubscription || typeof pushSubscription.endpoint !== "string" || !pushSubscription.endpoint ||
+          !isAllowedPushEndpoint(pushSubscription.endpoint) ||
           (clickUrl !== undefined && (typeof clickUrl !== "string" || clickUrl.length > 500))
         ) {
           return json({ error: "invalid reminder" }, 400, origin);

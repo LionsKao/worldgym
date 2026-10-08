@@ -39,15 +39,17 @@ async function monthlyNameRanking(db, { rawTable, nameColumn, monthlyTable, mont
   return results;
 }
 
-async function availableYears(db, { rawTable, monthlyTable }) {
-  const { results } = await db.prepare(`
-    SELECT DISTINCT year FROM (
-      SELECT substr(month, 1, 4) AS year FROM ${monthlyTable}
-      UNION
-      SELECT substr(createdAt, 1, 4) AS year FROM ${rawTable}
-    ) ORDER BY year DESC
-  `).all();
-  return results.map((r) => r.year);
+// 年份下拉選單的選項：只讀彙總表（很小）+ 目前年份，不掃明細表。明細表只留當月，
+// 當月一定落在目前年份，所以不用靠掃明細來找年份。唯一的空窗是 1/1 台灣時間 00:00~04:00
+// （每月排程還沒跑），去年 12 月的明細還沒進彙總表，去年若只有這個月的資料會暫時不在清單裡，
+// 排程跑完就會出現。
+async function availableYears(db, { monthlyTable }) {
+  const { results } = await db.prepare(
+    `SELECT DISTINCT substr(month, 1, 4) AS year FROM ${monthlyTable}`
+  ).all();
+  const years = new Set(results.map((r) => r.year));
+  years.add(taiwanMonthOffset(0).slice(0, 4));
+  return [...years].sort().reverse();
 }
 
 // --- 查詢量趨勢（search_events / search_monthly）---
