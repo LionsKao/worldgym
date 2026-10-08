@@ -546,7 +546,18 @@ function makePill(name, value, label, checked){
   const wrap = document.createElement("span");
   wrap.className = "pill";
   const id = `${name}-${value}`.replace(/[^a-zA-Z0-9一-鿿-]/g, "_");
-  wrap.innerHTML = `<input type="checkbox" name="${name}" value="${value}" id="${id}" ${checked ? "checked" : ""}><label for="${id}">${label}</label>`;
+  // 課程/老師名稱來自爬官網的資料，不能直接拼進 innerHTML（官網資料若含 < 會被當成 HTML 執行），
+  // 一律用 DOM API 設值，瀏覽器自己會當純文字處理。
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.name = name;
+  input.value = value;
+  input.id = id;
+  if (checked) input.checked = true;
+  const labelEl = document.createElement("label");
+  labelEl.htmlFor = id;
+  labelEl.textContent = label;
+  wrap.append(input, labelEl);
   return wrap;
 }
 
