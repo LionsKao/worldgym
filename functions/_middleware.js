@@ -8,9 +8,11 @@
 // Pages Functions 與 Worker 是兩個獨立專案，沒辦法共用 import，改一邊記得改另一邊。
 const CRAWLER_UA_PATTERN = /Googlebot|Google-InspectionTool|GoogleOther|Google-Extended|AdsBot-Google|Mediapartners-Google|APIs-Google|bingbot|BingPreview|Baiduspider|YandexBot|DuckDuckBot|GPTBot|ChatGPT-User|OAI-SearchBot|anthropic-ai|ClaudeBot|Claude-Web|Claude-SearchBot|Claude-User|PerplexityBot|Perplexity-User|MistralAI-User|CCBot|Bytespider|Amazonbot|Applebot|Meta-ExternalAgent|facebookexternalhit|LinkedInBot|Slackbot|TelegramBot|WhatsApp|Diffbot/i;
 
-// robots.txt / sitemap.xml 本來就是公開給爬蟲讀的，一律放行，不看 UA 也不看 IP：
-// Search Console 抓 sitemap 的 UA 不一定在上面的白名單內，海外抓取被 403 會顯示「無法讀取 Sitemap」。
-const PUBLIC_CRAWLER_PATHS = new Set(["/robots.txt", "/sitemap.xml"]);
+// robots.txt / sitemap.xml / llms.txt 本來就是公開給爬蟲與 AI 讀的，一律放行，不看 UA 也不看 IP：
+// Search Console 抓 sitemap 的 UA 不一定在上面的白名單內，海外抓取被 403 會顯示「無法讀取 Sitemap」；
+// llms.txt 是給各家 AI 讀的站點摘要，AI 的抓取 UA 五花八門、清單永遠追不完，擋了就沒有意義。
+// 這三個檔只放摘要與分店網址索引，都是任何訪客本來就能公開查到的資訊。
+const PUBLIC_CRAWLER_PATHS = new Set(["/robots.txt", "/sitemap.xml", "/llms.txt"]);
 
 // 部署會把整個 repo 根目錄當成靜態資源發布（Pages 不吃 .assetsignore），這些不是網站的一部分、
 // 不該被公開讀取：後端原始碼與設定、專案文件、工具設定檔、點開頭的檔案（.gitignore、.claude/ …）。
