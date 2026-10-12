@@ -69,7 +69,10 @@ vendor/chart.umd.min.js              Chart.js，vendor 進來不吃 CDN
 branches.json                        分店清單快取（前端用）
 functions/_middleware.js             Cloudflare Pages Functions：只放行台灣 IP（爬蟲 UA 例外）、擋掉非網站檔案（worker/、*.md、點開頭檔案等）回 404
 functions/index.js                  Pages Function：單一分店網址在伺服器端注入課表（見下方「伺服器端注入課表」）
-functions/_lib/                     上面注入功能的設定（ssrConfig.js）與實作（ssrBranch.js）
+functions/sitemap.xml.js            動態 /sitemap.xml（備援：根目錄靜態 sitemap.xml）
+functions/llms.txt.js               動態 /llms.txt（備援：根目錄靜態 llms.txt）
+functions/_lib/                     注入設定（ssrConfig.js）、實作（ssrBranch.js）、slug 網址（branchUrl.js）、
+                                    有課表的分店清單（scheduleBranches.js，sitemap 與 llms.txt 共用）、sitemap.js、llms.js
 _headers                             靜態資源快取設定
 hosting/                             Workers Assets 靜態託管設定（wrangler.jsonc）
 worker/
@@ -108,7 +111,7 @@ worker/
 
 ### 台灣 IP 限制與爬蟲例外
 Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭）都只放行台灣 IP（`cf.country` 沒值，如本機開發，一律放行）。已知搜尋引擎/AI 爬蟲（Googlebot、GPTBot、ClaudeBot、Claude-User 等，UA 清單 `CRAWLER_UA_PATTERN`）例外：
-- Pages：整個站都放行（robots.txt / sitemap.xml 一律放行，不看 UA 也不看 IP）。
+- Pages：整個站都放行（robots.txt / sitemap.xml / llms.txt 一律放行，不看 UA 也不看 IP；llms.txt 是給各家 AI 讀的，AI 的 UA 追不完，擋了沒意義）。
 - Worker：只放行唯讀的 `GET /filterOptions`、`GET /issueToken`、`POST /queryClasses`（含這三個路徑的 `OPTIONS` preflight），其餘端點（打點、後台、統計、推播登記、留言…）對海外爬蟲一律 403，避免爬蟲渲染頁面時污染統計。判斷邏輯在 `worker/src/crawlers.js` 的 `isRequestAllowed`，token 與每 IP 流量限制照舊，沒有為爬蟲另開後門。
 - **`CRAWLER_UA_PATTERN` 在 `functions/_middleware.js` 與 `worker/src/crawlers.js` 各有一份，改一邊要同步改另一邊**（兩個是不同專案，沒辦法共用 import）。
 - UA 只能用來決定「放不放行」，不可以依 UA 回傳不同內容（cloaking）。
@@ -116,11 +119,13 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 ### 伺服器端注入課表（SSR）
 目的：讓不執行 JS 的爬蟲（多數 AI 爬蟲）也讀得到單一分店課表。`functions/index.js` 只處理 `/`：網址正規化後剛好是「單一分店 + `room=1`」（`branch` 可寫短代碼或 slug；`utm_*`/`pwa`/`fbclid`/`gclid` 會忽略）且該分店在注入清單裡，才查 D1 並用 HTMLRewriter 改寫回傳的 `index.html`；其餘網址（無參數、多分店、有 day/time/course/teacher、不在注入清單）一律 `context.next()` 原樣放行，不查 D1，canonical 維持靜態 HTML 的 `/`。
 - 注入清單：`functions/_lib/ssrConfig.js` 的 `SSR_BRANCH_SLUGS`，目前直接取 `worker/src/branches-seed.js` 的全部分店（新增分店自動納入）；想縮小範圍就改成明確的 slug 陣列。查不到團體課表的分店會退回原頁，不會回錯誤；回應標頭 `X-SSR-Status`（hit/miss=有注入，no-data/too-many/no-fixed/error:…=退回原頁的原因）可用來排查（要用 GET，HEAD 不會經過這個 Function）。
-- **動態 sitemap**：`functions/sitemap.xml.js`（邏輯在 `functions/_lib/sitemap.js`）處理 `/sitemap.xml`，只列「近 7 天真的有團體教室固定班」的分店（跟注入條件一致，列出來的網址一定查得到內容）＋首頁，lastmod 取該分店最新的 `scrapedAt` 日期，結果用 Cache API 快取 30 分鐘。新分店有資料自動出現、沒資料自動消失，不用手動維護。任何失敗（沒有 D1 綁定、逾時、查無資料）會 `context.next()` 退回根目錄的靜態 `sitemap.xml`，所以**靜態檔要留著當備援**，內容只是備援用，不必常更新。
+- **動態 sitemap**：`functions/sitemap.xml.js`（邏輯在 `functions/_lib/sitemap.js`）處理 `/sitemap.xml`，只列「近 7 天真的有團體教室固定班」的分店（跟注入條件一致，列出來的網址一定查得到內容；查詢與過濾在 `functions/_lib/scheduleBranches.js` 的 `getBranchesWithSchedule()`，與 llms.txt 共用，排序依短代碼，`<loc>` 用 slug 網址）＋首頁，lastmod 取該分店最新的 `scrapedAt` 日期，結果用 Cache API 快取 30 分鐘。新分店有資料自動出現、沒資料自動消失，不用手動維護。任何失敗（沒有 D1 綁定、逾時、查無資料）會 `context.next()` 退回根目錄的靜態 `sitemap.xml`，所以**靜態檔要留著當備援**，內容只是備援用，不必常更新。
 - 資料來源：Pages 專案綁 D1（binding 名 `DB`，**在 Cloudflare Dashboard → worldgym → Settings → Bindings 設定，不在版控裡**，改完要重新部署才生效），直接 `import` `worker/src/queryClasses.js`，所以內容與前端查詢（`/queryClasses`）同源。注入「本週固定課表」，不含代課（代課帶日期、很快過期）。
-- branch 短代碼 = `worker/src/branches-seed.js` 陣列位置，跟 `script.js` 的 `BRANCH_SLUG_ORDER` 同一個順序（只能往後附加，不能插入/調換）。
-- 注入內容放在 `#loadingOverlay` 裡（`.visually-hidden`）：overlay 是不透明全螢幕載入遮罩，`init()` 結束時整個 `remove()`，區塊跟著消失，所以使用者畫面不變、`script.js` 不用改。同時改寫 `<title>`、description、og/twitter、canonical。
-- 查 D1 的結果（片段）用 Cache API 快取 30 分鐘，不快取整份 HTML；D1 逾時（1.5 秒）、查不到、超過 250 筆、出錯都退回原頁，不回錯誤頁。課程/老師名稱一律 HTML 跳脫。
+- **給爬蟲與 AI 看的分店網址一律用 slug**（`/?branch=taipei-daan&room=1`）：canonical、og:url、動態/靜態 sitemap、llms.txt、JSON-LD 都是，由 `functions/_lib/branchUrl.js` 的 `branchUrlParam()` 統一產生（slug 不符 `/^[a-z0-9-]+$/` 才退回短代碼）。**短代碼只保留給前端的分享網址（`script.js` 的 `buildShareUrl`）與舊連結相容**：解析端 `resolveSsrTarget` 兩種寫法都收，且兩種寫法得到的 canonical 都是 slug 版。短代碼 = `worker/src/branches-seed.js` 陣列位置，跟 `script.js` 的 `BRANCH_SLUG_ORDER` 同一個順序，**這個限制仍然有效：兩邊順序必須一致、只能往後附加，不能插入/調換**（順序一變，舊的短代碼分享網址就會指到別間分店）。我的最愛存的是 slug，不受影響。
+- **分店頁專屬 JSON-LD**：`rewriteHtml()` 會把頁面上第一個 `application/ld+json` 換成 `buildBranchJsonLd()` 的輸出（其餘的移除，確保只剩一個）：`@graph` 只有 WebSite（原樣沿用首頁那個節點，要跟 `index.html` 一致）加一個 WebPage（`@id`/`url` 是 slug 版 canonical，`name`/`description` 與 title/meta 共用 `buildBranchMeta()` 同一份來源，`dateModified` 沿用台灣時間的 `scrapedAt`）。輸出時 `<` 跳脫成 `\u003c`（JSON 裡等同 `<`，避免分店名稱含 `</script>` 破壞 HTML）。**刻意只用 WebPage、不輸出 ExerciseGym / LocalBusiness / SportsActivityLocation / Event / Course / ItemList / BreadcrumbList，也不輸出地址、電話、座標、評分**：課表區塊是視覺隱藏的，Google 規定結構化資料要與可見內容相符；而且不能替真實的健身房建立實體。首頁的 WebApplication 節點也不放進分店頁。所有 UA 拿到的 JSON-LD 完全相同；產生失敗就沿用首頁的。
+- **動態 `/llms.txt`**：`functions/llms.txt.js`（邏輯在 `functions/_lib/llms.js`）= 根目錄靜態 `llms.txt` 的內容（取自 `env.ASSETS`，文字只有一份）+ `## 分店課表` 索引（`- [名稱 分店（地區）團體課表](slug 網址)`，順序與 sitemap 相同，因為共用 `scheduleBranches.js` 的 `getBranchesWithSchedule()`）。連結文字會跳脫 Markdown 特殊字元（`\`、`[`、`]`），結果用 Cache API 快取 30 分鐘。任何失敗（沒有 D1/ASSETS 綁定、逾時、查無分店、例外）`context.next()` 退回靜態 `llms.txt`，所以**靜態檔要留著當備援**（它不列分店）。**刻意不列出**：任何 API 端點、後台（/admin）、GitHub、Worker 網址、技術架構或爬取機制；更新頻率只寫「每日更新」；也不加「非官方」等聲明。所有請求（不分 UA）內容相同。
+- 注入內容放在 `#loadingOverlay` 裡（`.visually-hidden`）：overlay 是不透明全螢幕載入遮罩，`init()` 結束時整個 `remove()`，區塊跟著消失，所以使用者畫面不變、`script.js` 不用改。同時改寫 `<title>`、description、og/twitter、canonical（slug 版）與 JSON-LD。
+- 查 D1 的結果（片段，含 `scrapedAt`）用 Cache API 快取 30 分鐘，不快取整份 HTML；片段快取 key 是 `/_ssr/v2/{slug}`（v2 = 多了 `scrapedAt` 欄位，升版避免跟舊格式混用；讀取時仍容忍沒有此欄位，缺的話 JSON-LD 就不輸出 `dateModified`），動態 sitemap 的 key 是 `/_ssr/v2/sitemap`（v2 = `<loc>` 由短代碼改 slug），llms.txt 是 `/_ssr/v2/llms`；D1 逾時（1.5 秒）、查不到、超過 250 筆、出錯都退回原頁，不回錯誤頁。課程/老師名稱一律 HTML 跳脫。
 - 本機測試：`wrangler pages dev . --compatibility-date=2026-08-11 --d1 DB=<database_id> --persist-to <dir>`；本機 D1 是空的，要先匯入資料。
 
 ### /queryClasses 防濫用
