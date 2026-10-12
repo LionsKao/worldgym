@@ -1865,7 +1865,11 @@ function loadChartJs(){
     loadChartJs._promise = new Promise((resolve, reject) => {
       const script = document.createElement("script");
       script.src = "vendor/chart.umd.min.js";
-      script.onload = resolve;
+      script.onload = () => {
+        // Chart.js 預設用 Helvetica/Arial，不會吃頁面的 CSS 字型，這裡統一成全站的 Nunito
+        window.Chart.defaults.font.family = '"Nunito", sans-serif';
+        resolve();
+      };
       script.onerror = reject;
       document.body.appendChild(script);
     });
