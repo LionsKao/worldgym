@@ -1,10 +1,12 @@
 import BRANCHES from "../../worker/src/branches-seed.js";
 import { SSR_BRANCH_SLUGS, FRAGMENT_CACHE_SECONDS, D1_TIMEOUT_MS } from "./ssrConfig.js";
+import { branchUrlParam } from "./branchUrl.js";
 
 const SITE_ORIGIN = "https://worldgym.pages.dev";
 // 跟 worker/src/queryClasses.js 的 NORMAL_DAYS_AHEAD 對齊：注入的是「近 7 天的固定班」，
 // sitemap 只列這個範圍內真的有團體教室固定班的分店，這樣列出來的網址一定查得到內容（不會是退回原頁的空殼）。
 const NORMAL_DAYS_AHEAD = 6;
+// 排序仍依原本的短代碼（branches-seed.js 陣列位置）大小，輸出順序不變；網址本身改用 slug。
 const CODE_BY_SLUG = new Map(BRANCHES.map((b, i) => [b.slug, i]));
 const INCLUDED_SLUGS = new Set(SSR_BRANCH_SLUGS);
 
@@ -21,8 +23,8 @@ function addDaysIso(iso, days) {
 function renderSitemap(branches, homeLastmod) {
   const urls = [
     `  <url>\n    <loc>${SITE_ORIGIN}/</loc>\n    <lastmod>${homeLastmod}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>1.0</priority>\n  </url>`,
-    ...branches.map(({ code, lastmod }) =>
-      `  <url>\n    <loc>${SITE_ORIGIN}/?branch=${code}&amp;room=1</loc>\n    <lastmod>${lastmod}</lastmod>\n    <changefreq>daily</changefreq>\n    <priority>0.6</priority>\n  </url>`
+    ...branches.map(({ code, slug, lastmod }) =>
+      `  <url>\n    <loc>${SITE_ORIGIN}/?branch=${branchUrlParam(slug, code)}&amp;room=1</loc>\n    <lastmod>${lastmod}</lastmod>\n    <changefreq>daily</changefreq>\n    <priority>0.6</priority>\n  </url>`
     ),
   ];
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join("\n")}\n</urlset>\n`;
@@ -43,7 +45,7 @@ async function buildSitemapXml(db) {
   const { results } = await Promise.race([query, timeout]).finally(() => clearTimeout(timer));
   const branches = results
     .filter((r) => INCLUDED_SLUGS.has(r.branchSlug) && CODE_BY_SLUG.has(r.branchSlug))
-    .map((r) => ({ code: CODE_BY_SLUG.get(r.branchSlug), lastmod: r.scrapedAt.slice(0, 10) }))
+    .map((r) => ({ code: CODE_BY_SLUG.get(r.branchSlug), slug: r.branchSlug, lastmod: r.scrapedAt.slice(0, 10) }))
     .sort((a, b) => a.code - b.code);
   if (branches.length === 0) return null; // 查不到任何分店通常是資料庫出問題，退回靜態 sitemap，不要回一份空的
   const homeLastmod = branches.reduce((max, b) => (b.lastmod > max ? b.lastmod : max), branches[0].lastmod);
@@ -56,7 +58,8 @@ async function buildSitemapXml(db) {
 export async function getSitemapResponse(context) {
   if (!context.env.DB) return null;
   const cache = caches.default;
-  const cacheKey = new Request(`${SITE_ORIGIN}/_ssr/sitemap`);
+  // v2：<loc> 由短代碼改成 slug，升版避免跟舊格式的快取混用。
+  const cacheKey = new Request(`${SITE_ORIGIN}/_ssr/v2/sitemap`);
   try {
     const hit = await cache.match(cacheKey);
     if (hit) return hit;

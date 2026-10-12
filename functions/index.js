@@ -1,4 +1,4 @@
-// 單一分店網址（例如 /?branch=0&room=1）在伺服器端把該分店的課表寫進回傳的 HTML，
+// 單一分店網址（例如 /?branch=taipei-daan&room=1，短代碼 /?branch=8&room=1 也收）在伺服器端把該分店的課表寫進回傳的 HTML，
 // 讓不執行 JS 的爬蟲也讀得到。所有 UA 拿到的內容完全相同（不依 User-Agent 回不同內容）。
 // 沒有 query、或不符合白名單格式的網址，一律原樣放行（context.next()），不查 D1。
 // 設定與細節見 functions/_lib/ssrConfig.js、ssrBranch.js，維護方式見 CLAUDE.md。

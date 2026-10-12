@@ -7,6 +7,7 @@ import {
   RESULT_COUNT_WARN_LIMIT,
   IGNORED_PARAM_PATTERN,
 } from "./ssrConfig.js";
+import { branchUrlParam } from "./branchUrl.js";
 
 const SITE_ORIGIN = "https://worldgym.pages.dev";
 const WEEKDAY_LABEL = { 1: "一", 2: "二", 3: "三", 4: "四", 5: "五", 6: "六", 7: "日" };
@@ -110,7 +111,8 @@ export function rewriteHtml(response, branch, fragment) {
   const title = `World Gym ${branch.name} 分店（${branch.region}）團體課表｜課表查詢`;
   const ogTitle = `World Gym ${branch.name} 分店團體課表`;
   const description = `World Gym ${branch.name} 分店（${branch.region}）團體教室每週課表：依星期列出上課時間、課程與老師，資料每日更新。`;
-  const canonical = `${SITE_ORIGIN}/?branch=${branch.code}&room=1`;
+  // canonical / og:url 用 slug（見 branchUrl.js）；短代碼與 slug 兩種寫法的舊網址都會得到同一個 canonical。
+  const canonical = `${SITE_ORIGIN}/?branch=${branchUrlParam(branch.slug, branch.code)}&room=1`;
   const setContent = (value) => ({ element(el) { el.setAttribute("content", value); } });
   const rewritten = new HTMLRewriter()
     .on("title", { element(el) { el.setInnerContent(title); } })
