@@ -1,15 +1,9 @@
-// 伺服器端注入課表的設定。要擴充試點，只要在 SSR_BRANCH_SLUGS 加 slug（見 worker/src/branches-seed.js）。
-// 沒列在這裡的分店網址完全維持原樣，不查 D1、不改 HTML。
-export const SSR_BRANCH_SLUGS = [
-  "taipei-101",
-  "taipei-neihu",
-  "new-taipei-banqiao-shuangshi",
-  "new-taipei-sanchong",
-  "taichung-xuefu",
-  "taichung-xitun",
-  "kaohsiung-zhonghua",
-  "tainan-focus",
-];
+import BRANCHES from "../../worker/src/branches-seed.js";
+
+// 伺服器端注入課表的設定。目前涵蓋 branches-seed.js 裡的全部分店（新增分店會自動納入）。
+// 想縮小範圍（例如只開放部分分店）時，把下面改成明確的 slug 陣列即可；沒列在這裡的分店網址
+// 完全維持原樣，不查 D1、不改 HTML。
+export const SSR_BRANCH_SLUGS = BRANCHES.map((b) => b.slug);
 
 // 課表一天只更新兩次（台灣時間 03:00、17:00），片段快取 30 分鐘，最多落後半小時。
 export const FRAGMENT_CACHE_SECONDS = 1800;

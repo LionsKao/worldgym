@@ -113,9 +113,9 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 - **`CRAWLER_UA_PATTERN` 在 `functions/_middleware.js` 與 `worker/src/crawlers.js` 各有一份，改一邊要同步改另一邊**（兩個是不同專案，沒辦法共用 import）。
 - UA 只能用來決定「放不放行」，不可以依 UA 回傳不同內容（cloaking）。
 
-### 伺服器端注入課表（SSR，試點）
-目的：讓不執行 JS 的爬蟲（多數 AI 爬蟲）也讀得到單一分店課表。`functions/index.js` 只處理 `/`：網址正規化後剛好是「單一分店 + `room=1`」（`branch` 可寫短代碼或 slug；`utm_*`/`pwa`/`fbclid`/`gclid` 會忽略）且該分店在試點清單裡，才查 D1 並用 HTMLRewriter 改寫回傳的 `index.html`；其餘網址（無參數、多分店、有 day/time/course/teacher、非試點）一律 `context.next()` 原樣放行，不查 D1，canonical 維持靜態 HTML 的 `/`。
-- 試點清單：`functions/_lib/ssrConfig.js` 的 `SSR_BRANCH_SLUGS`，要擴充只要加 slug；同時要補 `sitemap.xml`（網址用短代碼，`&` 要寫成 `&amp;`）。
+### 伺服器端注入課表（SSR）
+目的：讓不執行 JS 的爬蟲（多數 AI 爬蟲）也讀得到單一分店課表。`functions/index.js` 只處理 `/`：網址正規化後剛好是「單一分店 + `room=1`」（`branch` 可寫短代碼或 slug；`utm_*`/`pwa`/`fbclid`/`gclid` 會忽略）且該分店在注入清單裡，才查 D1 並用 HTMLRewriter 改寫回傳的 `index.html`；其餘網址（無參數、多分店、有 day/time/course/teacher、不在注入清單）一律 `context.next()` 原樣放行，不查 D1，canonical 維持靜態 HTML 的 `/`。
+- 注入清單：`functions/_lib/ssrConfig.js` 的 `SSR_BRANCH_SLUGS`，目前直接取 `worker/src/branches-seed.js` 的全部分店（新增分店自動納入）；想縮小範圍就改成明確的 slug 陣列。`sitemap.xml` 目前列了全部分店的網址（`?branch=0`～`?branch=109`，用短代碼，`&` 要寫成 `&amp;`），新增分店時要手動補一筆。查不到課表的分店會退回原頁，不會回錯誤。
 - 資料來源：Pages 專案綁 D1（binding 名 `DB`，**在 Cloudflare Dashboard → worldgym → Settings → Bindings 設定，不在版控裡**，改完要重新部署才生效），直接 `import` `worker/src/queryClasses.js`，所以內容與前端查詢（`/queryClasses`）同源。注入「本週固定課表」，不含代課（代課帶日期、很快過期）。
 - branch 短代碼 = `worker/src/branches-seed.js` 陣列位置，跟 `script.js` 的 `BRANCH_SLUG_ORDER` 同一個順序（只能往後附加，不能插入/調換）。
 - 注入內容放在 `#loadingOverlay` 裡（`.visually-hidden`）：overlay 是不透明全螢幕載入遮罩，`init()` 結束時整個 `remove()`，區塊跟著消失，所以使用者畫面不變、`script.js` 不用改。同時改寫 `<title>`、description、og/twitter、canonical。
