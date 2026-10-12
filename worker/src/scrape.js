@@ -1,10 +1,15 @@
 import BRANCHES from "./branches-seed.js";
 
 const SCHEDULE_DAYS_AHEAD = 13;
-// 跟 queryClasses.js 的 NORMAL_DAYS_AHEAD 對齊：近 7 天（day0~day6）全存，
-// 超過的天數（day7~day13）只存代課——查詢端本來就只在遠期挑代課顯示，
-// 遠期的正常班寫進 D1 也用不到，不存可以省下寫入量與儲存空間。
-const NEAR_DAYS_AHEAD = 6;
+// 查詢端（queryClasses.js 的 NORMAL_DAYS_AHEAD = 6）只看「今天到 +6 天」的正常班，
+// 但這裡要多存一天（day0~day7 全存），超過的天數（day8~day13）只存代課——遠期查詢本來就只挑代課顯示，
+// 更遠的正常班寫進 D1 也用不到，不存可以省下寫入量與儲存空間。
+// 為什麼多存一天：爬蟲一天只跑兩次（台灣時間 03:00、17:00），若只存到 +6 天，
+// 17:00 抓完的資料到隔天 00:00 就不夠了（窗口往前移一天，需要 +6 天的資料），
+// 要等 03:00 的爬蟲才補上，每天 00:00~03:00 會缺「剛過去那天的同一個星期幾」。
+// 多存一天，資料就涵蓋到「下一次爬蟲跑完之前」，也能容忍漏跑一次爬蟲。
+// 多存的 day7 正常班不會被查詢讀到（近窗口只到 +6，遠窗口只看代課），所以不影響任何畫面。
+const NEAR_DAYS_AHEAD = 7;
 // 104 家分店依序（非平行）逐一請求，跟 group.aspx.cs 的爬蟲間隔對齊。
 const BRANCH_REQUEST_DELAY_MS = 500;
 // D1 batch 一次太多語句容易超時，分批送出。
@@ -184,7 +189,7 @@ async function ingestBranchClasses(db, branchSlug, branchName, rawClasses) {
   const lastDateIso = formatDateIso(lastDate);
   const nearDateIso = formatDateIso(nearDate);
 
-  // 近 7 天（day0~day6）全存；剩餘天數（day7~day13）只存代課，配合查詢端
+  // day0~day7 全存（見上方 NEAR_DAYS_AHEAD 的說明）；剩餘天數（day8~day13）只存代課，配合查詢端
   // （queryClasses.js 的 NORMAL_DAYS_AHEAD/SUBSTITUTE_DAYS_AHEAD 窗口）本來就只在遠期顯示代課。
   const transformed = rawClasses
     .map((raw) => transformRawClass(raw, branchSlug, branchName))
