@@ -26,10 +26,22 @@ cd worker && npm install && npm run dev
 Both dev servers are also registered in `.claude/launch.json` (`worldgym-hosting`, `worldgym-worker`) for use with the preview/browser tools.
 
 ### Deploy
+
+**靜態站（Cloudflare Pages `worldgym`，https://worldgym.pages.dev）：push 到 `main` 就會自動部署。** 這個 Pages 專案連了 GitHub（`LionsKao/worldgym`），生產分支是 `main`、自動部署開著，Cloudflare 會從 Git 抓該 commit 的內容、在 repo 根目錄建置（沒有 build 指令，`functions/` 會一起打包）。所以：
+- 發布的是**已 push 的 commit**，不是你電腦上的工作目錄，不會夾帶未 commit 的檔案。
+- 沒 push 的 commit 在 Dashboard 按「Retry deployment」會失敗（`not our ref`），因為 Cloudflare 抓不到。
+- Pages 的 D1 綁定（`DB`）設在 Dashboard 的 Production 環境，要改綁定需重新部署才生效。
+
+**Worker API（`worldgym-api`）沒有接 Git 自動部署，改了 `worker/` 要手動部署：**
 ```bash
 cd worker && npm run deploy     # 部署 API (wrangler deploy)
-npx wrangler pages deploy . --project-name worldgym --branch main   # 部署靜態站到 Cloudflare Pages（一定要在 repo 根目錄執行，見下方「部署注意」）
 ```
+
+**緊急/手動部署 Pages（不經 Git）**：一定要在 repo **根目錄**執行，這種部署發布的是**當下工作目錄**的檔案（含還沒 commit 的），部署前先 `git status` 確認乾淨：
+```bash
+worker/node_modules/.bin/wrangler pages deploy . --project-name worldgym --branch main
+```
+**不要在 `hosting/` 下執行 `pages deploy ..`**：wrangler 是用「目前工作目錄」下的 `functions/` 找 Pages Functions，不是用部署目錄；在 `hosting/` 執行會找不到 `functions/`，整份 Functions（`_middleware.js` 的台灣 IP 限制、`index.js` 的伺服器端注入）都不會被打包上線。部署後可到 Dashboard → worldgym → 部署，確認該次部署有 Functions。（`hosting/package.json` 的 `deploy` 腳本已改成在根目錄執行。）
 
 Worker tail logs: `cd worker && npm run tail`
 
@@ -43,16 +55,9 @@ npx wrangler d1 execute worldgym-schedule --remote --file=migrations/xxx.sql
 There is no test suite and no lint/build command in this repo.
 
 ### 部署注意
-唯一的靜態站部署目標是 Cloudflare Pages 專案 `worldgym`（網址 https://worldgym.pages.dev），在 **repo 根目錄**用 `npx wrangler pages deploy . --project-name worldgym --branch main` 部署（根目錄沒有 wrangler，可用 `worker/node_modules/.bin/wrangler`）。
+`hosting/wrangler.jsonc` 是另一套 Workers Assets 設定，`name: "worldgym-web"`，曾經對應過一個叫 `worldgym-web.lions2100.workers.dev` 的 Worker，但那個 Worker 已刪除——它跟 `worldgym.pages.dev` 是互相獨立、不互相依賴的兩個部署目標，且沒有 `functions/_middleware.js` 的台灣 IP 限制。不要再用 `npx wrangler deploy` 部署到它。
 
-**一定要在根目錄執行，不要在 `hosting/` 下執行 `pages deploy ..`**：wrangler 是用「目前工作目錄」下的 `functions/` 找 Pages Functions，不是用部署目錄；在 `hosting/` 執行會找不到 `functions/`，整份 Functions（`_middleware.js` 的台灣 IP 限制、`index.js` 的伺服器端注入）都不會被打包上線。
-部署前、後都可以到 Cloudflare Dashboard → worldgym → 部署，確認該次部署有 Functions。
-
-另外 Pages 部署**不會**套用 `.assetsignore`（那是 Workers Assets 的機制），`worker/` 底下的檔案（原始碼、`wrangler.toml`）目前也會被當成靜態資源公開；`worker/.dev.vars` 若存在也會被一起發布，部署前要確認它不在工作目錄裡。
-
-（`hosting/wrangler.jsonc` 是另一套 Workers Assets 設定，`name: "worldgym-web"`，曾經對應過一個叫 `worldgym-web.lions2100.workers.dev` 的 Worker，但那個 Worker 已刪除——它跟 `worldgym.pages.dev` 是互相獨立、不互相依賴的兩個部署目標，且沒有 `functions/_middleware.js` 的台灣 IP 限制。不要再用 `npx wrangler deploy` 部署到它。）
-
-部署會把整個 repo 根目錄（`.assetsignore` 排除 `worker/`/`hosting`/`node_modules` 等）當成靜態資源整批發布——發的是**當下工作目錄的檔案內容**，不是 git HEAD。deploy 前要注意根目錄下有沒有其他人正在改、還沒 commit 的檔案，因為它們會一起被發布上線。
+**Pages 會把整個 repo 根目錄當成靜態資源發布，而且不會套用 `.assetsignore`**（那是 Workers Assets 的機制，Pages 沒有這個功能）。所以 `worker/`、`hosting/`、`docs/`、`*.md`、`.claude/`、`.gitignore` 這類不屬於網站的檔案，是靠 `functions/_middleware.js` 的 `isBlockedPath()` 一律回 404 擋掉（路徑先 decode 再比對，擋百分比編碼繞過）。新增不該公開的資料夾或檔案類型時，要記得加進 `BLOCKED_TOP_DIRS`。手動部署時，`worker/.dev.vars` 這類密鑰檔也會被上傳（雖然讀不到），部署前仍要確認它不在工作目錄裡。
 
 ## Architecture
 
@@ -62,7 +67,7 @@ manifest.json / sw.js / icons/       PWA + Service Worker（推播提醒用）
 admin.html / admin.js                後台：手動重抓、爬蟲紀錄、報表（Chart.js）
 vendor/chart.umd.min.js              Chart.js，vendor 進來不吃 CDN
 branches.json                        分店清單快取（前端用）
-functions/_middleware.js             Cloudflare Pages Functions：只放行台灣 IP（爬蟲 UA 例外）
+functions/_middleware.js             Cloudflare Pages Functions：只放行台灣 IP（爬蟲 UA 例外）、擋掉非網站檔案（worker/、*.md、點開頭檔案等）回 404
 functions/index.js                  Pages Function：單一分店網址在伺服器端注入課表（見下方「伺服器端注入課表」）
 functions/_lib/                     上面注入功能的設定（ssrConfig.js）與實作（ssrBranch.js）
 _headers                             靜態資源快取設定

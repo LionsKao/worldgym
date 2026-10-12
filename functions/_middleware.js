@@ -12,8 +12,32 @@ const CRAWLER_UA_PATTERN = /Googlebot|Google-InspectionTool|GoogleOther|Google-E
 // Search Console 抓 sitemap 的 UA 不一定在上面的白名單內，海外抓取被 403 會顯示「無法讀取 Sitemap」。
 const PUBLIC_CRAWLER_PATHS = new Set(["/robots.txt", "/sitemap.xml"]);
 
+// 部署會把整個 repo 根目錄當成靜態資源發布（Pages 不吃 .assetsignore），這些不是網站的一部分、
+// 不該被公開讀取：後端原始碼與設定、專案文件、工具設定檔、點開頭的檔案（.gitignore、.claude/ …）。
+// 一律回 404，跟「這個路徑不存在」看起來一樣；不看 UA 也不看 IP（爬蟲也不該抓到）。
+// 路徑先 decode 再比對，避免用 /%77orker/ 這類百分比編碼繞過。
+const BLOCKED_TOP_DIRS = new Set(["worker", "hosting", "functions", "docs", "node_modules"]);
+function isBlockedPath(pathname) {
+  let decoded;
+  try {
+    decoded = decodeURIComponent(pathname).toLowerCase();
+  } catch {
+    return true; // 編碼不合法的路徑直接擋掉
+  }
+  const segments = decoded.split("/").filter(Boolean);
+  if (segments.length === 0) return false;
+  if (BLOCKED_TOP_DIRS.has(segments[0])) return true;
+  // 點開頭的檔案/目錄一律擋，只有 .well-known（憑證驗證、安全聯絡資訊等標準用途）放行。
+  if (segments.some((seg) => seg.startsWith(".") && seg !== ".well-known")) return true;
+  return decoded.endsWith(".md");
+}
+
 export async function onRequest(context) {
-  if (PUBLIC_CRAWLER_PATHS.has(new URL(context.request.url).pathname)) {
+  const { pathname } = new URL(context.request.url);
+  if (isBlockedPath(pathname)) {
+    return new Response("Not Found", { status: 404 });
+  }
+  if (PUBLIC_CRAWLER_PATHS.has(pathname)) {
     return context.next();
   }
   const country = context.request.cf?.country;
