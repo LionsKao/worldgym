@@ -4,6 +4,7 @@ import { runScrape, cleanupStaleBranches } from "./scrape.js";
 import { registerReminder, isAllowedPushEndpoint, cancelReminder, listReminders, dispatchDueReminders } from "./reminders.js";
 import { monthlyNameRanking, availableYears, monthlySearchTrend, favoriteStatsCombined, adStatsCombined, reminderStatsCombined, rollupAnalyticsEvents } from "./analytics.js";
 import { scanForNewBranches } from "./branchScan.js";
+import { isRequestAllowed } from "./crawlers.js";
 
 // 網站是跨網域被呼叫，所以要自己開白名單。
 // 之後如果掛了自訂網域，把新網域加進這個陣列即可。
@@ -233,8 +234,8 @@ function clearAdminFailures(env, ctx, ip) {
 export default {
   async fetch(req, env, ctx) {
     // 只開放台灣 IP：cf.country 沒有值(如本機開發)就放行，避免擋掉自己測試。
-    const country = req.cf?.country;
-    if (country && country !== "TW") {
+    // 海外的搜尋引擎/AI 爬蟲只放行唯讀路徑，細節見 crawlers.js。
+    if (!isRequestAllowed(req)) {
       return new Response("Forbidden", { status: 403 });
     }
 
