@@ -28,7 +28,7 @@ Both dev servers are also registered in `.claude/launch.json` (`worldgym-hosting
 ### Deploy
 ```bash
 cd worker && npm run deploy     # 部署 API (wrangler deploy)
-cd hosting && npx wrangler pages deploy .. --project-name worldgym --branch main   # 部署靜態站到 Cloudflare Pages
+npx wrangler pages deploy . --project-name worldgym --branch main   # 部署靜態站到 Cloudflare Pages（一定要在 repo 根目錄執行，見下方「部署注意」）
 ```
 
 Worker tail logs: `cd worker && npm run tail`
@@ -43,7 +43,12 @@ npx wrangler d1 execute worldgym-schedule --remote --file=migrations/xxx.sql
 There is no test suite and no lint/build command in this repo.
 
 ### 部署注意
-唯一的靜態站部署目標是 Cloudflare Pages 專案 `worldgym`（網址 https://worldgym.pages.dev），用 `npx wrangler pages deploy .. --project-name worldgym --branch main` 部署。
+唯一的靜態站部署目標是 Cloudflare Pages 專案 `worldgym`（網址 https://worldgym.pages.dev），在 **repo 根目錄**用 `npx wrangler pages deploy . --project-name worldgym --branch main` 部署（根目錄沒有 wrangler，可用 `worker/node_modules/.bin/wrangler`）。
+
+**一定要在根目錄執行，不要在 `hosting/` 下執行 `pages deploy ..`**：wrangler 是用「目前工作目錄」下的 `functions/` 找 Pages Functions，不是用部署目錄；在 `hosting/` 執行會找不到 `functions/`，整份 Functions（`_middleware.js` 的台灣 IP 限制、`index.js` 的伺服器端注入）都不會被打包上線。
+部署前、後都可以到 Cloudflare Dashboard → worldgym → 部署，確認該次部署有 Functions。
+
+另外 Pages 部署**不會**套用 `.assetsignore`（那是 Workers Assets 的機制），`worker/` 底下的檔案（原始碼、`wrangler.toml`）目前也會被當成靜態資源公開；`worker/.dev.vars` 若存在也會被一起發布，部署前要確認它不在工作目錄裡。
 
 （`hosting/wrangler.jsonc` 是另一套 Workers Assets 設定，`name: "worldgym-web"`，曾經對應過一個叫 `worldgym-web.lions2100.workers.dev` 的 Worker，但那個 Worker 已刪除——它跟 `worldgym.pages.dev` 是互相獨立、不互相依賴的兩個部署目標，且沒有 `functions/_middleware.js` 的台灣 IP 限制。不要再用 `npx wrangler deploy` 部署到它。）
 
@@ -57,11 +62,14 @@ manifest.json / sw.js / icons/       PWA + Service Worker（推播提醒用）
 admin.html / admin.js                後台：手動重抓、爬蟲紀錄、報表（Chart.js）
 vendor/chart.umd.min.js              Chart.js，vendor 進來不吃 CDN
 branches.json                        分店清單快取（前端用）
-functions/_middleware.js             Cloudflare Pages Functions：只放行台灣 IP
+functions/_middleware.js             Cloudflare Pages Functions：只放行台灣 IP（爬蟲 UA 例外）
+functions/index.js                  Pages Function：單一分店網址在伺服器端注入課表（見下方「伺服器端注入課表」）
+functions/_lib/                     上面注入功能的設定（ssrConfig.js）與實作（ssrBranch.js）
 _headers                             靜態資源快取設定
 hosting/                             Workers Assets 靜態託管設定（wrangler.jsonc）
 worker/
   src/index.js                      路由 / CORS / 入口 / cron scheduled()
+  src/crawlers.js                   海外 IP 存取判斷：爬蟲 UA 清單 + 只放行的唯讀路徑
   src/queryClasses.js               課表查詢邏輯
   src/scrape.js                     爬蟲邏輯（重抓官網課表寫入 D1）
   src/reminders.js                  課前推播提醒：登記/取消/到期發送 Web Push
@@ -92,6 +100,22 @@ worker/
 
 ### 推播提醒 (PWA)
 課表頁需先加到主畫面成為 PWA 才顯示鈴鐺按鈕（`script.js` 的 `isPWAInstalled()` 判斷 `display-mode: standalone`；本機測試可在網址加 `?pwa=1` 繞過）。登記提醒流程：前端 `sw.js` 註冊 Service Worker 拿 Push 訂閱 → `/registerReminder` 存 D1 → worker cron 每 5 分鐘掃到期提醒 → `reminders.js` 用 VAPID 金鑰簽署推播內容送出 → `sw.js` 的 `push` 事件顯示通知。
+
+### 台灣 IP 限制與爬蟲例外
+Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭）都只放行台灣 IP（`cf.country` 沒值，如本機開發，一律放行）。已知搜尋引擎/AI 爬蟲（Googlebot、GPTBot、ClaudeBot、Claude-User 等，UA 清單 `CRAWLER_UA_PATTERN`）例外：
+- Pages：整個站都放行（robots.txt / sitemap.xml 一律放行，不看 UA 也不看 IP）。
+- Worker：只放行唯讀的 `GET /filterOptions`、`GET /issueToken`、`POST /queryClasses`（含這三個路徑的 `OPTIONS` preflight），其餘端點（打點、後台、統計、推播登記、留言…）對海外爬蟲一律 403，避免爬蟲渲染頁面時污染統計。判斷邏輯在 `worker/src/crawlers.js` 的 `isRequestAllowed`，token 與每 IP 流量限制照舊，沒有為爬蟲另開後門。
+- **`CRAWLER_UA_PATTERN` 在 `functions/_middleware.js` 與 `worker/src/crawlers.js` 各有一份，改一邊要同步改另一邊**（兩個是不同專案，沒辦法共用 import）。
+- UA 只能用來決定「放不放行」，不可以依 UA 回傳不同內容（cloaking）。
+
+### 伺服器端注入課表（SSR，試點）
+目的：讓不執行 JS 的爬蟲（多數 AI 爬蟲）也讀得到單一分店課表。`functions/index.js` 只處理 `/`：網址正規化後剛好是「單一分店 + `room=1`」（`branch` 可寫短代碼或 slug；`utm_*`/`pwa`/`fbclid`/`gclid` 會忽略）且該分店在試點清單裡，才查 D1 並用 HTMLRewriter 改寫回傳的 `index.html`；其餘網址（無參數、多分店、有 day/time/course/teacher、非試點）一律 `context.next()` 原樣放行，不查 D1，canonical 維持靜態 HTML 的 `/`。
+- 試點清單：`functions/_lib/ssrConfig.js` 的 `SSR_BRANCH_SLUGS`，要擴充只要加 slug；同時要補 `sitemap.xml`（網址用短代碼，`&` 要寫成 `&amp;`）。
+- 資料來源：Pages 專案綁 D1（binding 名 `DB`，**在 Cloudflare Dashboard → worldgym → Settings → Bindings 設定，不在版控裡**，改完要重新部署才生效），直接 `import` `worker/src/queryClasses.js`，所以內容與前端查詢（`/queryClasses`）同源。注入「本週固定課表」，不含代課（代課帶日期、很快過期）。
+- branch 短代碼 = `worker/src/branches-seed.js` 陣列位置，跟 `script.js` 的 `BRANCH_SLUG_ORDER` 同一個順序（只能往後附加，不能插入/調換）。
+- 注入內容放在 `#loadingOverlay` 裡（`.visually-hidden`）：overlay 是不透明全螢幕載入遮罩，`init()` 結束時整個 `remove()`，區塊跟著消失，所以使用者畫面不變、`script.js` 不用改。同時改寫 `<title>`、description、og/twitter、canonical。
+- 查 D1 的結果（片段）用 Cache API 快取 30 分鐘，不快取整份 HTML；D1 逾時（1.5 秒）、查不到、超過 250 筆、出錯都退回原頁，不回錯誤頁。課程/老師名稱一律 HTML 跳脫。
+- 本機測試：`wrangler pages dev . --compatibility-date=2026-08-11 --d1 DB=<database_id> --persist-to <dir>`；本機 D1 是空的，要先匯入資料。
 
 ### /queryClasses 防濫用
 匿名公開端點，做不到真正私有 API，只拉高濫用成本：
