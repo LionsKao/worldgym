@@ -93,10 +93,12 @@ async function fetchBranchSchedule(slug, firstDate, lastDate) {
 }
 
 // 官網教室名稱常帶樓層（例如「3F飛輪教室」「B1團體有氧教室」），不管樓層一律歸成這兩種。
+// 少數分店的團體教室只叫「有氧教室」（沒有「團體」二字，例如鳳山中山），同樣歸成團體教室，
+// 不然前端選「團體教室」時這些分店的課一堂都查不到。
 function normalizeRoomName(rawRoomName) {
   const name = (rawRoomName || "").trim();
   if (name.includes("飛輪")) return "飛輪教室";
-  if (name.includes("團體")) return "團體教室";
+  if (name.includes("團體") || name.includes("有氧")) return "團體教室";
   return name;
 }
 
