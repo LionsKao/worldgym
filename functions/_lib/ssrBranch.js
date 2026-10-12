@@ -75,14 +75,16 @@ async function buildFragment(env, branch) {
   if (result.rows.length > RESULT_COUNT_WARN_LIMIT) return { fragment: null, status: "too-many" };
   const fixedRows = result.rows.filter((row) => !row.flagged);
   if (fixedRows.length === 0) return { fragment: null, status: "no-fixed" };
-  return { fragment: { blockHtml: renderBlock(branch, fixedRows, result.oldestScrapedAt) }, status: "miss" };
+  return { fragment: { blockHtml: renderBlock(branch, fixedRows, result.oldestScrapedAt), scrapedAt: result.oldestScrapedAt }, status: "miss" };
 }
 
 // 片段快取：只快取查 D1 的結果，不快取整份 HTML，index.html 一部署就是最新的。
-// key 用正規化後的 /_ssr/{slug}，不同的 query 寫法（slug/短代碼、參數順序、utm）共用同一份。
+// key 用正規化後的 /_ssr/v2/{slug}，不同的 query 寫法（slug/短代碼、參數順序、utm）共用同一份。
+// v2：片段多了 scrapedAt 欄位（給 JSON-LD 的 dateModified 用），升版避免跟舊格式的快取混用；
+// 讀取時仍容忍沒有這個欄位（缺的話 JSON-LD 就不輸出 dateModified）。
 export async function getFragment(context, branch) {
   const cache = caches.default;
-  const cacheKey = new Request(`${SITE_ORIGIN}/_ssr/${branch.slug}`);
+  const cacheKey = new Request(`${SITE_ORIGIN}/_ssr/v2/${branch.slug}`);
   try {
     const hit = await cache.match(cacheKey);
     if (hit) return { fragment: await hit.json(), status: "hit" };
@@ -104,17 +106,65 @@ export async function getFragment(context, branch) {
   }
 }
 
-// 改寫 <title>、description、og/twitter、canonical，並把課表區塊放進 #loadingOverlay：
+// 分店頁的 title / description / canonical：rewriteHtml（改寫 HTML）與 buildBranchJsonLd（JSON-LD）共用這一份，
+// 不各自拼字串，避免日後兩邊不同步。
+function buildBranchMeta(branch) {
+  return {
+    title: `World Gym ${branch.name} 分店（${branch.region}）團體課表｜課表查詢`,
+    ogTitle: `World Gym ${branch.name} 分店團體課表`,
+    description: `World Gym ${branch.name} 分店（${branch.region}）團體教室每週課表：依星期列出上課時間、課程與老師，資料每日更新。`,
+    // slug 版 canonical（見 branchUrl.js）；短代碼與 slug 兩種寫法的舊網址都會得到同一個 canonical。
+    canonical: `${SITE_ORIGIN}/?branch=${branchUrlParam(branch.slug, branch.code)}&room=1`,
+  };
+}
+
+// 首頁 JSON-LD 的 WebSite 節點，原樣沿用（要跟 index.html 的 @graph 裡那個節點保持一致）。
+const WEBSITE_NODE = {
+  "@type": "WebSite",
+  "@id": `${SITE_ORIGIN}/#website`,
+  name: "課表查詢",
+  alternateName: "WG課表查詢",
+  url: `${SITE_ORIGIN}/`,
+  description: "快速查詢 World Gym（WG）各分店課表、老師、時段。",
+  inLanguage: "zh-TW",
+};
+
+// scrapedAt 是台灣時間且帶 +08:00 後綴的 ISO 8601 字串（見 CLAUDE.md 的時間戳慣例），直接沿用，不經過 Date。
+const ISO_8601_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+
+// 分店頁的 JSON-LD（回傳 JSON 字串）：刻意只用 WebSite + WebPage，不輸出 ExerciseGym / LocalBusiness / Event /
+// Course / ItemList / BreadcrumbList，也不輸出地址、電話、座標、評分——課表區塊是視覺隱藏的（結構化資料要與可見
+// 內容相符），而且不能替真實的健身房建立實體。所有 UA 拿到的內容完全相同。
+export function buildBranchJsonLd(branch, scrapedAt) {
+  const { title, description, canonical } = buildBranchMeta(branch);
+  const webPage = {
+    "@type": "WebPage",
+    "@id": `${canonical}#webpage`,
+    url: canonical,
+    name: title,
+    description,
+    inLanguage: "zh-TW",
+    isPartOf: { "@id": WEBSITE_NODE["@id"] },
+  };
+  if (typeof scrapedAt === "string" && ISO_8601_PATTERN.test(scrapedAt)) webPage.dateModified = scrapedAt;
+  // "<" 跳脫成 \u003c（JSON 裡等同 "<"）：分店名稱若含 </script> 之類字元，不會破壞 HTML。
+  return JSON.stringify({ "@context": "https://schema.org", "@graph": [WEBSITE_NODE, webPage] }).replace(/</g, "\\u003c");
+}
+
+// 改寫 <title>、description、og/twitter、canonical、JSON-LD，並把課表區塊放進 #loadingOverlay：
 // overlay 是不透明、固定全螢幕的載入遮罩，init() 結束時會整個 remove()，區塊跟著消失，
 // 使用者畫面與沒注入時一致（不會有重複的課表，也不會位移）。
 export function rewriteHtml(response, branch, fragment) {
-  const title = `World Gym ${branch.name} 分店（${branch.region}）團體課表｜課表查詢`;
-  const ogTitle = `World Gym ${branch.name} 分店團體課表`;
-  const description = `World Gym ${branch.name} 分店（${branch.region}）團體教室每週課表：依星期列出上課時間、課程與老師，資料每日更新。`;
-  // canonical / og:url 用 slug（見 branchUrl.js）；短代碼與 slug 兩種寫法的舊網址都會得到同一個 canonical。
-  const canonical = `${SITE_ORIGIN}/?branch=${branchUrlParam(branch.slug, branch.code)}&room=1`;
+  const { title, ogTitle, description, canonical } = buildBranchMeta(branch);
   const setContent = (value) => ({ element(el) { el.setAttribute("content", value); } });
-  const rewritten = new HTMLRewriter()
+  let jsonLd = null;
+  try {
+    jsonLd = buildBranchJsonLd(branch, fragment.scrapedAt);
+  } catch (e) {
+    console.error("分店 JSON-LD 產生失敗，沿用首頁的", e);
+  }
+  let jsonLdSeen = 0;
+  const rewriter = new HTMLRewriter()
     .on("title", { element(el) { el.setInnerContent(title); } })
     .on('meta[name="description"]', setContent(description))
     .on('meta[property="og:title"]', setContent(ogTitle))
@@ -123,8 +173,18 @@ export function rewriteHtml(response, branch, fragment) {
     .on('meta[name="twitter:title"]', setContent(title))
     .on('meta[name="twitter:description"]', setContent(description))
     .on('link[rel="canonical"]', { element(el) { el.setAttribute("href", canonical); } })
-    .on("#loadingOverlay", { element(el) { el.append(fragment.blockHtml, { html: true }); } })
-    .transform(response);
+    .on("#loadingOverlay", { element(el) { el.append(fragment.blockHtml, { html: true }); } });
+  // 第一個 JSON-LD 換成分店版（html:true 才不會把 JSON 內容再做 HTML 跳脫），其餘移除，確保分店頁只剩一個。
+  if (jsonLd) {
+    rewriter.on('script[type="application/ld+json"]', {
+      element(el) {
+        jsonLdSeen += 1;
+        if (jsonLdSeen === 1) el.setInnerContent(jsonLd, { html: true });
+        else el.remove();
+      },
+    });
+  }
+  const rewritten = rewriter.transform(response);
   // 內容已經跟原本的靜態檔不同，不能沿用它的 ETag/Last-Modified（瀏覽器/爬蟲拿舊驗證碼回來問會得到 304，卡在舊內容）。
   const headers = new Headers(rewritten.headers);
   headers.delete("ETag");
