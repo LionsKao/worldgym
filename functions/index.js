@@ -13,11 +13,19 @@ export async function onRequestGet(context) {
   const headers = new Headers(context.request.headers);
   headers.delete("If-None-Match");
   headers.delete("If-Modified-Since");
-  const [response, fragment] = await Promise.all([
+  const [response, { fragment, status }] = await Promise.all([
     context.next(new Request(context.request, { headers })),
     getFragment(context, branch),
   ]);
   const isHtml = (response.headers.get("Content-Type") || "").includes("text/html");
-  if (!fragment || !response.ok || !isHtml) return response;
-  return rewriteHtml(response, branch, fragment);
+  if (!fragment || !response.ok || !isHtml) return withStatus(response, fragment ? "passthrough" : status);
+  return withStatus(rewriteHtml(response, branch, fragment), status);
+}
+
+// X-SSR-Status：只在網址符合注入條件時才加，標示這次有沒有注入、沒注入的原因（hit/miss=有注入，
+// no-data/too-many/no-fixed/error:…=退回原頁），純粹排查用，不影響頁面內容。
+function withStatus(response, status) {
+  const out = new Response(response.body, response);
+  out.headers.set("X-SSR-Status", status);
+  return out;
 }

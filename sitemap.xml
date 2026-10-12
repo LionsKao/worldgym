@@ -541,12 +541,6 @@
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://worldgym.pages.dev/?branch=89&amp;room=1</loc>
-    <lastmod>2026-10-12</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
     <loc>https://worldgym.pages.dev/?branch=90&amp;room=1</loc>
     <lastmod>2026-10-12</lastmod>
     <changefreq>daily</changefreq>
@@ -644,12 +638,6 @@
   </url>
   <url>
     <loc>https://worldgym.pages.dev/?branch=106&amp;room=1</loc>
-    <lastmod>2026-10-12</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://worldgym.pages.dev/?branch=107&amp;room=1</loc>
     <lastmod>2026-10-12</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.6</priority>

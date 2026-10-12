@@ -66,13 +66,15 @@ function renderBlock(branch, rows, oldestScrapedAt) {
 }
 
 // 查 D1（不含代課：flagged 的是 8~14 天後的代課，帶日期、很快過期，不放進會被快取的 HTML）。
-// 回傳要注入的片段資料；查不到、超量或出錯一律回 null，呼叫端就原樣放行。
+// 回傳 { fragment, status }：查不到、超量或出錯 fragment 為 null，呼叫端就原樣放行；
+// status 只用來寫進 X-SSR-Status 回應標頭，方便從外面排查為什麼沒注入。
 async function buildFragment(env, branch) {
   const result = await withTimeout(queryClasses(env.DB, { branch: [branch.slug], room: ["團體教室"] }), D1_TIMEOUT_MS);
-  if (result.rows.length === 0 || result.rows.length > RESULT_COUNT_WARN_LIMIT) return null;
+  if (result.rows.length === 0) return { fragment: null, status: "no-data" };
+  if (result.rows.length > RESULT_COUNT_WARN_LIMIT) return { fragment: null, status: "too-many" };
   const fixedRows = result.rows.filter((row) => !row.flagged);
-  if (fixedRows.length === 0) return null;
-  return { blockHtml: renderBlock(branch, fixedRows, result.oldestScrapedAt) };
+  if (fixedRows.length === 0) return { fragment: null, status: "no-fixed" };
+  return { fragment: { blockHtml: renderBlock(branch, fixedRows, result.oldestScrapedAt) }, status: "miss" };
 }
 
 // 片段快取：只快取查 D1 的結果，不快取整份 HTML，index.html 一部署就是最新的。
@@ -82,22 +84,22 @@ export async function getFragment(context, branch) {
   const cacheKey = new Request(`${SITE_ORIGIN}/_ssr/${branch.slug}`);
   try {
     const hit = await cache.match(cacheKey);
-    if (hit) return await hit.json();
+    if (hit) return { fragment: await hit.json(), status: "hit" };
   } catch (e) {
     console.error("SSR 片段快取讀取失敗", e);
   }
   try {
-    const fragment = await buildFragment(context.env, branch);
+    const { fragment, status } = await buildFragment(context.env, branch);
     if (fragment) {
       const body = new Response(JSON.stringify(fragment), {
         headers: { "Content-Type": "application/json", "Cache-Control": `public, max-age=${FRAGMENT_CACHE_SECONDS}` },
       });
       context.waitUntil(cache.put(cacheKey, body).catch((e) => console.error("SSR 片段快取寫入失敗", e)));
     }
-    return fragment;
+    return { fragment, status };
   } catch (e) {
     console.error("SSR 片段查詢失敗，退回原頁", e);
-    return null;
+    return { fragment: null, status: `error: ${String(e && e.message).slice(0, 80)}` };
   }
 }
 
