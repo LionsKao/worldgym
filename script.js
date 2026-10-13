@@ -563,25 +563,13 @@ function makePill(name, value, label, checked){
 
 function renderGrid(containerId, defaultName, options){
   const grid = document.getElementById(containerId);
-  grid.querySelectorAll(".pill, .empty-hint, .region-subtitle").forEach(el => el.remove());
+  grid.querySelectorAll(".pill, .empty-hint").forEach(el => el.remove());
   if (options.length === 0){
     grid.insertAdjacentHTML("beforeend", '<span class="empty-hint">目前沒有資料</span>');
     return;
   }
   const fragment = document.createDocumentFragment();
-  let lastRegion = undefined;
   options.forEach(opt => {
-    if (opt.region !== undefined && opt.region !== lastRegion){
-      if (lastRegion !== undefined){
-        const sub = document.createElement("span");
-        sub.className = "region-subtitle";
-        const line = document.createElement("span");
-        line.className = "region-line";
-        sub.appendChild(line);
-        fragment.appendChild(sub);
-      }
-      lastRegion = opt.region;
-    }
     fragment.appendChild(makePill(opt.name || defaultName, opt.value, opt.label, opt.checked));
   });
   grid.appendChild(fragment);
@@ -652,23 +640,8 @@ function initBranchGrid(){
 
       saveZoneState(zoneName, !isCollapsing);
 
-      if (isCollapsing) {
-        group.classList.add("hidden-opacity");
-        toggle.classList.remove("expanded");
-
-        setTimeout(() => {
-          if (group.classList.contains("hidden-opacity")) {
-            group.classList.add("collapsed");
-          }
-        }, 250);
-      } else {
-        group.classList.remove("collapsed");
-        toggle.classList.add("expanded");
-
-        setTimeout(() => {
-          group.classList.remove("hidden-opacity");
-        }, 10);
-      }
+      group.classList.toggle("collapsed", isCollapsing);
+      toggle.classList.toggle("expanded", !isCollapsing);
     });
   });
 
@@ -679,7 +652,6 @@ function initBranchGrid(){
     if (!toggle) return;
     const isExpanded = getZoneState(zoneName, zoneName === "台北區");
     group.classList.toggle("collapsed", !isExpanded);
-    group.classList.remove("hidden-opacity");
     toggle.classList.toggle("expanded", isExpanded);
   });
 
@@ -1725,19 +1697,6 @@ document.getElementById("shareUrlBtn").addEventListener("click", () => {
     .then(() => showPillWarning(document.getElementById("shareUrlBtn"), "已複製網址到剪貼簿"))
     .catch(() => showPillWarning(document.getElementById("shareUrlBtn"), "複製失敗，請手動選取"));
 });
-
-// 舊版「今天」曾經是獨立的篩選值，存在 wg_selected_day.date 裡；「今天」改成快捷鍵後這欄位沒用了，清掉。
-(function migrateAwayFromDateFilter(){
-  try{
-    const raw = localStorage.getItem("wg_selected_day");
-    if (!raw) return;
-    const state = JSON.parse(raw);
-    if (state && Object.prototype.hasOwnProperty.call(state, "date")){
-      delete state.date;
-      localStorage.setItem("wg_selected_day", JSON.stringify(state));
-    }
-  } catch(e){ /* ignore */ }
-})();
 
 async function init(){
   // 已登記的通知（已裝 PWA 且已授權通知才會真的打 API）只有「畫查詢結果的鈴鐺」要用，不必擋在最前面：
