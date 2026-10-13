@@ -80,7 +80,9 @@ function normalizeRoomName(rawRoomName) {
 }
 
 // Mirrors the transform rules from the legacy group.aspx.cs GetWorldGymData.
-function transformRawClass(raw, branchSlug, branchName) {
+// scrapedAt 由呼叫端傳入：同一間分店同一輪的所有列要共用同一個值（見 ingestBranchClasses），
+// 不帶就用現在時間（單獨呼叫這個函式時）。
+function transformRawClass(raw, branchSlug, branchName, scrapedAt = nowTaiwanIso()) {
   const className = (raw.other_class_name || "").trim().replace(/®/g, "").replace(/GROUP/gi, "").trim();
   if (!className) return null;
 
@@ -108,14 +110,17 @@ function transformRawClass(raw, branchSlug, branchName) {
     teacherEmpNo,
     roomName,
     isSubstitute: raw.is_sub === "Y" ? 1 : 0,
-    scrapedAt: nowTaiwanIso(),
+    scrapedAt,
   };
 }
 
+// 分批送出並回傳所有語句的結果（依序）。同一批在 D1 裡是一個 transaction，批與批之間不是。
 async function runBatched(db, statements) {
+  const results = [];
   for (let i = 0; i < statements.length; i += BATCH_CHUNK_SIZE) {
-    await db.batch(statements.slice(i, i + BATCH_CHUNK_SIZE));
+    results.push(...(await db.batch(statements.slice(i, i + BATCH_CHUNK_SIZE))));
   }
+  return results;
 }
 
 async function upsertBranches(db, branches) {
@@ -130,7 +135,16 @@ async function upsertBranches(db, branches) {
   await runBatched(db, stmts);
 }
 
-async function upsertClasses(db, transformed) {
+// 把這間分店這一輪的課表換成 transformed，回傳清掉的舊列數。
+// 不是「先 DELETE 整間分店、再分批重寫」：那樣在分批寫入的這段時間（幾百毫秒到幾秒），這間分店是空的或只有一部分，
+// 剛好有人查詢、或 sitemap/SSR 在這時重建並快取 30 分鐘，就看到殘缺資料；寫到一半失敗，更會留下殘缺資料到下一輪。
+// 改成「先 upsert 這一輪的全部列（id 相同的原地更新），最後再清掉這間分店比這一輪舊的列」：
+// - 任何時刻看得到的至少是舊資料，或舊資料加新資料（換了老師的課短暫有兩筆），不會有空窗
+// - 中途失敗時舊資料原封不動，下一輪再清
+// - 清除語句放在最後一批，跟最後一批的 upsert 在同一個 transaction 裡一起成功或一起失敗
+// 這一輪所有列共用同一個 scrapedAt，它就是「比它舊的才算舊資料」的分水嶺。
+// 這間分店這一輪沒有任何課（transformed 空）時，只剩清除語句，等於整間清空，跟以前一樣。
+async function replaceBranchClasses(db, branchSlug, transformed, scrapedAt) {
   const stmts = transformed.map((c) =>
     db
       .prepare(
@@ -140,19 +154,14 @@ async function upsertClasses(db, transformed) {
       )
       .bind(c.id, c.branchSlug, c.branchName, c.date, c.dayOfWeek, c.startTime, c.startHour, c.className, c.teacherName, c.teacherEmpNo, c.roomName, c.isSubstitute, c.scrapedAt)
   );
-  await runBatched(db, stmts);
-}
-
-// D1/SQLite 沒有 TRUNCATE TABLE 語法，DELETE FROM WHERE branchSlug 就是清掉這一間分店的舊資料。
-// 只在這間分店的官網資料真的抓到之後才呼叫（見下面 ingestBranchClasses）——
-// 抓取失敗的話不會走到這裡，該分店舊資料原封不動保留，不會被清空後補不回來。
-async function deleteBranchClasses(db, branchSlug) {
-  const res = await db.prepare("DELETE FROM classes WHERE branchSlug = ?").bind(branchSlug).run();
-  return res.meta.changes || 0;
+  stmts.push(db.prepare("DELETE FROM classes WHERE branchSlug = ? AND scrapedAt < ?").bind(branchSlug, scrapedAt));
+  const results = await runBatched(db, stmts);
+  return results[results.length - 1]?.meta?.changes || 0; // 只是給報表用的數字，寫入都成功了就不該因為它出錯
 }
 
 // 把一間分店「已經抓好的官網原始 JSON」轉換＋寫進 D1，呼叫端是本檔案下面的 runScrape。
-// 每間分店各自負責自己的資料：先刪這間分店的舊資料，再寫入這次抓到的新資料，不影響其他分店。
+// 每間分店各自負責自己的資料：寫入這次抓到的新資料、清掉這間分店的舊資料（寫法見 replaceBranchClasses），
+// 不影響其他分店；只有官網資料真的抓到才會走到這裡，抓取失敗的話該分店舊資料原封不動。
 async function ingestBranchClasses(db, branchSlug, branchName, rawClasses) {
   const firstDate = todayAtMidnight();
   const lastDate = addDays(firstDate, SCHEDULE_DAYS_AHEAD);
@@ -161,21 +170,22 @@ async function ingestBranchClasses(db, branchSlug, branchName, rawClasses) {
   const lastDateIso = formatDateIso(lastDate);
   const nearDateIso = formatDateIso(nearDate);
 
+  // 這一輪這間分店所有列共用同一個 scrapedAt（replaceBranchClasses 靠它分辨新舊資料）。
+  const scrapedAt = nowTaiwanIso();
   // day0~day7 全存（見上方 NEAR_DAYS_AHEAD 的說明）；剩餘天數（day8~day13）只存代課，配合查詢端
   // （queryClasses.js 的 NORMAL_DAYS_AHEAD/SUBSTITUTE_DAYS_AHEAD 窗口）本來就只在遠期顯示代課。
   const transformed = rawClasses
-    .map((raw) => transformRawClass(raw, branchSlug, branchName))
+    .map((raw) => transformRawClass(raw, branchSlug, branchName, scrapedAt))
     .filter(Boolean)
     .filter((item) => item.date >= todayIso && item.date <= lastDateIso)
     .filter((item) => item.date <= nearDateIso || item.isSubstitute === 1);
 
-  const staleDeleted = await deleteBranchClasses(db, branchSlug);
-  await upsertClasses(db, transformed);
+  const staleDeleted = await replaceBranchClasses(db, branchSlug, transformed, scrapedAt);
   return { classesWritten: transformed.length, staleDeleted };
 }
 
 // 清掉「不在目前 BRANCHES 清單裡」的分店舊課表資料——處理分店關店、從 branches-seed.js
-// 移除之後留下的孤兒資料（因為 ingestBranchClasses 現在只在該分店還有被抓到資料時才會刪它，
+// 移除之後留下的孤兒資料（因為 ingestBranchClasses 只會清「自己這間分店」比這一輪舊的資料，
 // 一旦分店整個從清單消失，就再也沒有人會去清它的舊資料）。
 // 不用「scrapedAt 太久沒更新」這種時間門檻來判斷，是因為爬蟲目前沒有自動排程，只能手動按重抓，
 // 太久沒人按的話，還在營業的分店也會被時間門檻誤判成該清了。直接比對清單最準，不管多久沒重抓都不會誤刪。

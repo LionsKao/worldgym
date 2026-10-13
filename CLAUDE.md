@@ -111,6 +111,8 @@ worker/
 
 **時間戳一律用台灣時間（`+08:00`），不是 UTC**：`createdAt`/`updatedAt`/`scrapedAt`/`ads.startAt`/`ads.endAt` 都是位移 8 小時再貼 `+08:00` 後綴的 ISO 字串，才能跟其他時間戳直接用字串比較/排序。一律用 `worker/src/util.js` 的 `nowTaiwanIso()`（要往前/往後推用 `taiwanIso(offsetMs)`，要台灣年月日時分用 `taiwanClock()` 再讀 `getUTC*()`，台灣今天的日期用 `todayIsoTaipei()`），不要在各檔案自己寫 `Date.now() + 8 * 3600 * 1000`，也不要混用 `new Date().toISOString()`（那是 UTC）。
 
+**爬蟲寫入 `classes` 的方式（`worker/src/scrape.js` 的 `replaceBranchClasses`）：先 upsert 這間分店這一輪的全部列、最後在最後一批裡清掉「這間分店 `scrapedAt` 比這一輪舊」的列**，不是先整間 DELETE 再分批重寫。那樣寫入的這幾百毫秒到幾秒，這間分店是空的或只有一部分，剛好有人查詢、或 sitemap/SSR 在這時重建並快取 30 分鐘就會看到殘缺資料；寫到一半失敗更會留下殘缺資料。現在任何時刻看到的至少是舊資料（換了老師的課短暫有兩筆），中途失敗舊資料原封不動、下一輪再清。因此**同一間分店同一輪的所有列共用同一個 `scrapedAt`**（它是新舊資料的分水嶺），改這段時不要改回逐列 `nowTaiwanIso()`，也不要改回先刪光。`staleDeleted` 現在是「真正過期被清掉的筆數」，不是「整間先刪光的筆數」。
+
 新增/修改 ads table 結構：`schema.sql` 只在建立全新資料庫時整份重跑（會清空所有表）；對既有正式資料庫要用 `worker/migrations/` 新增檔案 + `wrangler d1 execute --remote --file=`，不要直接改 schema.sql 後重跑。
 
 ### 推播提醒 (PWA)
