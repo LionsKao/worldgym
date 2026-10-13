@@ -306,6 +306,7 @@ function formatReminderTime(iso){
   return `${month}/${date} 週${weekday} ${hour}${minute}`;
 }
 
+const REMINDER_EMPTY_HTML = '<div class="empty-hint" id="reminderEmptyHint">沒有通知</div>';
 let pendingReminderBell = null;
 async function registerReminderForBell(bell){
   bell.classList.add("busy");
@@ -395,7 +396,7 @@ async function renderReminderList(){
 
   grid.innerHTML = "";
   if (list.length === 0){
-    grid.insertAdjacentHTML("beforeend", '<div class="empty-hint" id="reminderEmptyHint">沒有通知</div>');
+    grid.insertAdjacentHTML("beforeend", REMINDER_EMPTY_HTML);
     return;
   }
   list.forEach((r) => {
@@ -449,7 +450,7 @@ document.getElementById("reminderGrid").addEventListener("click", async (e) => {
       setTimeout(() => {
         row.remove();
         if (document.getElementById("reminderGrid").children.length === 0){
-          document.getElementById("reminderGrid").innerHTML = '<div class="empty-hint" id="reminderEmptyHint">沒有通知</div>';
+          document.getElementById("reminderGrid").innerHTML = REMINDER_EMPTY_HTML;
         }
       }, 250);
     }, 1000);
@@ -817,12 +818,6 @@ document.addEventListener("click", (e) => {
   }
 });
 
-document.getElementById("branchGrid").addEventListener("change", (e) => {
-  const input = e.target;
-  if (input.matches('input[name="branch"]') && input.checked) incrementClickCount("wg_branch_clicks", input.value);
-  updateSubmitState();
-});
-
 const githubLinkIcon = document.getElementById("githubLinkIcon");
 githubLinkIcon.addEventListener("click", () => trackEvent("click_github_icon", {}));
 
@@ -868,11 +863,15 @@ const notifyInfoBtnWrap = document.getElementById("notifyInfoBtnWrap");
 if (isStandaloneDisplay()) notifyInfoBtnWrap.classList.add("hidden");
 setupTogglePopover(document.getElementById("notifyInfoBtn"), document.getElementById("notifyInfoTooltip"), "#notifyInfoBtnWrap");
 
+// 某一組篩選（input 的 name）目前勾選的值。
+function checkedValues(name){
+  return Array.from(document.querySelectorAll(`input[name="${name}"]:checked`)).map(i => i.value);
+}
 // 星期／分店／課程／老師：勾選後記住選擇，下次打開頁面自動套用。
 function saveSelection(key, names){
   const state = {};
   names.forEach(name => {
-    state[name] = Array.from(document.querySelectorAll(`input[name="${name}"]:checked`)).map(i => i.value);
+    state[name] = checkedValues(name);
   });
   localStorage.setItem(key, JSON.stringify(state));
 }
@@ -888,6 +887,11 @@ function applySavedSelection(key, names){
   const state = readStoredJson(key, null);
   if (!state) return;
   applyStateToInputs(state, names);
+}
+// 還原篩選勾選：網址帶了參數（分享連結）就用網址的，否則用上次存在 localStorage 的。
+function restoreFilterGroups(urlState, names){
+  if (urlState) applyStateToInputs(urlState, names);
+  else names.forEach(name => applySavedSelection(`wg_selected_${name}`, [name]));
 }
 // 分享網址：把目前篩選條件編碼進網址 query string，讓別人打開網址時能直接重現同一個查詢結果。
 // room 的值（"團體教室"/"飛輪教室"）中文字很長，網址上用短代碼 1/2 表示。
@@ -931,7 +935,12 @@ document.getElementById("dayGrid").addEventListener("change", () => { saveSelect
 document.getElementById("timeGrid").addEventListener("change", () => { saveSelection("wg_selected_time", ["time"]); updateResetButtonState(); });
 
 document.getElementById("roomGrid").addEventListener("change", () => { saveSelection("wg_selected_room", ["room"]); updateResetButtonState(); });
-document.getElementById("branchGrid").addEventListener("change", () => { saveSelection("wg_selected_branch", ["branch"]); updateResetButtonState(); });
+document.getElementById("branchGrid").addEventListener("change", (e) => {
+  const input = e.target;
+  if (input.matches('input[name="branch"]') && input.checked) incrementClickCount("wg_branch_clicks", input.value);
+  updateSubmitState();
+  saveSelection("wg_selected_branch", ["branch"]); updateResetButtonState();
+});
 document.getElementById("courseGrid").addEventListener("change", (e) => {
   if (e.target.checked) incrementClickCount("wg_course_clicks", e.target.value);
   saveSelection("wg_selected_course", ["course"]); updateResetButtonState();
@@ -973,7 +982,7 @@ function saveFavorites(favs){
 function currentFilterState(){
   const state = {};
   FILTER_GROUPS.forEach(name => {
-    state[name] = Array.from(document.querySelectorAll(`input[name="${name}"]:checked`)).map(i => i.value);
+    state[name] = checkedValues(name);
   });
   return state;
 }
@@ -1009,13 +1018,16 @@ const FUNNY_DEFAULT_FAVORITE_LABELS = [
   "北市正常上班上課 🌀",
   "咕嚕咕嚕 🌀",
 ];
+function randomFunnyFavoriteLabel(){
+  return FUNNY_DEFAULT_FAVORITE_LABELS[Math.floor(Math.random() * FUNNY_DEFAULT_FAVORITE_LABELS.length)];
+}
 function favoriteLabel(state){
   const branchLabels = (state.branch || []).map(branchSlugToName);
   if (branchLabels.length){
     const joined = branchLabels.join("、");
     return joined.length > 15 ? joined.slice(0, 15) + "…" : joined;
   }
-  return FUNNY_DEFAULT_FAVORITE_LABELS[Math.floor(Math.random() * FUNNY_DEFAULT_FAVORITE_LABELS.length)];
+  return randomFunnyFavoriteLabel();
 }
 const FAVORITE_EMPTY_HINT = "現在可以自訂最愛，選好篩選後按「加到最愛」。";
 function renderFavorites(){
@@ -1059,7 +1071,7 @@ document.getElementById("addFavoriteBtn").addEventListener("click", () => {
 });
 favNameInput.addEventListener("input", syncFavNameClearBtn);
 document.getElementById("favNameRandomBtn").addEventListener("click", () => {
-  favNameInput.value = FUNNY_DEFAULT_FAVORITE_LABELS[Math.floor(Math.random() * FUNNY_DEFAULT_FAVORITE_LABELS.length)];
+  favNameInput.value = randomFunnyFavoriteLabel();
   syncFavNameClearBtn();
 });
 favNameClearBtn.addEventListener("click", () => {
@@ -1402,7 +1414,7 @@ async function runScheduleQuery(state, isRetry){
 let lastResultRows = [];
 let TEACHER_NAMES = [];
 function renderTeacherGrid(){
-  const checked = new Set(Array.from(document.querySelectorAll('input[name="teacher"]:checked')).map(i => i.value));
+  const checked = new Set(checkedValues("teacher"));
   renderGrid("teacherGrid", "teacher", sortByClickCount(TEACHER_NAMES, "wg_teacher_clicks").map(n => ({ value: n, label: n, checked: checked.has(n) })));
 }
 // 從結果頁按「返回」時只需要依最新點擊次數重新排序既有的老師 pill，不用整個砍掉重建 DOM
@@ -1496,14 +1508,14 @@ document.getElementById("resultArea").addEventListener("click", async (e) => {
 });
 
 function showResultView(){
-  document.getElementById("filterForm").classList.add("hidden");
-  document.getElementById("settingsSheet").classList.add("hidden");
-  document.getElementById("favoriteSheet").classList.add("hidden");
-  document.getElementById("mailDisclaimerSheet").classList.add("hidden");
-  document.getElementById("quickLinksSheet").classList.add("hidden");
+  setHidden(["filterForm", "settingsSheet", "favoriteSheet", "mailDisclaimerSheet", "quickLinksSheet"], true);
   fadeInView(document.getElementById("resultView"));
-  document.getElementById("backBtnWrap").classList.remove("hidden");
+  setHidden(["backBtnWrap"], false);
   window.scrollTo({ top: 0, behavior: "smooth" });
+}
+// 把這些 id 的元素一次顯示（hidden=false）或隱藏（hidden=true），各個畫面（篩選、結果、通知）切換時用。
+function setHidden(ids, hidden){
+  ids.forEach(id => document.getElementById(id).classList.toggle("hidden", hidden));
 }
 function fadeInView(el){
   el.classList.remove("hidden");
@@ -1513,39 +1525,21 @@ function fadeInView(el){
 }
 function showMailView(){
   trackEvent("open_reminder_list", {});
-  document.getElementById("mainFormSheet").classList.add("hidden");
-  document.getElementById("settingsSheet").classList.add("hidden");
-  document.getElementById("favoriteSheet").classList.add("hidden");
+  setHidden(["mainFormSheet", "settingsSheet", "favoriteSheet"], true);
   fadeInView(document.getElementById("reminderView"));
   fadeInView(document.getElementById("mailView"));
-  document.getElementById("searchTrendSheet").classList.remove("hidden");
-  document.getElementById("branchStatsSheet").classList.remove("hidden");
-  document.getElementById("courseStatsSheet").classList.remove("hidden");
-  document.getElementById("teacherStatsSheet").classList.remove("hidden");
-  document.getElementById("mailDisclaimerSheet").classList.remove("hidden");
-  document.getElementById("quickLinksSheet").classList.remove("hidden");
-  document.getElementById("mailBackBtnWrap").classList.remove("hidden");
+  setHidden(["searchTrendSheet", "branchStatsSheet", "courseStatsSheet", "teacherStatsSheet", "mailDisclaimerSheet", "quickLinksSheet", "mailBackBtnWrap"], false);
   document.getElementById("mailContent").disabled = false;
-  document.getElementById("mailSentOverlay").classList.add("hidden");
+  setHidden(["mailSentOverlay"], true);
   document.getElementById("mailSendBtn").disabled = false;
   renderReminderList();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 function showFilterView(){
-  document.getElementById("resultView").classList.add("hidden");
-  document.getElementById("backBtnWrap").classList.add("hidden");
-  document.getElementById("reminderView").classList.add("hidden");
-  document.getElementById("mailView").classList.add("hidden");
-  document.getElementById("searchTrendSheet").classList.add("hidden");
-  document.getElementById("branchStatsSheet").classList.add("hidden");
-  document.getElementById("courseStatsSheet").classList.add("hidden");
-  document.getElementById("teacherStatsSheet").classList.add("hidden");
-  document.getElementById("mailDisclaimerSheet").classList.add("hidden");
-  document.getElementById("quickLinksSheet").classList.add("hidden");
-  document.getElementById("mailBackBtnWrap").classList.add("hidden");
+  setHidden(["resultView", "backBtnWrap", "reminderView", "mailView", "searchTrendSheet", "branchStatsSheet", "courseStatsSheet", "teacherStatsSheet", "mailDisclaimerSheet", "quickLinksSheet", "mailBackBtnWrap"], true);
   document.getElementById("mailContent").value = "";
   document.getElementById("mailContent").disabled = false;
-  document.getElementById("mailSentOverlay").classList.add("hidden");
+  setHidden(["mailSentOverlay"], true);
   document.getElementById("mailSendBtn").disabled = false;
   // reorderTeacherGrid() 用 appendChild 重排 #teacherGrid 裡寬度不一的 pill（flex-wrap），
   // 排序結果會改變換行位置、進而改變 grid 高度；一定要趁 mainFormSheet 還是 display:none
@@ -1556,9 +1550,7 @@ function showFilterView(){
   // 前面冒出來的 favoriteSheet 推擠位置，造成 Cloudflare Web Analytics 抓到的
   // #mainFormSheet CLS（mainFormSheet 本身沒有淡入效果，CSS 只對 filterForm 那層
   // 做 opacity 動畫，所以這裡直接切 hidden 就好，不用呼叫 fadeInView 多強制一次 reflow）。
-  document.getElementById("settingsSheet").classList.remove("hidden");
-  document.getElementById("favoriteSheet").classList.remove("hidden");
-  document.getElementById("mainFormSheet").classList.remove("hidden");
+  setHidden(["settingsSheet", "favoriteSheet", "mainFormSheet"], false);
   fadeInView(document.getElementById("filterForm"));
   history.replaceState(null, "", location.pathname);
 }
@@ -1676,6 +1668,12 @@ document.getElementById("filterForm").addEventListener("submit", async (e) => {
 });
 document.getElementById("backBtn").addEventListener("click", showFilterView);
 
+// 複製文字到剪貼簿，成功/失敗都在按鈕上方顯示提示。
+function copyTextWithToast(text, btn, successMessage){
+  navigator.clipboard.writeText(text)
+    .then(() => showPillWarning(btn, successMessage))
+    .catch(() => showPillWarning(btn, "複製失敗，請手動選取"));
+}
 function formatResultBody({ c }){
   return `${c.branchName} 週${WEEKDAY_LABEL[c.dayOfWeek]} ${c.startTime} ${c.className} ${c.teacherName}`;
 }
@@ -1686,15 +1684,11 @@ function formatResultLine(row){
 document.getElementById("copyResultsBtn").addEventListener("click", () => {
   const text = lastResultRows.map(formatResultLine).join("\n");
   trackEvent("copy_results", { result_count: lastResultRows.length });
-  navigator.clipboard.writeText(text)
-    .then(() => showPillWarning(document.getElementById("copyResultsBtn"), "已複製課程文字到剪貼簿"))
-    .catch(() => showPillWarning(document.getElementById("copyResultsBtn"), "複製失敗，請手動選取"));
+  copyTextWithToast(text, document.getElementById("copyResultsBtn"), "已複製課程文字到剪貼簿");
 });
 document.getElementById("shareUrlBtn").addEventListener("click", () => {
   trackEvent("share_url", {});
-  navigator.clipboard.writeText(location.href)
-    .then(() => showPillWarning(document.getElementById("shareUrlBtn"), "已複製網址到剪貼簿"))
-    .catch(() => showPillWarning(document.getElementById("shareUrlBtn"), "複製失敗，請手動選取"));
+  copyTextWithToast(location.href, document.getElementById("shareUrlBtn"), "已複製網址到剪貼簿");
 });
 
 async function init(){
@@ -1705,11 +1699,8 @@ async function init(){
   const urlState = getUrlFilterState();
   // 星期/時段/教室類型的選項是固定的，已經寫死在 index.html（同分店清單那次的做法），
   // 不用再用 JS 重新產生 pill，避免頁面剛載入、JS 還沒跑完時 fieldset 是空的造成 CLS。
-  if (urlState) applyStateToInputs(urlState, ["day"]);
-  else applySavedSelection("wg_selected_day", ["day"]);
-
-  if (urlState) applyStateToInputs(urlState, ["time"]);
-  else applySavedSelection("wg_selected_time", ["time"]);
+  restoreFilterGroups(urlState, ["day"]);
+  restoreFilterGroups(urlState, ["time"]);
 
   if (urlState) applyStateToInputs(urlState, ["room"]);
   else if (localStorage.getItem("wg_selected_room")) applySavedSelection("wg_selected_room", ["room"]);
@@ -1725,8 +1716,7 @@ async function init(){
   try{
     initBranchGrid();
     if (urlState && urlState.branch) urlState.branch = urlState.branch.map(v => BRANCH_URL_DECODE[v] || v);
-    if (urlState) applyStateToInputs(urlState, ["branch"]);
-    else applySavedSelection("wg_selected_branch", ["branch"]);
+    restoreFilterGroups(urlState, ["branch"]);
     updateSubmitState();
   } catch(e){
     console.error(e);
@@ -1737,11 +1727,7 @@ async function init(){
     TEACHER_NAMES = filterData.teacherNames || [];
     renderGrid("courseGrid", "course", sortByClickCount(filterData.classNames || [], "wg_course_clicks").map(n => ({ value: n, label: n })));
     renderTeacherGrid();
-    if (urlState) applyStateToInputs(urlState, ["course", "teacher"]);
-    else {
-      applySavedSelection("wg_selected_course", ["course"]);
-      applySavedSelection("wg_selected_teacher", ["teacher"]);
-    }
+    restoreFilterGroups(urlState, ["course", "teacher"]);
     updateSubmitState();
   } catch(e){
     console.error(e);
