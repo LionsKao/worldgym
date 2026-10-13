@@ -19,6 +19,11 @@ function adminFetch(path, options = {}){
   });
 }
 
+// adminFetch + 解析 JSON，狀態碼不是 2xx 就丟錯（見 common.js 的 readJsonOrThrow）。
+async function adminJson(path, options){
+  return readJsonOrThrow(await adminFetch(path, options));
+}
+
 // 登入流程驗證的是使用者剛輸入、還沒存起來的密碼，所以不能用 adminFetch（它讀的是已存的 token）。
 // 驗證成功會換到一張有效期限的 session token（見 worker 的 issueAdminSession），之後改存/送
 // 這張，不是原始密碼本身——降低密碼實際被送出網路的次數。
@@ -47,6 +52,16 @@ function showAdminPage(){
   adminLoginBackBtnWrap.classList.add("hidden");
   adminPage.classList.remove("hidden");
   adminBackBtnWrap.classList.remove("hidden");
+}
+
+// 登入成功（輸入密碼或沿用還有效的 session）：存下新的 session token、顯示後台、載入四個面板。
+function enterAdmin(sessionToken){
+  setStoredToken(sessionToken);
+  showAdminPage();
+  loadAdStats();
+  loadFavoriteStats();
+  loadReminderStats();
+  loadQueryAccessStats();
 }
 let loginErrorTimer = null;
 
@@ -90,12 +105,7 @@ async function attemptLogin(){
   try{
     const result = await verifyToken(token);
     if (result?.sessionToken){
-      setStoredToken(result.sessionToken);
-      showAdminPage();
-      loadAdStats();
-      loadFavoriteStats();
-      loadReminderStats();
-      loadQueryAccessStats();
+      enterAdmin(result.sessionToken);
     } else if (result?.locked){
       showLoginError("嘗試次數過多，已暫時鎖定，請稍後再試");
     } else {
@@ -121,12 +131,7 @@ adminBackBtn.addEventListener("mouseleave", () => adminBackTooltip.classList.rem
   const stored = getStoredToken();
   const result = stored && await verifyToken(stored).catch(() => null);
   if (result?.sessionToken){
-    setStoredToken(result.sessionToken); // 換到新的 session token，滑動延長 7 天效期
-    showAdminPage();
-    loadAdStats();
-    loadFavoriteStats();
-    loadReminderStats();
-    loadQueryAccessStats();
+    enterAdmin(result.sessionToken); // 換到新的 session token，滑動延長 7 天效期
   } else {
     clearStoredToken();
     showLoginOverlay();
@@ -269,9 +274,7 @@ function renderAdStatsSelect(){
 
 async function loadAdStats(){
   try{
-    const res = await adminFetch("/adStats");
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    const data = await adminJson("/adStats");
     AD_STATS = Array.isArray(data.ads) ? data.ads : [];
     if (AD_STATS.length){
       renderAdStatsSelect();
@@ -287,6 +290,14 @@ async function loadAdStats(){
 adStatsSelect.addEventListener("change", () => renderAdStatsDetail(adStatsSelect.value));
 adStatusFilter.addEventListener("change", renderAdStatsSelect);
 
+// 在 wrapEl 裡（重新）畫一張近 CHART_MONTHS 個月的折線圖：先銷毀上一張，回傳新的圖表實例。
+// 最愛與提醒兩個面板共用，chartOptions 是 createLineChart 的 { data, series, ariaLabel }。
+function renderTrendChart(wrapEl, previousChart, chartOptions){
+  if (previousChart) previousChart.destroy();
+  wrapEl.innerHTML = '<div class="ad-chart-viewport"><canvas></canvas></div>';
+  return createLineChart(wrapEl.querySelector("canvas"), { aspectRatio: CHART_ASPECT_RATIO, ...chartOptions });
+}
+
 // --- 最愛統計：累積人數/次數用兩個大數字顯示，近 12 個月「建立人數/使用次數」跟其他雙數列折線圖同一套。 ---
 const favoriteStatsSummary = document.getElementById("favoriteStatsSummary");
 const favoriteTrendWrap = document.getElementById("favoriteTrendWrap");
@@ -298,18 +309,14 @@ function buildFavoriteTrendWindow(monthlyAdders, monthlyApplies, endMonth){
 
 async function loadFavoriteStats(){
   try{
-    const res = await adminFetch("/favoriteStats");
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    const data = await adminJson("/favoriteStats");
     favoriteStatsSummary.innerHTML = `
       <div class="favorite-stats-item"><div class="favorite-stats-num">${data.totalAdders || 0}</div><div class="favorite-stats-label">累積建立人數</div></div>
       <div class="favorite-stats-item"><div class="favorite-stats-num">${data.totalApplies || 0}</div><div class="favorite-stats-label">累積使用次數</div></div>
     `;
     const data12 = buildFavoriteTrendWindow(data.monthlyAdders || {}, data.monthlyApplies || {}, currentMonthKey());
-    if (favoriteTrendChartInstance){ favoriteTrendChartInstance.destroy(); favoriteTrendChartInstance = null; }
-    favoriteTrendWrap.innerHTML = '<div class="ad-chart-viewport"><canvas></canvas></div>';
-    favoriteTrendChartInstance = createLineChart(favoriteTrendWrap.querySelector("canvas"), {
-      data: data12, aspectRatio: CHART_ASPECT_RATIO,
+    favoriteTrendChartInstance = renderTrendChart(favoriteTrendWrap, favoriteTrendChartInstance, {
+      data: data12,
       series: [
         { key: "adders", label: "建立人數", color: "#2a78d6" },
         { key: "applies", label: "使用次數", color: "#eb6834" },
@@ -338,17 +345,13 @@ function buildReminderMonthlyWindow(monthly, endMonth){
 
 async function loadReminderStats(){
   try{
-    const res = await adminFetch("/reminderStats");
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    const data = await adminJson("/reminderStats");
     reminderStatsSummary.innerHTML = `
       <div class="favorite-stats-item"><div class="favorite-stats-num">${data.total || 0}</div><div class="favorite-stats-label">累積登記次數</div></div>
     `;
     const data12 = buildReminderMonthlyWindow(data.monthly || [], currentMonthKey());
-    if (reminderTrendChartInstance){ reminderTrendChartInstance.destroy(); reminderTrendChartInstance = null; }
-    reminderTrendWrap.innerHTML = '<div class="ad-chart-viewport"><canvas></canvas></div>';
-    reminderTrendChartInstance = createLineChart(reminderTrendWrap.querySelector("canvas"), {
-      data: data12, aspectRatio: CHART_ASPECT_RATIO,
+    reminderTrendChartInstance = renderTrendChart(reminderTrendWrap, reminderTrendChartInstance, {
+      data: data12,
       series: [{ key: "count", label: "登記次數", color: "#3fae8f" }],
       ariaLabel: `近 ${CHART_MONTHS} 個月提醒登記次數趨勢`,
     });
@@ -407,9 +410,7 @@ function renderAccessLogTable(ips){
 async function loadQueryAccessStats(){
   try{
     const days = accessLogDaysFilter.value || "7";
-    const res = await adminFetch(`/queryAccessStats?days=${encodeURIComponent(days)}`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    const data = await adminJson(`/queryAccessStats?days=${encodeURIComponent(days)}`);
     renderAccessLogTable(data.ips || []);
   } catch(e){
     console.error(e);
@@ -488,9 +489,7 @@ async function rescrapeViaCloudflare(onLog){
 // 一百多家分店那麼久，所以不用真的串流，這裡自己組幾行進度文字丟給 onLog，維持跟終端機一致的體驗。
 async function cleanupStaleBranches(onLog){
   onLog("🔍 比對目前分店清單...");
-  const res = await adminFetch("/cleanupStaleBranches", { method: "POST" });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  const data = await adminJson("/cleanupStaleBranches", { method: "POST" });
   if (data.staleBranches && data.staleBranches.length){
     data.staleBranches.forEach((slug) => onLog(`🗑️ 清除分店：${slug}`));
   } else {

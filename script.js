@@ -224,7 +224,7 @@ document.querySelector(".ad-banner")?.addEventListener("click", () => {
 // 除錯用旁路：正式環境使用者不會知道這個 localStorage key，只是方便開發時在一般分頁看到鈴鐺。
 function isPWAInstalled(){
   if (localStorage.getItem("wg_debug_force_pwa") === "1") return true;
-  return window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  return isStandaloneDisplay();
 }
 
 if ("serviceWorker" in navigator){
@@ -865,8 +865,7 @@ setupTogglePopover(document.getElementById("privacyBtn"), document.getElementByI
 // 通知說明：只在「還不是 PWA 模式」時顯示，讓使用者知道怎麼加入主畫面開啟通知；
 // 已經是 PWA 模式（standalone）就不需要這顆按鈕了。點擊切換顯示提示文字。
 const notifyInfoBtnWrap = document.getElementById("notifyInfoBtnWrap");
-const isStandaloneMode = window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
-if (isStandaloneMode) notifyInfoBtnWrap.classList.add("hidden");
+if (isStandaloneDisplay()) notifyInfoBtnWrap.classList.add("hidden");
 setupTogglePopover(document.getElementById("notifyInfoBtn"), document.getElementById("notifyInfoTooltip"), "#notifyInfoBtnWrap");
 
 // 星期／分店／課程／老師：勾選後記住選擇，下次打開頁面自動套用。
@@ -1796,6 +1795,17 @@ function loadChartJs(){
   return loadChartJs._promise;
 }
 
+// 區塊（距離畫面 200px 以內）第一次進入畫面才呼叫 load，之後不再觀察——Chart.js 與統計資料等真的要看到才載入。
+function loadWhenVisible(el, load){
+  const observer = new IntersectionObserver((entries) => {
+    if (entries.some((e) => e.isIntersecting)){
+      observer.disconnect();
+      load();
+    }
+  }, { rootMargin: "200px" });
+  observer.observe(el);
+}
+
 function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint, itemsKey, barColor, ariaLabel, maxItems }){
   const wrapEl = document.getElementById(wrapId);
   const yearSelect = document.getElementById(yearSelectId);
@@ -1857,9 +1867,7 @@ function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint
     const month = monthSelect.value || nowMonth;
     try{
       await loadChartJs();
-      const res = await fetch(`${WORKER_BASE}/${endpoint}?year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      const data = await fetchJson(`${WORKER_BASE}/${endpoint}?year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}`);
       const years = Array.isArray(data.years) && data.years.length ? data.years : [nowYear];
       if (!yearSelect.value){
         const yearOptions = years.map((y) => ({ value: y, html: `${y} 年` }));
@@ -1883,13 +1891,7 @@ function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint
   monthSelect.addEventListener("change", load);
   window.addEventListener("resize", () => { if (chartInstance) chartInstance.resize(); });
 
-  const observer = new IntersectionObserver((entries) => {
-    if (entries.some((e) => e.isIntersecting)){
-      observer.disconnect();
-      load();
-    }
-  }, { rootMargin: "200px" });
-  observer.observe(wrapEl);
+  loadWhenVisible(wrapEl, load);
 }
 
 // 首頁「查詢量趨勢」：近 12 個月查詢次數 / 結果數雙折線圖，資料來自公開端點 /publicSearchStats。
@@ -1906,9 +1908,7 @@ function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint
   async function load(){
     try{
       await loadChartJs();
-      const res = await fetch(`${WORKER_BASE}/publicSearchStats`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      const data = await fetchJson(`${WORKER_BASE}/publicSearchStats`);
       const chartData = buildWindow(data.monthly || {}, data.monthlyResults || {}, currentMonthKey());
       wrapEl.innerHTML = "<canvas></canvas>";
       const canvas = wrapEl.querySelector("canvas");
@@ -1931,13 +1931,7 @@ function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint
 
   window.addEventListener("resize", () => { if (chartInstance) chartInstance.resize(); });
 
-  const observer = new IntersectionObserver((entries) => {
-    if (entries.some((e) => e.isIntersecting)){
-      observer.disconnect();
-      load();
-    }
-  }, { rootMargin: "200px" });
-  observer.observe(wrapEl);
+  loadWhenVisible(wrapEl, load);
 })();
 
 setupPublicRankingStats({

@@ -6,6 +6,22 @@ function escapeHtml(str){
   return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+// 解析 API 回應的 JSON；狀態碼不是 2xx 就丟錯（訊息優先用回應裡的 error 欄位，沒有就用 HTTP 狀態碼）。
+// 前台與後台打 Worker API 都是這個樣板，不要各自再寫一份。
+async function readJsonOrThrow(res){
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+async function fetchJson(url, options){
+  return readJsonOrThrow(await fetch(url, options));
+}
+
+// 是不是以「加到主畫面」的獨立模式（PWA）開啟：iOS 看 navigator.standalone，其他瀏覽器看 display-mode。
+function isStandaloneDisplay(){
+  return window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
+}
+
 // 自製下拉選單：外觀跟 .section-btn / .section-search 一致，但不用原生 <select>（原生下拉的箭頭位置/樣式沒辦法客製）。
 // root 是 .custom-select 容器，內含 .custom-select-trigger 按鈕跟 .custom-select-menu 選項列表。
 // 用 root.value（getter/setter）+ root.addEventListener("change", ...) 模擬原生 select 的介面，
@@ -150,8 +166,7 @@ function updateLineChart(chart, data){
 
 // iOS「加入主畫面」後是獨立模式，沒有瀏覽器原生的下拉重新整理，補一個簡易版本。
 (function setupPullToRefresh(){
-  const isStandalone = window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
-  if (!isStandalone) return;
+  if (!isStandaloneDisplay()) return;
   const indicator = document.getElementById("ptrIndicator");
   const THRESHOLD = 70;
   const MAX_PULL = 100;
