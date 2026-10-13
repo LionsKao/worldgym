@@ -10,14 +10,8 @@ import { nowTaiwanIso, taiwanClock, taiwanIso, postTeamsCard } from "./util.js";
 // 網站是跨網域被呼叫，所以要自己開白名單。
 // 之後如果掛了自訂網域，把新網域加進這個陣列即可。
 const ALLOWED_ORIGINS = [
-  "https://worldgym-19445.web.app",
-  "https://worldgym-19445.firebaseapp.com",
   "https://worldgym.pages.dev",
-  "http://localhost:5460", // firebase emulators:start 的 hosting port（舊）
-  "http://127.0.0.1:5460",
-  "http://localhost:5471", // 開發用純靜態伺服器（npx serve public，舊）
-  "http://127.0.0.1:5471",
-  "http://localhost:1069", // Cloudflare Workers 靜態託管本機模擬（hosting/ wrangler dev）
+  "http://localhost:1069", // 本機開發（hosting/ 的 wrangler dev，埠號 1069）
   "http://127.0.0.1:1069",
   "https://worldgym-api.lions2100.workers.dev",
 ];
