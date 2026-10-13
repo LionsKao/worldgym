@@ -135,7 +135,7 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 前端過期自動重拿 token 重試一次，使用者無感（見 `script.js` 的 query 流程）。
 
 ### 後台報表 / 首頁公開排行
-`admin.html` 有廣告/查詢/最愛三個報表面板，全用 Chart.js 的共用元件 `createDualLineChart`（雙 Y 軸折線圖）。首頁「通知」分頁下方有老師/課程/分店查詢次數排行（`/publicTeacherStats` 等端點，邏輯同 admin 版但不驗證 token，因為這些是課表本身的公開資訊），用 `script.js` 的 `setupPublicRankingStats()` 畫圖，每張只顯示前 10 名。年/月選單是自製的 `.custom-select` 元件（`enhanceCustomSelect()`），跟 admin 的廣告篩選下拉共用同一套慣例。新增報表面板的模式：worker 開 `/trackXxx` 打點端點 + `/xxxStats` 讀取端點、新增對應 D1 table（含 migration）、前端在對應動作打 `/trackXxx`。
+`admin.html` 有廣告/最愛/提醒三個報表面板（加上 IP 存取紀錄表），折線圖用 Chart.js 的共用元件 `createDualLineChart`/`createSingleLineChart`。首頁「通知」分頁下方有查詢量趨勢與老師/課程/分店查詢次數排行（`/publicSearchStats`、`/publicTeacherStats` 等端點，不驗證 token，因為這些是課表本身的公開資訊），用 `script.js` 的 `setupPublicRankingStats()` 畫圖，每張只顯示前 10 名。年/月選單是自製的 `.custom-select` 元件（`enhanceCustomSelect()`），跟 admin 的廣告篩選下拉共用同一套慣例。新增報表面板的模式：worker 開打點端點（`/trackXxx`，同一次查詢動作會一起寫入的就併進批次端點，如 `/trackSearchEvents`）+ `/xxxStats` 讀取端點（公開的用 `/publicXxxStats`，後台的要驗證 session token）、新增對應 D1 table（含 migration）、前端在對應動作打點。
 
 網站沒有帳號系統，「幾個人」的統計靠前端 `localStorage` 存的匿名 `wg_client_id`（`crypto.randomUUID()`），後端用 `COUNT(DISTINCT clientId)` 估算，不對應真實身分。
 

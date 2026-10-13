@@ -340,56 +340,10 @@ export default {
         return json({ ok: true, written: stmts.length }, 200, origin);
       }
 
-      // 老師查詢次數打點：訪客真的送出查詢（含指定老師）時觸發，不做身分驗證，
-      // 只做基本型別/長度防呆。前端已經做 30 分鐘內同老師去重，這裡單純累加寫入。
-      if (url.pathname === "/trackTeacherSearch" && req.method === "POST") {
-        const rl = await rateLimitOrNull(req, env, ctx, "trackTeacherSearch", 60, origin);
-        if (rl) return rl;
-        const body = await req.json().catch(() => ({}));
-        const { teacher } = body || {};
-        if (typeof teacher !== "string" || !teacher.trim() || teacher.length > 50) {
-          return json({ error: "invalid teacher" }, 400, origin);
-        }
-        await env.DB.prepare("INSERT INTO teacher_search_events (teacherName, createdAt) VALUES (?, ?)")
-          .bind(teacher.trim(), nowTaiwanIso())
-          .run();
-        return json({ ok: true }, 200, origin);
-      }
-
-      // 課程查詢次數打點，邏輯跟 /trackTeacherSearch 一樣。
-      if (url.pathname === "/trackCourseSearch" && req.method === "POST") {
-        const rl = await rateLimitOrNull(req, env, ctx, "trackCourseSearch", 60, origin);
-        if (rl) return rl;
-        const body = await req.json().catch(() => ({}));
-        const { course } = body || {};
-        if (typeof course !== "string" || !course.trim() || course.length > 50) {
-          return json({ error: "invalid course" }, 400, origin);
-        }
-        await env.DB.prepare("INSERT INTO course_search_events (courseName, createdAt) VALUES (?, ?)")
-          .bind(course.trim(), nowTaiwanIso())
-          .run();
-        return json({ ok: true }, 200, origin);
-      }
-
-      // 分店查詢次數打點，邏輯跟 /trackTeacherSearch 一樣。
-      if (url.pathname === "/trackBranchSearch" && req.method === "POST") {
-        const rl = await rateLimitOrNull(req, env, ctx, "trackBranchSearch", 60, origin);
-        if (rl) return rl;
-        const body = await req.json().catch(() => ({}));
-        const { branch } = body || {};
-        if (typeof branch !== "string" || !branch.trim() || branch.length > 50) {
-          return json({ error: "invalid branch" }, 400, origin);
-        }
-        await env.DB.prepare("INSERT INTO branch_search_events (branchName, createdAt) VALUES (?, ?)")
-          .bind(branch.trim(), nowTaiwanIso())
-          .run();
-        return json({ ok: true }, 200, origin);
-      }
-
-      // 老師/課程/分店查詢次數打點的 batch 版本：使用者一次查詢動作常常同時勾了多個老師/課程/分店，
-      // 前端（logSearchEvents，取代原本各自迴圈呼叫 /trackTeacherSearch 等）已經做完 30 分鐘去重，
-      // 這裡收整批已經確定要記錄的值，三張表各自組 INSERT 語句、一次 db.batch() 送完，
-      // 取代「選了幾個分店/老師/課程就各自發幾個獨立 request + 獨立 INSERT」。
+      // 老師/課程/分店查詢次數打點：使用者一次查詢動作常常同時勾了多個老師/課程/分店，
+      // 前端（logSearchEvents）已經做完 30 分鐘去重，這裡收整批已經確定要記錄的值，
+      // 三張表各自組 INSERT 語句、一次 db.batch() 送完，不用選了幾個就各自發一個 request + INSERT。
+      // 不做身分驗證，只做基本型別/長度防呆。
       if (url.pathname === "/trackSearchEvents" && req.method === "POST") {
         const rl = await rateLimitOrNull(req, env, ctx, "trackSearchEvents", 20, origin);
         if (rl) return rl;
@@ -477,76 +431,8 @@ export default {
         return json({ ads }, 200, origin);
       }
 
-      // admin.html 查詢老師統計面板：回傳指定年月查詢次數前 15 名的老師，
-      // 順便回傳所有有紀錄的年份，讓前端動態長出年份下拉選項。
-      // 舊月份的明細會被每月排程搬進 teacher_search_monthly（見 analytics.js），
-      // 這裡一律用「彙總 UNION 明細」的合併查詢，讀起來完全無感。
-      if (url.pathname === "/teacherStats" && req.method === "GET") {
-        const rl = await rateLimitOrNull(req, env, ctx, "teacherStats", 30, origin);
-        if (rl) return rl;
-        if (!(await isAdminRequest(req, env))) {
-          return json({ error: "forbidden" }, 403, origin);
-        }
-        const nowTW = currentTaiwanYearMonth();
-        const year = url.searchParams.get("year") || nowTW.year;
-        const month = (url.searchParams.get("month") || nowTW.month).padStart(2, "0");
-        const monthKey = `${year}-${month}`;
-        const tableArgs = { rawTable: "teacher_search_events", nameColumn: "teacherName", monthlyTable: "teacher_search_monthly" };
-        const [years, teachers] = await Promise.all([
-          availableYears(env.DB, tableArgs),
-          monthlyNameRanking(env.DB, { ...tableArgs, monthKey, limit: 15 }),
-        ]);
-        return json({
-          years,
-          teachers: teachers.map((r) => ({ name: r.name, count: r.cnt })),
-        }, 200, origin);
-      }
-
-      // admin.html 查詢課程統計面板，邏輯跟 /teacherStats 一樣。
-      if (url.pathname === "/courseStats" && req.method === "GET") {
-        const rl = await rateLimitOrNull(req, env, ctx, "courseStats", 30, origin);
-        if (rl) return rl;
-        if (!(await isAdminRequest(req, env))) {
-          return json({ error: "forbidden" }, 403, origin);
-        }
-        const nowTW = currentTaiwanYearMonth();
-        const year = url.searchParams.get("year") || nowTW.year;
-        const month = (url.searchParams.get("month") || nowTW.month).padStart(2, "0");
-        const monthKey = `${year}-${month}`;
-        const tableArgs = { rawTable: "course_search_events", nameColumn: "courseName", monthlyTable: "course_search_monthly" };
-        const [years, courses] = await Promise.all([
-          availableYears(env.DB, tableArgs),
-          monthlyNameRanking(env.DB, { ...tableArgs, monthKey, limit: 15 }),
-        ]);
-        return json({
-          years,
-          courses: courses.map((r) => ({ name: r.name, count: r.cnt })),
-        }, 200, origin);
-      }
-
-      // admin.html 查詢分店統計面板，邏輯跟 /teacherStats 一樣。
-      if (url.pathname === "/branchStats" && req.method === "GET") {
-        const rl = await rateLimitOrNull(req, env, ctx, "branchStats", 30, origin);
-        if (rl) return rl;
-        if (!(await isAdminRequest(req, env))) {
-          return json({ error: "forbidden" }, 403, origin);
-        }
-        const nowTW = currentTaiwanYearMonth();
-        const year = url.searchParams.get("year") || nowTW.year;
-        const month = (url.searchParams.get("month") || nowTW.month).padStart(2, "0");
-        const monthKey = `${year}-${month}`;
-        const tableArgs = { rawTable: "branch_search_events", nameColumn: "branchName", monthlyTable: "branch_search_monthly" };
-        const [years, branches] = await Promise.all([
-          availableYears(env.DB, tableArgs),
-          monthlyNameRanking(env.DB, { ...tableArgs, monthKey, limit: 15 }),
-        ]);
-        return json({
-          years,
-          branches: branches.map((r) => ({ name: r.name, count: r.cnt })),
-        }, 200, origin);
-      }
-
-      // index.html 公開版查詢量趨勢，邏輯跟 /searchStats 一樣，但不驗證 token（僅回傳每月聚合次數，不含個資）。
+      // index.html 查詢量趨勢折線圖：依月分組回傳全部歷史的查詢次數，前端只取最近 12 個月畫圖。
+      // 不驗證 token（僅回傳每月聚合次數，不含個資）。
       if (url.pathname === "/publicSearchStats" && req.method === "GET") {
         const rl = await rateLimitOrNull(req, env, ctx, "publicSearchStats", 30, origin);
         if (rl) return rl;
@@ -554,7 +440,9 @@ export default {
         return jsonCached(stats, 200, origin, PUBLIC_STATS_CACHE_SECONDS);
       }
 
-      // index.html 公開版老師查詢排行，邏輯跟 /teacherStats 一樣，但不驗證 token（老師名字本來就是課表上的公開資訊）。
+      // index.html 老師查詢排行：回傳指定年月查詢次數前 15 名的老師，順便回傳所有有紀錄的年份，
+      // 讓前端動態長出年份下拉選項。舊月份的明細會被每月排程搬進 teacher_search_monthly（見 analytics.js），
+      // 這裡一律用「彙總 UNION 明細」的合併查詢，讀起來完全無感。不驗證 token（老師名字本來就是課表上的公開資訊）。
       if (url.pathname === "/publicTeacherStats" && req.method === "GET") {
         const rl = await rateLimitOrNull(req, env, ctx, "publicTeacherStats", 30, origin);
         if (rl) return rl;
@@ -573,7 +461,7 @@ export default {
         }, 200, origin, PUBLIC_STATS_CACHE_SECONDS);
       }
 
-      // index.html 公開版課程查詢排行，邏輯跟 /courseStats 一樣，但不驗證 token（僅回傳聚合次數，不含個資）。
+      // index.html 課程查詢排行，邏輯跟 /publicTeacherStats 一樣，不驗證 token（僅回傳聚合次數，不含個資）。
       if (url.pathname === "/publicCourseStats" && req.method === "GET") {
         const rl = await rateLimitOrNull(req, env, ctx, "publicCourseStats", 30, origin);
         if (rl) return rl;
@@ -592,7 +480,7 @@ export default {
         }, 200, origin, PUBLIC_STATS_CACHE_SECONDS);
       }
 
-      // index.html 公開版分店查詢排行，邏輯跟 /branchStats 一樣，但不驗證 token（僅回傳聚合次數，不含個資）。
+      // index.html 分店查詢排行，邏輯跟 /publicTeacherStats 一樣，不驗證 token（僅回傳聚合次數，不含個資）。
       if (url.pathname === "/publicBranchStats" && req.method === "GET") {
         const rl = await rateLimitOrNull(req, env, ctx, "publicBranchStats", 30, origin);
         if (rl) return rl;
@@ -609,17 +497,6 @@ export default {
           years,
           branches: branches.map((r) => ({ name: r.name, count: r.cnt })),
         }, 200, origin, PUBLIC_STATS_CACHE_SECONDS);
-      }
-
-      // admin.html 查詢量趨勢折線圖：依月分組回傳全部歷史的查詢次數，前端只取最近 12 個月畫圖。
-      if (url.pathname === "/searchStats" && req.method === "GET") {
-        const rl = await rateLimitOrNull(req, env, ctx, "searchStats", 30, origin);
-        if (rl) return rl;
-        if (!(await isAdminRequest(req, env))) {
-          return json({ error: "forbidden" }, 403, origin);
-        }
-        const stats = await monthlySearchTrend(env.DB);
-        return json(stats, 200, origin);
       }
 
       // 查有沒有被爬蟲/腳本大量打：依 IP 分組列出 /issueToken、/queryClasses 的存取次數與被流量限制擋下的次數，

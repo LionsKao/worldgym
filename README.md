@@ -123,11 +123,11 @@ npx wrangler d1 execute worldgym-schedule --remote --command="UPDATE ads SET ena
 
 ## 🏆 首頁公開排行報表
 
-老師/課程/分店的查詢次數排行改放在**首頁**(`index.html` 的「通知」分頁下方),不需要登入,任何人都看得到——因為這些名字本來就是課表上的公開資訊,不含個資。對應的 worker 端點是 `/publicTeacherStats`、`/publicCourseStats`、`/publicBranchStats`(邏輯跟 admin 版的 `/teacherStats` 等相同,只是不驗證 token)。
+老師/課程/分店的查詢次數排行改放在**首頁**(`index.html` 的「通知」分頁下方),不需要登入,任何人都看得到——因為這些名字本來就是課表上的公開資訊,不含個資。對應的 worker 端點是 `/publicTeacherStats`、`/publicCourseStats`、`/publicBranchStats`(不驗證 token,只回傳聚合次數)。
 
 - 前端用 `script.js` 的 `setupPublicRankingStats()` 共用一份邏輯,畫出三張排行長條圖(Chart.js)。分店/課程排行前端固定只顯示前 10 名;老師排行目前顯示後端回傳的前 15 名。三者的後端排行本身依 `worker/src/index.js` 呼叫 `monthlyNameRanking()` 時傳的 `limit` 參數決定要撈幾名——調整名次上限不需要任何資料搬移,重新部署新的 `limit` 值即可生效(見上方「分析報表明細轉月度彙總」)。
 - 年/月選單不是原生 `<select>`,而是自製的 `.custom-select` 元件(`enhanceCustomSelect()`),外觀跟按鈕一致,月份選單排成 4×3 格狀;跟 `admin.html` 的廣告篩選下拉用同一套元件慣例。
-- 排行數字會在使用者送出查詢時即時 +1(見 `/trackTeacherSearch` 等打點端點),不是跟著爬蟲排程更新,所以是即時的;會跟爬蟲排程更新頻率有關的只有課表本身(`classes` table)。
+- 排行數字會在使用者送出查詢時即時 +1(見 `/trackSearchEvents` 打點端點),不是跟著爬蟲排程更新,所以是即時的;會跟爬蟲排程更新頻率有關的只有課表本身(`classes` table)。
 
 ## 🛡️ 防濫用機制
 
