@@ -473,6 +473,8 @@ let BRANCH_URL_CODE = {};
 let BRANCH_URL_DECODE = {};
 // slug -> { lat, lng }，供依目前位置篩選分店（1km/3km/5km）使用，從 data-lat/data-lng 讀進來。
 let BRANCH_COORDS = {};
+// 分店 slug → 畫面上的分店名稱，initBranchGrid 讀 pill 時建好，branchSlugToName 查它。
+let BRANCH_NAMES = new Map();
 
 function trackEvent(name, params){
   if (typeof gtag === "function") gtag("event", name, params);
@@ -617,6 +619,7 @@ function initBranchGrid(){
   BRANCH_MAP_URLS = Object.fromEntries(
     branchInputs.filter(input => input.dataset.mapUrl).map(input => [input.value, input.dataset.mapUrl])
   );
+  BRANCH_NAMES = new Map(branchInputs.map(input => [input.value, input.nextElementSibling.textContent]));
   BRANCH_COORDS = Object.fromEntries(
     branchInputs.filter(input => input.dataset.lat && input.dataset.lng)
       .map(input => [input.value, { lat: Number(input.dataset.lat), lng: Number(input.dataset.lng) }])
@@ -1239,8 +1242,7 @@ const WEEKDAY_LABEL = { today: "今天", tomorrow: "明天", 1: "一", 2: "二",
 // 分店 slug → 畫面上看到的分店名稱（找不到就回 slug）。記錄查詢次數（admin 的長條圖才看得懂）、
 // 篩選摘要、最愛的預設名稱都用這一個。
 function branchSlugToName(slug){
-  const input = document.querySelector(`input[name="branch"][value="${CSS.escape(slug)}"]`);
-  return input ? input.nextElementSibling.textContent : slug;
+  return BRANCH_NAMES.get(slug) ?? slug;
 }
 function renderActiveFilters(state){
   const box = document.getElementById("activeFiltersBox");
@@ -1441,6 +1443,7 @@ function renderScheduleResults(rows, onlyTeacher){
     return;
   }
   area.innerHTML = "";
+  const pwaInstalled = isPWAInstalled();
   rows.forEach(row => {
     const { c } = row;
     const line = document.createElement("div");
@@ -1464,7 +1467,7 @@ function renderScheduleResults(rows, onlyTeacher){
       content.appendChild(teacherLink);
     }
     line.appendChild(content);
-    if (isPWAInstalled()){
+    if (pwaInstalled){
       const bell = document.createElement("i");
       const key = reminderKeyFromFields(c.branchSlug, c.dayOfWeek, c.startTime, c.className, c.teacherName);
       const existing = registeredReminders.get(key);
