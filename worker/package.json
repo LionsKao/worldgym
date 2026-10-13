@@ -8,7 +8,7 @@
     "check:branches": "node --no-warnings scripts/check-branches.mjs"
   },
   "devDependencies": {
-    "wrangler": "^4.120.1"
+    "wrangler": "^4.149.0"
   },
   "dependencies": {
     "@block65/webcrypto-web-push": "^1.0.2"
