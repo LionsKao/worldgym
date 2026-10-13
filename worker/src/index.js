@@ -4,6 +4,7 @@ import { runScrape, cleanupStaleBranches } from "./scrape.js";
 import { registerReminder, isAllowedPushEndpoint, cancelReminder, listReminders, dispatchDueReminders } from "./reminders.js";
 import { monthlyNameRanking, availableYears, monthlySearchTrend, favoriteStatsCombined, adStatsCombined, reminderStatsCombined, rollupAnalyticsEvents } from "./analytics.js";
 import { scanForNewBranches } from "./branchScan.js";
+import BRANCHES from "./branches-seed.js";
 import { isRequestAllowed } from "./crawlers.js";
 import { nowTaiwanIso, taiwanClock, taiwanIso, postTeamsCard } from "./util.js";
 
@@ -229,6 +230,7 @@ function clearAdminFailures(env, ctx, ip) {
 // handler 收到 { req, env, ctx, url, origin, ip }，回傳 Response。
 
 const readJson = (req) => req.json().catch(() => ({}));
+const CLIENT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // 老師/課程/分店查詢次數排行（首頁公開，不驗證 token）：回傳指定年月查詢次數前 limit 名，順便回傳所有有紀錄的年份，
 // 讓前端動態長出年份下拉選項。舊月份的明細會被每月排程搬進 *_search_monthly（見 analytics.js），
@@ -285,20 +287,46 @@ async function handleTrackAdEvents({ req, env, origin }) {
 // 老師/課程/分店查詢次數打點：使用者一次查詢動作常常同時勾了多個老師/課程/分店，
 // 前端（logSearchEvents）已經做完 30 分鐘去重，這裡收整批已經確定要記錄的值，
 // 三張表各自組 INSERT 語句、一次 db.batch() 送完，不用選了幾個就各自發一個 request + INSERT。
-// 不做身分驗證，只做基本型別/長度防呆。
+// 不做身分驗證，但名稱必須是「真的存在的」老師/課程/分店：這些名稱會原封不動出現在首頁公開的查詢排行榜，
+// 如果什麼字串都收，任何人都能刷一堆自訂文字（廣告、辱罵、網址）擠進前十名。
+// 分店名稱用 branches-seed.js（跟前端分店 pill 顯示的文字一致）；老師/課程用 meta_filter_options（前端選項的來源）。
+// 不在清單裡的值靜默丟掉，不報錯（打點本來就是 fire-and-forget，前端不看回應）。
 const MAX_ITEMS_PER_KIND = 20;
-function sanitizeNameList(list) {
+function sanitizeNameList(list, allowed) {
   if (!Array.isArray(list)) return [];
   return list
     .filter((v) => typeof v === "string" && v.trim() && v.length <= 50)
     .map((v) => v.trim())
+    .filter((v) => allowed.has(v))
     .slice(0, MAX_ITEMS_PER_KIND);
+}
+const KNOWN_BRANCH_NAMES = new Set(BRANCHES.map((b) => b.name));
+// 老師/課程名單一天才更新兩次（爬蟲跑完），在 isolate 裡快取幾分鐘，不用每次打點都讀 D1 與 JSON.parse。
+// 查不到那一列（還沒爬過）就回空名單、而且不快取，網站這時也沒有任何老師/課程選項可以選。
+const KNOWN_NAMES_TTL_MS = 5 * 60 * 1000;
+let knownNamesCache = null; // { at, teachers: Set, courses: Set }
+async function getKnownTeacherCourseNames(env) {
+  if (knownNamesCache && Date.now() - knownNamesCache.at < KNOWN_NAMES_TTL_MS) return knownNamesCache;
+  const row = await env.DB.prepare("SELECT classNames, teacherNames FROM meta_filter_options WHERE id = ?")
+    .bind("filterOptions")
+    .first();
+  if (!row) return { teachers: new Set(), courses: new Set() };
+  knownNamesCache = {
+    at: Date.now(),
+    teachers: new Set(JSON.parse(row.teacherNames)),
+    courses: new Set(JSON.parse(row.classNames)),
+  };
+  return knownNamesCache;
 }
 async function handleTrackSearchEvents({ req, env, origin }) {
   const body = await readJson(req);
-  const teachers = sanitizeNameList(body && body.teachers);
-  const courses = sanitizeNameList(body && body.courses);
-  const branches = sanitizeNameList(body && body.branches);
+  // 只有真的帶了老師/課程時才需要讀名單（只有分店的請求完全不碰 D1 讀取）。
+  const hasTeacherOrCourse = (Array.isArray(body && body.teachers) && body.teachers.length > 0)
+    || (Array.isArray(body && body.courses) && body.courses.length > 0);
+  const known = hasTeacherOrCourse ? await getKnownTeacherCourseNames(env) : { teachers: new Set(), courses: new Set() };
+  const teachers = sanitizeNameList(body && body.teachers, known.teachers);
+  const courses = sanitizeNameList(body && body.courses, known.courses);
+  const branches = sanitizeNameList(body && body.branches, KNOWN_BRANCH_NAMES);
   if (teachers.length === 0 && courses.length === 0 && branches.length === 0) {
     return json({ ok: true, written: 0 }, 200, origin);
   }
@@ -525,13 +553,14 @@ const ROUTES = {
   },
 
   // 「我的最愛」使用打點：type='add' 是成功建立一個最愛、type='apply' 是點最愛套用篩選，
-  // clientId 是前端自己產生存在 localStorage 的匿名 id，不做身分驗證，只驗證型別/長度防呆。
+  // clientId 是前端自己產生存在 localStorage 的匿名 id（crypto.randomUUID()），不做身分驗證，只驗證是 UUID 格式：
+  // 「累積建立人數」是數 clientId 的不重複值，格式不限的話隨便塞字串就能灌水。
   "POST /trackFavorite": {
     limit: 60,
     handler: async ({ req, env, ctx, origin }) => {
       const body = await readJson(req);
       const { clientId, type } = body || {};
-      if (typeof clientId !== "string" || !clientId.trim() || clientId.length > 100) {
+      if (typeof clientId !== "string" || !CLIENT_ID_PATTERN.test(clientId.trim())) {
         return json({ error: "invalid clientId" }, 400, origin);
       }
       if (type !== "add" && type !== "apply") {

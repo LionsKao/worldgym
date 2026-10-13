@@ -148,6 +148,8 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 ### 後台報表 / 首頁公開排行
 `admin.html` 有廣告/最愛/提醒三個報表面板（加上 IP 存取紀錄表），折線圖用 Chart.js 的共用元件 `createDualLineChart`/`createSingleLineChart`。首頁「通知」分頁下方有查詢量趨勢與老師/課程/分店查詢次數排行（`/publicSearchStats`、`/publicTeacherStats` 等端點，不驗證 token，因為這些是課表本身的公開資訊），用 `script.js` 的 `setupPublicRankingStats()` 畫圖，每張只顯示前 10 名。年/月選單是自製的 `.custom-select` 元件（`enhanceCustomSelect()`），跟 admin 的廣告篩選下拉共用同一套慣例。新增報表面板的模式：worker 開打點端點（`/trackXxx`，同一次查詢動作會一起寫入的就併進批次端點，如 `/trackSearchEvents`）+ `/xxxStats` 讀取端點（公開的用 `/publicXxxStats`，後台的要驗證 session token）、新增對應 D1 table（含 migration）、前端在對應動作打點。**新增端點只要在 `worker/src/index.js` 的 `ROUTES` 表加一列**（key 是 `"METHOD /path"`，填 `limit` 每 IP 每分鐘上限、後台端點加 `admin: true`、`handler`）：限流（KV key 前綴 = 路徑名）、後台 session 驗證、429/403/404/500 都由 `fetch()` 統一處理，handler 只寫業務邏輯；老師/課程/分店排行三個端點共用 `rankingHandler()`。
 
+**公開打點端點要驗證內容，不能什麼字串都收**：`/trackSearchEvents` 的名稱會原封不動出現在首頁公開排行榜，所以分店名稱必須在 `branches-seed.js` 裡（跟前端分店 pill 文字一致）、老師/課程名稱必須在 `meta_filter_options`（前端選項的來源，isolate 內快取 5 分鐘），不在名單的值靜默丟掉；`/trackFavorite` 的 `clientId` 必須是 UUID 格式。新增會顯示在公開頁面上的打點時照這個原則做。
+
 網站沒有帳號系統，「幾個人」的統計靠前端 `localStorage` 存的匿名 `wg_client_id`（`crypto.randomUUID()`），後端用 `COUNT(DISTINCT clientId)` 估算，不對應真實身分。
 
 ### 靜態資源快取
