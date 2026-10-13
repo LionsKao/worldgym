@@ -1,7 +1,7 @@
 // 海外 IP 的存取判斷：預設只開放台灣 IP，已知的搜尋引擎/AI 爬蟲只放行「唯讀」的少數路徑。
 //
-// ⚠ CRAWLER_UA_PATTERN 要跟 functions/_middleware.js 的同名常數保持同步：
-// Pages Functions 與 Worker 是兩個獨立專案，沒辦法共用 import，改一邊記得改另一邊。
+// CRAWLER_UA_PATTERN 是 Worker 與 Pages 共用的唯一一份：functions/_middleware.js 直接 import 這裡，
+// 要增減爬蟲只改這個檔案。
 //
 // 為什麼 Worker 也要放行：Googlebot 渲染頁面時，前端會從海外機房呼叫 /filterOptions、/issueToken、
 // /queryClasses；Worker 若一律 403，爬蟲渲染出來的就是空課表。

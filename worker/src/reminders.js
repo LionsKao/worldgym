@@ -1,4 +1,5 @@
 import { buildPushPayload } from "@block65/webcrypto-web-push";
+import { nowTaiwanIso, taiwanClock, taiwanIso, fnv1aHex } from "./util.js";
 
 // 課表通知:上課前這麼多分鐘推播一次,單次通知,不做每週訂閱式的長期追蹤。
 const REMIND_MINUTES_BEFORE = 30;
@@ -7,23 +8,13 @@ const DISPATCH_WINDOW_MINUTES = 5;
 
 const WEEKDAY_LABEL = { 1: "一", 2: "二", 3: "三", 4: "四", 5: "五", 6: "六", 7: "日" };
 
-function pad2(n) {
-  return String(n).padStart(2, "0");
-}
-
-// 跟 scrape.js 的 nowTaiwanIso() 用同一套「位移 8 小時再貼 +08:00 後綴」慣例,
-// 這樣 remindAt/classAt 才能跟現有時間戳直接用字串比較。
-function nowTaiwanIso() {
-  const d = new Date(Date.now() + 8 * 3600 * 1000);
-  return d.toISOString().replace("Z", "+08:00");
-}
-
+// remindAt/classAt 跟其他時間戳一樣用台灣時間（見 util.js 的 nowTaiwanIso），才能直接用字串比較。
 function taiwanIsoFromUtcParts(year, month, date, hour, minute) {
   return new Date(Date.UTC(year, month, date, hour, minute, 0)).toISOString().replace("Z", "+08:00");
 }
 
 function currentTaiwanParts() {
-  const d = new Date(Date.now() + 8 * 3600 * 1000);
+  const d = taiwanClock();
   return {
     year: d.getUTCFullYear(),
     month: d.getUTCMonth(),
@@ -32,16 +23,6 @@ function currentTaiwanParts() {
     hours: d.getUTCHours(),
     minutes: d.getUTCMinutes(),
   };
-}
-
-// Workers 的 Web Crypto 沒有 MD5,借用 scrape.js 同一套 FNV-1a 短雜湊當 id 尾碼,不是安全用途。
-function fnv1aHex(str) {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < str.length; i++) {
-    hash ^= str.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 // 同一個 subscription 對同一堂固定班表(分店+星期+時間+課程+老師)重複登記要收斂成同一筆,
@@ -187,9 +168,7 @@ function formatHHmm(startTime) {
 // cron(每 5 分鐘,見 wrangler.toml [triggers])呼叫:掃出「快到期」的通知,逐筆送 Web Push。
 // 單次通知用完即丟——不管送成功、訂閱失效還是送失敗,都直接刪除該筆,不重試、不留存。
 async function dispatchDueReminders(db, env) {
-  const windowEnd = new Date(Date.now() + (8 * 3600 + DISPATCH_WINDOW_MINUTES * 60) * 1000)
-    .toISOString()
-    .replace("Z", "+08:00");
+  const windowEnd = taiwanIso(DISPATCH_WINDOW_MINUTES * 60 * 1000);
 
   const { results } = await db.prepare("SELECT * FROM reminders WHERE sent = 0 AND remindAt <= ?").bind(windowEnd).all();
   if (results.length === 0) return { dispatched: 0 };

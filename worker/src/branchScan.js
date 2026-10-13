@@ -1,15 +1,12 @@
 import BRANCHES from "./branches-seed.js";
-
-// 跟 scrape.js 用同一個 User-Agent，官網對沒有瀏覽器特徵的請求會拒絕。
-const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
+import { SCRAPER_USER_AGENT, postTeamsCard } from "./util.js";
 
 // 官網分店清單的 AJAX（qryBranchMark，branches-seed.js 開頭有說明）擋在 Cloudflare bot 防護後面，
 // 伺服器端要不到，改成拿 sitemap.xml 比對 find-a-club/{slug} 網址。sitemap 更新可能會比新分店上線
 // 晚幾天，抓不到「剛開幕」的分店，但不用處理 bot 防護，夠用來每月抓一次「有沒有新分店/分店下架」的訊號。
 async function fetchSitemapSlugs() {
   const res = await fetch("https://www.worldgymtaiwan.com/sitemap.xml", {
-    headers: { "User-Agent": USER_AGENT },
+    headers: { "User-Agent": SCRAPER_USER_AGENT },
   });
   if (!res.ok) throw new Error(`sitemap.xml 讀取失敗：HTTP ${res.status}`);
   const xml = await res.text();
@@ -31,16 +28,7 @@ async function notifyTeams(env, added, removed) {
   if (removed.length) {
     body.push({ type: "TextBlock", text: `❓ branches-seed.js 有、官網 sitemap 沒有（可能已下架，也可能只是 sitemap 還沒收錄）：\n${removed.join("、")}`, wrap: true });
   }
-  const teamsRes = await fetch(env.TEAMS_WEBHOOK_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      type: "AdaptiveCard",
-      $schema: "http://adaptivecards.io/schemas/adaptive-card.json",
-      version: "1.4",
-      body,
-    }),
-  });
+  const teamsRes = await postTeamsCard(env, body);
   if (!teamsRes.ok) {
     console.error("branch scan Teams webhook responded with error", teamsRes.status, await teamsRes.text());
   }

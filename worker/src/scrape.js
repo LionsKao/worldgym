@@ -1,4 +1,5 @@
 import BRANCHES from "./branches-seed.js";
+import { nowTaiwanIso, todayIsoTaipei, pad2, fnv1aHex, SCRAPER_USER_AGENT } from "./util.js";
 
 const SCHEDULE_DAYS_AHEAD = 13;
 // 查詢端（queryClasses.js 的 NORMAL_DAYS_AHEAD = 6）只看「今天到 +6 天」的正常班，
@@ -15,24 +16,8 @@ const BRANCH_REQUEST_DELAY_MS = 500;
 // D1 batch 一次太多語句容易超時，分批送出。
 const BATCH_CHUNK_SIZE = 50;
 
-// Matches the User-Agent the legacy C# scraper used against this endpoint;
-// requests without a browser-like UA get rejected by the site.
-const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
-
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function pad2(n) {
-  return String(n).padStart(2, "0");
-}
-
-// D1 裡存的時間戳一律用台灣時間（+8），不是 UTC —— 純位移 8 小時再貼 +08:00 後綴，
-// 不用 Intl.DateTimeFormat 是因為那個格式化起來反而更囉唆。
-function nowTaiwanIso() {
-  const d = new Date(Date.now() + 8 * 3600 * 1000);
-  return d.toISOString().replace("Z", "+08:00");
 }
 
 function formatDateSlash(date) {
@@ -49,29 +34,16 @@ function addDays(date, days) {
   return d;
 }
 
-// 用 Asia/Taipei 而不是執行環境的 UTC，避免台北時間 00:00~08:00 這段區間算出「昨天」，
-// 導致這次抓到的資料整批往前錯位一天（近 7 天/13 天視窗的邊界也跟著錯位）——
-// 跟 queryClasses.js 的 todayIsoTaipei() 是同一個原因、同一個修法。
+// 台灣今天的 00:00（用 todayIsoTaipei，不是執行環境的 UTC 日期），避免台北時間 00:00~08:00
+// 這段區間算出「昨天」，導致這次抓到的資料整批往前錯位一天（近 7 天/13 天視窗的邊界也跟著錯位）。
 function todayAtMidnight() {
-  const taiwanDateStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei" }).format(new Date());
-  return new Date(`${taiwanDateStr}T00:00:00Z`);
+  return new Date(`${todayIsoTaipei()}T00:00:00Z`);
 }
 
 // Chinese convention: Monday=1 ... Sunday=7 (JS getDay() is Sunday=0 ... Saturday=6).
 function chineseWeekday(date) {
   const jsDay = date.getDay();
   return jsDay === 0 ? 7 : jsDay;
-}
-
-// Workers 的 Web Crypto 沒有 MD5，這裡只是要一組穩定、大致不重複的短字串接在 docId 後面
-// 做同分店/日期/時段內多筆課程的區隔，不是安全用途，FNV-1a 這種非加密雜湊就夠用。
-function fnv1aHex(str) {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < str.length; i++) {
-    hash ^= str.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 async function fetchBranchSchedule(slug, firstDate, lastDate) {
@@ -86,7 +58,7 @@ async function fetchBranchSchedule(slug, firstDate, lastDate) {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
-      "User-Agent": USER_AGENT,
+      "User-Agent": SCRAPER_USER_AGENT,
     },
     body: body.toString(),
   });

@@ -1,3 +1,7 @@
+import { todayIsoTaipei, addDaysIso } from "./util.js";
+
+// 近窗（正常班）是今天到 +NORMAL_DAYS_AHEAD 天；functions/_lib/scheduleBranches.js 也用這個值
+// 判斷「現在有沒有團體課表」，所以有 export，不要在別處再寫一份。
 const NORMAL_DAYS_AHEAD = 6;
 const SUBSTITUTE_DAYS_AHEAD = 14;
 // course/teacher 走 SQL IN 子句，D1 每個查詢的綁定參數上限是 100，
@@ -19,21 +23,6 @@ const TIME_SLOT_HOURS = {
   "1200": ["12", "13", "14", "15", "16", "17"],
   "1800": ["18", "19", "20", "21", "22", "23"],
 };
-
-function pad2(n) {
-  return String(n).padStart(2, "0");
-}
-
-// 用 Asia/Taipei 而不是執行環境的 UTC，避免台北時間 00:00~08:00
-// 這段區間算出「昨天」，導致查詢範圍少了今天的課。
-function todayIsoTaipei() {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei" }).format(new Date());
-}
-function addDaysIso(iso, days) {
-  const d = new Date(iso + "T00:00:00Z");
-  d.setUTCDate(d.getUTCDate() + days);
-  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
-}
 
 function sanitizeStringArray(value, maxLen) {
   if (!Array.isArray(value)) return [];
@@ -182,4 +171,4 @@ async function queryClasses(db, rawState) {
   return { rows, fetchedCount, displayedCount: rows.length, oldestScrapedAt };
 }
 
-export { queryClasses };
+export { queryClasses, NORMAL_DAYS_AHEAD };

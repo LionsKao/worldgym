@@ -76,7 +76,8 @@ _headers                             靜態資源快取設定
 hosting/                             Workers Assets 靜態託管設定（wrangler.jsonc）
 worker/
   src/index.js                      路由 / CORS / 入口 / cron scheduled()
-  src/crawlers.js                   海外 IP 存取判斷：爬蟲 UA 清單 + 只放行的唯讀路徑
+  src/crawlers.js                   海外 IP 存取判斷：爬蟲 UA 清單（Pages 的 _middleware.js 也 import 這份）+ 只放行的唯讀路徑
+  src/util.js                       共用小工具：台灣時間（nowTaiwanIso 等）、fnv1aHex、爬官網的 UA、推 Teams；functions/ 也會 import
   src/queryClasses.js               課表查詢邏輯
   src/scrape.js                     爬蟲邏輯（重抓官網課表寫入 D1）
   src/reminders.js                  課前推播提醒：登記/取消/到期發送 Web Push
@@ -101,7 +102,7 @@ worker/
 | `search_events` | 整體查詢次數與結果數打點 |
 | `favorite_events` | 「我的最愛」建立/使用打點，用匿名 clientId 去重估算人數 |
 
-**時間戳一律用台灣時間（`+08:00`），不是 UTC**：`createdAt`/`updatedAt`/`scrapedAt`/`ads.startAt`/`ads.endAt` 都是位移 8 小時再貼 `+08:00` 後綴的 ISO 字串（`nowTaiwanIso()`，在 `worker/src/index.js`/`scrape.js`/`reminders.js` 各有一份同樣邏輯），才能跟其他時間戳直接用字串比較/排序。改動任何時間戳寫入或比較的地方，都要延用這個慣例，不要混用 `new Date().toISOString()`（那是 UTC）。
+**時間戳一律用台灣時間（`+08:00`），不是 UTC**：`createdAt`/`updatedAt`/`scrapedAt`/`ads.startAt`/`ads.endAt` 都是位移 8 小時再貼 `+08:00` 後綴的 ISO 字串，才能跟其他時間戳直接用字串比較/排序。一律用 `worker/src/util.js` 的 `nowTaiwanIso()`（要往前/往後推用 `taiwanIso(offsetMs)`，要台灣年月日時分用 `taiwanClock()` 再讀 `getUTC*()`，台灣今天的日期用 `todayIsoTaipei()`），不要在各檔案自己寫 `Date.now() + 8 * 3600 * 1000`，也不要混用 `new Date().toISOString()`（那是 UTC）。
 
 新增/修改 ads table 結構：`schema.sql` 只在建立全新資料庫時整份重跑（會清空所有表）；對既有正式資料庫要用 `worker/migrations/` 新增檔案 + `wrangler d1 execute --remote --file=`，不要直接改 schema.sql 後重跑。
 
@@ -112,7 +113,7 @@ worker/
 Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭）都只放行台灣 IP（`cf.country` 沒值，如本機開發，一律放行）。已知搜尋引擎/AI 爬蟲（Googlebot、GPTBot、ClaudeBot、Claude-User 等，UA 清單 `CRAWLER_UA_PATTERN`）例外：
 - Pages：整個站都放行（robots.txt / sitemap.xml / llms.txt 一律放行，不看 UA 也不看 IP；llms.txt 是給各家 AI 讀的，AI 的 UA 追不完，擋了沒意義）。
 - Worker：只放行唯讀的 `GET /filterOptions`、`GET /issueToken`、`POST /queryClasses`（含這三個路徑的 `OPTIONS` preflight），其餘端點（打點、後台、統計、推播登記、留言…）對海外爬蟲一律 403，避免爬蟲渲染頁面時污染統計。判斷邏輯在 `worker/src/crawlers.js` 的 `isRequestAllowed`，token 與每 IP 流量限制照舊，沒有為爬蟲另開後門。
-- **`CRAWLER_UA_PATTERN` 在 `functions/_middleware.js` 與 `worker/src/crawlers.js` 各有一份，改一邊要同步改另一邊**（兩個是不同專案，沒辦法共用 import）。
+- **`CRAWLER_UA_PATTERN` 只有一份，在 `worker/src/crawlers.js`**，`functions/_middleware.js` 直接 import 它（`functions/` 本來就會 import `worker/src/` 的檔案，Pages 打包時一起包進去），要增減爬蟲只改那一處。
 - UA 只能用來決定「放不放行」，不可以依 UA 回傳不同內容（cloaking）。
 
 ### 伺服器端注入課表（SSR）

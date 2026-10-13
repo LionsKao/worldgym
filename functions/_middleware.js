@@ -1,12 +1,13 @@
+import { CRAWLER_UA_PATTERN } from "../worker/src/crawlers.js";
+
 // 只開放台灣 IP：cf.country 沒有值(如本機開發)就放行，避免擋掉自己測試。
 // 已知的搜尋引擎/AI/社群預覽爬蟲另外放行（不限地區），不然 Google/AI 爬蟲多半從海外機房發request，
 // 光靠 robots.txt 是擋不住這層 IP 限制的，永遠爬不到內容。User-Agent 可以偽造，但這裡放行後看到的
 // 也只是原本任何訪客都能公開查到的課表資料，偽造成本大於利益，風險可接受。
+// UA 清單（CRAWLER_UA_PATTERN）直接 import 自 worker/src/crawlers.js，Worker 與 Pages 共用同一份，
+// 要增減爬蟲只改那裡（Pages Functions 打包時本來就會把 import 的 worker/src 檔案一起包進去）。
 // Google-InspectionTool：Search Console「網址審查／即時測試」用的 UA，不含 Googlebot 字樣，
 // 之前沒放行導致從海外機房發出的即時測試一律 403（GoogleOther 是 Google 另一支通用爬蟲，一併補上）。
-// ⚠ 這份 UA 清單要跟 worker/src/crawlers.js 的 CRAWLER_UA_PATTERN 保持同步：
-// Pages Functions 與 Worker 是兩個獨立專案，沒辦法共用 import，改一邊記得改另一邊。
-const CRAWLER_UA_PATTERN = /Googlebot|Google-InspectionTool|GoogleOther|Google-Extended|AdsBot-Google|Mediapartners-Google|APIs-Google|bingbot|BingPreview|Baiduspider|YandexBot|DuckDuckBot|GPTBot|ChatGPT-User|OAI-SearchBot|anthropic-ai|ClaudeBot|Claude-Web|Claude-SearchBot|Claude-User|PerplexityBot|Perplexity-User|MistralAI-User|CCBot|Bytespider|Amazonbot|Applebot|Meta-ExternalAgent|facebookexternalhit|LinkedInBot|Slackbot|TelegramBot|WhatsApp|Diffbot/i;
 
 // robots.txt / sitemap.xml / llms.txt 本來就是公開給爬蟲與 AI 讀的，一律放行，不看 UA 也不看 IP：
 // Search Console 抓 sitemap 的 UA 不一定在上面的白名單內，海外抓取被 403 會顯示「無法讀取 Sitemap」；

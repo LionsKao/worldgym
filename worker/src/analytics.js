@@ -1,3 +1,5 @@
+import { taiwanClock } from "./util.js";
+
 // 分析報表用的「明細 + 月度彙總」合併查詢，以及每月把舊明細滾動壓縮成彙總、刪除明細的排程邏輯。
 //
 // 設計原則：teacher_search_events / course_search_events / branch_search_events / search_events /
@@ -22,7 +24,7 @@ function monthKeyOf(date) {
 
 // 台灣「現在」往前推 n 個月的月份字串（YYYY-MM）。
 function taiwanMonthOffset(n) {
-  const now = new Date(Date.now() + 8 * 3600 * 1000);
+  const now = taiwanClock();
   const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - n, 1));
   return monthKeyOf(d);
 }

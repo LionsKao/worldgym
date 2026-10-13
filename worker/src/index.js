@@ -5,6 +5,7 @@ import { registerReminder, isAllowedPushEndpoint, cancelReminder, listReminders,
 import { monthlyNameRanking, availableYears, monthlySearchTrend, favoriteStatsCombined, adStatsCombined, reminderStatsCombined, rollupAnalyticsEvents } from "./analytics.js";
 import { scanForNewBranches } from "./branchScan.js";
 import { isRequestAllowed } from "./crawlers.js";
+import { nowTaiwanIso, taiwanClock, taiwanIso, postTeamsCard } from "./util.js";
 
 // 網站是跨網域被呼叫，所以要自己開白名單。
 // 之後如果掛了自訂網域，把新網域加進這個陣列即可。
@@ -21,17 +22,10 @@ const ALLOWED_ORIGINS = [
   "https://worldgym-api.lions2100.workers.dev",
 ];
 
-// D1 裡的時間戳（含 ads 的 startAt/endAt）一律用台灣時間（+8），跟 scrape.js / reminders.js 的
-// nowTaiwanIso() 同一套慣例——純位移 8 小時再貼 +08:00 後綴，這樣才能跟其他時間戳直接用字串比較/排序。
-function nowTaiwanIso() {
-  const d = new Date(Date.now() + 8 * 3600 * 1000);
-  return d.toISOString().replace("Z", "+08:00");
-}
-
 // 回傳台灣「現在」的年/月，用來當作統計報表沒帶 year/month 參數時的預設值，
 // 避免用 UTC 現在時間判斷「這個月」在台灣午夜前後 8 小時內會跟資料庫實際存的月份對不起來。
 function currentTaiwanYearMonth() {
-  const d = new Date(Date.now() + 8 * 3600 * 1000);
+  const d = taiwanClock();
   return { year: String(d.getUTCFullYear()), month: String(d.getUTCMonth() + 1).padStart(2, "0") };
 }
 
@@ -112,9 +106,7 @@ function intervalCV(timestampsMs) {
 // /queryAccessStats 本身預設只查最近 7 天，90 天前的資料早就沒人在看，刪掉也不影響任何功能。
 const QUERY_ACCESS_LOG_RETENTION_DAYS = 90;
 async function cleanupOldQueryAccessLog(db) {
-  const cutoff = new Date(Date.now() + 8 * 3600 * 1000 - QUERY_ACCESS_LOG_RETENTION_DAYS * 86400000)
-    .toISOString()
-    .replace("Z", "+08:00");
+  const cutoff = taiwanIso(-QUERY_ACCESS_LOG_RETENTION_DAYS * 86400000);
   const res = await db.prepare("DELETE FROM query_access_log WHERE createdAt < ?").bind(cutoff).run();
   return { deleted: res.meta.changes || 0 };
 }
@@ -508,8 +500,7 @@ export default {
           return json({ error: "forbidden" }, 403, origin);
         }
         const days = parseInt(url.searchParams.get("days") || "7", 10);
-        const sinceDate = new Date(Date.now() + 8 * 3600 * 1000 - days * 86400000);
-        const since = sinceDate.toISOString().replace("Z", "+08:00");
+        const since = taiwanIso(-days * 86400000);
         const { results } = await env.DB.prepare(`
           SELECT ip, userAgent, COUNT(*) AS cnt, SUM(rateLimited) AS rateLimitedCnt, MAX(createdAt) AS lastSeen
           FROM query_access_log
@@ -653,19 +644,10 @@ export default {
         if (!content || content.length > 500) {
           return json({ error: "invalid content" }, 400, origin);
         }
-        const teamsRes = await fetch(env.TEAMS_WEBHOOK_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            type: "AdaptiveCard",
-            $schema: "http://adaptivecards.io/schemas/adaptive-card.json",
-            version: "1.4",
-            body: [
-              { type: "TextBlock", text: "課表查詢網站有新留言：", weight: "bolder", wrap: true },
-              { type: "TextBlock", text: content, wrap: true },
-            ],
-          }),
-        });
+        const teamsRes = await postTeamsCard(env, [
+          { type: "TextBlock", text: "課表查詢網站有新留言：", weight: "bolder", wrap: true },
+          { type: "TextBlock", text: content, wrap: true },
+        ]);
         if (!teamsRes.ok) {
           console.error("Teams webhook responded with error", teamsRes.status, await teamsRes.text());
           return json({ error: "teams webhook failed" }, 502, origin);

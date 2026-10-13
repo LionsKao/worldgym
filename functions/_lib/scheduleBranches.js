@@ -1,20 +1,12 @@
 import BRANCHES from "../../worker/src/branches-seed.js";
+import { NORMAL_DAYS_AHEAD } from "../../worker/src/queryClasses.js";
+import { todayIsoTaipei, addDaysIso } from "../../worker/src/util.js";
 import { SSR_BRANCH_SLUGS, D1_TIMEOUT_MS } from "./ssrConfig.js";
 
-// 跟 worker/src/queryClasses.js 的 NORMAL_DAYS_AHEAD 對齊：注入的是「近 7 天的固定班」，
+// 直接用 queryClasses.js 的 NORMAL_DAYS_AHEAD：注入的是「近 7 天的固定班」，
 // 只列這個範圍內真的有團體教室固定班的分店，這樣列出來的網址一定查得到內容（不會是退回原頁的空殼）。
-const NORMAL_DAYS_AHEAD = 6;
 const BRANCH_BY_SLUG = new Map(BRANCHES.map((b, i) => [b.slug, { ...b, code: i }]));
 const INCLUDED_SLUGS = new Set(SSR_BRANCH_SLUGS);
-
-function todayIsoTaipei() {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei" }).format(new Date());
-}
-function addDaysIso(iso, days) {
-  const d = new Date(iso + "T00:00:00Z");
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
-}
 
 // 「現在有團體課表的分店」清單：sitemap.xml 與 llms.txt 共用這一份查詢與過濾，不要各複製一份。
 // 回傳 [{ code, slug, name, region, lastmod }]，依短代碼（branches-seed.js 陣列位置）由小到大排序；
