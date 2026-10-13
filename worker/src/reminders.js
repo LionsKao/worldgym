@@ -175,6 +175,7 @@ async function dispatchDueReminders(db, env) {
 
   const vapid = { subject: env.VAPID_SUBJECT, publicKey: env.VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY };
   let dispatched = 0;
+  const doneIds = [];
 
   for (const r of results) {
     try {
@@ -197,9 +198,12 @@ async function dispatchDueReminders(db, env) {
     } catch (err) {
       console.error("[reminders] push failed", r.id, err.message);
     } finally {
-      await db.prepare("DELETE FROM reminders WHERE id = ?").bind(r.id).run();
+      doneIds.push(r.id);
     }
   }
+
+  // 每一筆都處理過了(成功、失效、失敗、被白名單擋掉都一樣),最後一次批次刪除。
+  await db.batch(doneIds.map((id) => db.prepare("DELETE FROM reminders WHERE id = ?").bind(id)));
 
   return { dispatched, scanned: results.length };
 }
