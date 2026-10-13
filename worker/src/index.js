@@ -111,21 +111,16 @@ function base64urlToBytes(str) {
   const b64 = str.replace(/-/g, "+").replace(/_/g, "/").padEnd(str.length + (4 - str.length % 4) % 4, "=");
   return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 }
-async function hmacKey(env) {
-  return crypto.subtle.importKey(
-    "raw", new TextEncoder().encode(env.QUERY_TOKEN_SECRET),
-    { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]
-  );
-}
-// token 只放 exp（不綁 IP，手機網路常換 IP，綁了會誤傷正常使用者），效期 15 分鐘。
-// 前端過期後會自動拿新 token 重試一次，見 script.js 的 runScheduleQuery。
-async function issueQueryToken(env, ttlMs = 15 * 60 * 1000) {
+// 簽名 token（查詢 token 與後台 session token 共用）：payload 只放 exp，格式是 base64url(payload).base64url(HMAC-SHA256)。
+// 兩種 token 只差金鑰（見 hmacKey / adminSessionKey），所以簽名與驗證各只寫一份。
+async function signToken(key, ttlMs) {
   const payload = JSON.stringify({ exp: Date.now() + ttlMs });
-  const key = await hmacKey(env);
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
   return `${base64url(new TextEncoder().encode(payload))}.${base64url(sig)}`;
 }
-async function verifyQueryToken(env, token) {
+// getKey 是函式而不是金鑰本身：先檢查 token 格式、解開 payload，格式不對就直接回 token_invalid，
+// 不必（也不該）為了明顯無效的 token 去匯入金鑰。
+async function verifyToken(getKey, token) {
   if (!token || typeof token !== "string" || !token.includes(".")) return { ok: false, reason: "token_invalid" };
   const [payloadPart, sigPart] = token.split(".");
   let payloadBytes, payload;
@@ -135,12 +130,27 @@ async function verifyQueryToken(env, token) {
   } catch {
     return { ok: false, reason: "token_invalid" };
   }
-  const key = await hmacKey(env);
+  const key = await getKey();
   // 要驗證的是「當初被簽名的那份原始 payload bytes」，不是 base64url 編碼後的字串本身。
   const valid = await crypto.subtle.verify("HMAC", key, base64urlToBytes(sigPart), payloadBytes);
   if (!valid) return { ok: false, reason: "token_invalid" };
   if (typeof payload.exp !== "number" || Date.now() > payload.exp) return { ok: false, reason: "token_expired" };
   return { ok: true };
+}
+
+async function hmacKey(env) {
+  return crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(env.QUERY_TOKEN_SECRET),
+    { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]
+  );
+}
+// token 只放 exp（不綁 IP，手機網路常換 IP，綁了會誤傷正常使用者），效期 15 分鐘。
+// 前端過期後會自動拿新 token 重試一次，見 script.js 的 runScheduleQuery。
+async function issueQueryToken(env, ttlMs = 15 * 60 * 1000) {
+  return signToken(await hmacKey(env), ttlMs);
+}
+function verifyQueryToken(env, token) {
+  return verifyToken(() => hmacKey(env), token);
 }
 
 // --- 後台驗證：X-Admin-Token header 帶 MANUAL_SCRAPE_TOKEN ---
@@ -163,25 +173,10 @@ async function adminSessionKey(env) {
   return crypto.subtle.importKey("raw", material, { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
 }
 async function issueAdminSession(env, ttlMs = ADMIN_SESSION_TTL_MS) {
-  const payload = JSON.stringify({ exp: Date.now() + ttlMs });
-  const key = await adminSessionKey(env);
-  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
-  return `${base64url(new TextEncoder().encode(payload))}.${base64url(sig)}`;
+  return signToken(await adminSessionKey(env), ttlMs);
 }
 async function verifyAdminSession(env, token) {
-  if (!token || typeof token !== "string" || !token.includes(".")) return false;
-  const [payloadPart, sigPart] = token.split(".");
-  let payloadBytes, payload;
-  try {
-    payloadBytes = base64urlToBytes(payloadPart);
-    payload = JSON.parse(new TextDecoder().decode(payloadBytes));
-  } catch {
-    return false;
-  }
-  const key = await adminSessionKey(env);
-  const valid = await crypto.subtle.verify("HMAC", key, base64urlToBytes(sigPart), payloadBytes);
-  if (!valid) return false;
-  return typeof payload.exp === "number" && Date.now() <= payload.exp;
+  return (await verifyToken(() => adminSessionKey(env), token)).ok;
 }
 // 一般後台端點只認 session token。原始密碼只能在 /verifyAdminToken 這個唯一入口拿來換 session——
 // 那裡有連續失敗鎖定；如果其他端點也接受原始密碼，就等於繞過鎖定，可以對任一端點慢慢猜密碼。
