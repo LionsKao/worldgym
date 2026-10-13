@@ -3,6 +3,29 @@ const WORKER_BASE = "https://worldgym-api.lions2100.workers.dev";
 // 篩選後結果超過這個筆數就視為條件太寬鬆，不導到結果頁、只在查詢按鈕上提示使用者多加篩選。
 const RESULT_COUNT_WARN_LIMIT = 250;
 
+// 篩選區的六個群組（對應 input 的 name）：網址參數、分享網址、我的最愛、重設、儲存選擇都用這份順序。
+const FILTER_GROUPS = ["day", "time", "branch", "room", "course", "teacher"];
+// 各群組勾選結果存在 localStorage 的 key（wg_selected_day、wg_selected_time ...）
+const SELECTION_STORAGE_KEYS = FILTER_GROUPS.map((name) => `wg_selected_${name}`);
+
+// 打自家 Worker API 的 POST（body 一律 JSON），回傳 fetch 的 Promise。
+function postJson(path, body){
+  return fetch(`${WORKER_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+// 打點類請求：失敗靜默吞掉，不影響前台體驗、不重試。
+function fireAndForgetPost(path, body){
+  postJson(path, body).catch(() => {});
+}
+// 讀 localStorage（useSession=true 則是 sessionStorage）裡的 JSON：沒有、格式壞掉、被瀏覽器擋掉都回 fallback。
+function readStoredJson(key, fallback, useSession = false){
+  try { return JSON.parse((useSession ? sessionStorage : localStorage).getItem(key)) || fallback; }
+  catch(e){ return fallback; }
+}
+
 // 課表通知（Web Push）：VAPID public key，跟 worker/.dev.vars 的 VAPID_PUBLIC_KEY 是同一組 key pair。
 const VAPID_PUBLIC_KEY = "BCcFfPhUxaUYFMtosUu21nd24j5El9YcuYNndb3Ll0_rjC-SwSnT4YvQfi7nVTuQWYjIiDlZqG1jrZrwi7uuw4k";
 
@@ -48,11 +71,7 @@ function isAdTrackingExcluded(){
 // 點擊是低頻、有明確意圖的事件，直接送單筆即可，不用跟曝光一起排隊等 batch。
 function trackAdClick(adId){
   if (!adId || isAdTrackingExcluded()) return;
-  fetch(`${WORKER_BASE}/trackAdEvent`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ adId, type: "click" }),
-  }).catch(() => {});
+  fireAndForgetPost("/trackAdEvent", { adId, type: "click" });
 }
 
 // 廣告一個工作階段只隨機挑一則顯示（不輪播），曝光先攢在記憶體裡，
@@ -77,11 +96,7 @@ function flushAdImpressions(useBeacon){
     navigator.sendBeacon(`${WORKER_BASE}/trackAdEvents`, new Blob([payload], { type: "text/plain" }));
     return;
   }
-  fetch(`${WORKER_BASE}/trackAdEvents`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: payload,
-  }).catch(() => {});
+  fireAndForgetPost("/trackAdEvents", { events });
 }
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) flushAdImpressions(true);
@@ -95,9 +110,7 @@ window.addEventListener("pagehide", () => flushAdImpressions(true));
 const SEARCH_COUNT_DEDUPE_WINDOW_MS = 30 * 60 * 1000;
 function makeSearchCountFilter(dedupeKey){
   return function filterLoggable(values){
-    let map;
-    try { map = JSON.parse(localStorage.getItem(dedupeKey) || "{}"); }
-    catch { map = {}; }
+    const map = readStoredJson(dedupeKey, {});
     const now = Date.now();
     for (const k of Object.keys(map)){
       if (now - map[k] > SEARCH_COUNT_DEDUPE_WINDOW_MS) delete map[k];
@@ -124,27 +137,13 @@ function logSearchEvents(teachers, courses, branches){
     branches: filterLoggableBranches(branches),
   };
   if (payload.teachers.length === 0 && payload.courses.length === 0 && payload.branches.length === 0) return;
-  fetch(`${WORKER_BASE}/trackSearchEvents`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  }).catch(() => {});
-}
-
-// state.branch 存的是分店 slug，要轉成畫面上看到的分店名稱再記錄，admin.html 的長條圖才看得懂。
-function branchSlugToLabel(slug){
-  const input = document.querySelector(`input[name="branch"][value="${CSS.escape(slug)}"]`);
-  return input ? input.nextElementSibling.textContent : slug;
+  fireAndForgetPost("/trackSearchEvents", payload);
 }
 
 // 整體查詢量落地存進 D1，每次真的送出查詢就打一次，不去重，用來看使用量趨勢。
 // resultCount 記錄這次查詢實際顯示的課程數，沒結果或結果太多沒顯示時傳 0。
 function logSearchEvent(resultCount){
-  fetch(`${WORKER_BASE}/trackSearch`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ resultCount }),
-  }).catch(() => {});
+  fireAndForgetPost("/trackSearch", { resultCount });
 }
 
 // 沒有帳號系統，只能用存在 localStorage 的匿名 id 估算「幾個人」用過某個功能，
@@ -162,11 +161,7 @@ function getClientId(){
 // 我的最愛使用量落地存進 D1：add 是成功建立一個最愛、apply 是點最愛套用篩選，不去重，
 // 用來在 admin.html 看「多少人做起來」跟「做起來後按了幾次」。
 function logFavoriteEvent(type){
-  fetch(`${WORKER_BASE}/trackFavorite`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ clientId: getClientId(), type }),
-  }).catch(() => {});
+  fireAndForgetPost("/trackFavorite", { clientId: getClientId(), type });
 }
 function withUtmSource(url){
   try {
@@ -252,6 +247,9 @@ const registeredReminders = new Map();
 function reminderKeyFromFields(branchSlug, dayOfWeek, startTime, className, teacherName){
   return [branchSlug, dayOfWeek, startTime, className, teacherName].join("|");
 }
+function reminderKeyFromRecord(r){
+  return reminderKeyFromFields(r.branchSlug, r.dayOfWeek, r.startTime, r.className, r.teacherName);
+}
 function reminderKeyFromBell(bell){
   return reminderKeyFromFields(bell.dataset.branchSlug, bell.dataset.dayOfWeek, bell.dataset.startTime, bell.dataset.className, bell.dataset.teacherName);
 }
@@ -315,11 +313,7 @@ async function registerReminderForBell(bell){
       pushSubscription: sub.toJSON(),
       clickUrl: location.href,
     };
-    const res = await fetch(`${WORKER_BASE}/registerReminder`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    const res = await postJson("/registerReminder", body);
     if (!res.ok) throw new Error(`registerReminder failed: ${res.status}`);
     const data = await res.json();
     registeredReminders.set(reminderKeyFromBell(bell), { ...body, id: data.id, classAt: data.classAt, remindAt: data.remindAt });
@@ -331,16 +325,22 @@ async function registerReminderForBell(bell){
     bell.classList.remove("busy");
   }
 }
+// 取消一則已登記的通知（結果頁的鈴鐺、「通知」清單的鈴鐺共用）。
+async function cancelReminderRequest(id){
+  const sub = await ensurePushSubscription();
+  await postJson("/cancelReminder", { id, subscriptionEndpoint: sub.endpoint });
+}
+// 這個 push subscription 底下所有還沒發送的通知。
+async function fetchMyReminders(endpoint){
+  const res = await fetch(`${WORKER_BASE}/myReminders?endpoint=${encodeURIComponent(endpoint)}`);
+  const data = await res.json();
+  return data.reminders || [];
+}
 async function cancelReminderForBell(bell){
   bell.classList.add("busy");
   try{
     const id = bell.dataset.reminderId;
-    const sub = await ensurePushSubscription();
-    await fetch(`${WORKER_BASE}/cancelReminder`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, subscriptionEndpoint: sub.endpoint }),
-    });
+    await cancelReminderRequest(id);
     registeredReminders.delete(reminderKeyFromBell(bell));
     syncResultBellsToRegistered();
     trackEvent("cancel_reminder", { class_name: bell.dataset.className, teacher_name: bell.dataset.teacherName, source: "result_bell" });
@@ -376,14 +376,12 @@ async function renderReminderList(){
   let list = [];
   try{
     const sub = await ensurePushSubscription();
-    const res = await fetch(`${WORKER_BASE}/myReminders?endpoint=${encodeURIComponent(sub.endpoint)}`);
-    const data = await res.json();
-    list = data.reminders || [];
+    list = await fetchMyReminders(sub.endpoint);
   } catch(e){
     console.error(e);
   }
   registeredReminders.clear();
-  list.forEach((r) => registeredReminders.set(reminderKeyFromFields(r.branchSlug, r.dayOfWeek, r.startTime, r.className, r.teacherName), r));
+  list.forEach((r) => registeredReminders.set(reminderKeyFromRecord(r), r));
   syncResultBellsToRegistered();
 
   grid.innerHTML = "";
@@ -424,12 +422,7 @@ document.getElementById("reminderGrid").addEventListener("click", async (e) => {
   const id = row.dataset.reminderId;
   bell.classList.add("busy");
   try{
-    const sub = await ensurePushSubscription();
-    await fetch(`${WORKER_BASE}/cancelReminder`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, subscriptionEndpoint: sub.endpoint }),
-    });
+    await cancelReminderRequest(id);
     let cancelledReminder = null;
     for (const [key, r] of registeredReminders){
       if (r.id === id){ cancelledReminder = r; registeredReminders.delete(key); break; }
@@ -465,9 +458,7 @@ async function preloadRegisteredReminders(){
     const reg = await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.getSubscription();
     if (!sub) return;
-    const res = await fetch(`${WORKER_BASE}/myReminders?endpoint=${encodeURIComponent(sub.endpoint)}`);
-    const data = await res.json();
-    (data.reminders || []).forEach((r) => registeredReminders.set(reminderKeyFromFields(r.branchSlug, r.dayOfWeek, r.startTime, r.className, r.teacherName), r));
+    (await fetchMyReminders(sub.endpoint)).forEach((r) => registeredReminders.set(reminderKeyFromRecord(r), r));
   } catch(e){
     console.error(e);
   }
@@ -491,9 +482,7 @@ function trackEvent(name, params){
 const SESSION_TRACKED_EVENTS_KEY = "wg_session_tracked_events";
 function trackEventOncePerSession(name, dedupValue, params){
   const key = `${name}:${dedupValue}`;
-  let tracked;
-  try { tracked = new Set(JSON.parse(sessionStorage.getItem(SESSION_TRACKED_EVENTS_KEY)) || []); }
-  catch(e){ tracked = new Set(); }
+  const tracked = new Set(readStoredJson(SESSION_TRACKED_EVENTS_KEY, [], true));
   if (tracked.has(key)) return;
   tracked.add(key);
   sessionStorage.setItem(SESSION_TRACKED_EVENTS_KEY, JSON.stringify([...tracked]));
@@ -588,33 +577,22 @@ function renderGrid(containerId, defaultName, options){
 }
 
 function getZoneState(zoneName, isTaipei) {
-  try {
-    const states = JSON.parse(localStorage.getItem('wg_zone_states')) || {};
-    if (states[zoneName] !== undefined) {
-      return states[zoneName];
-    }
-  } catch(e) {
-    console.warn("讀取 localStorage 失敗", e);
-  }
-  return isTaipei;
+  const states = readStoredJson("wg_zone_states", {});
+  return states[zoneName] !== undefined ? states[zoneName] : isTaipei;
 }
 
 function saveZoneState(zoneName, isExpanded) {
+  const states = readStoredJson("wg_zone_states", {});
+  states[zoneName] = isExpanded;
   try {
-    const states = JSON.parse(localStorage.getItem('wg_zone_states')) || {};
-    states[zoneName] = isExpanded;
-    localStorage.setItem('wg_zone_states', JSON.stringify(states));
+    localStorage.setItem("wg_zone_states", JSON.stringify(states));
   } catch(e) {
     console.warn("寫入 localStorage 失敗", e);
   }
 }
 
 function getClickCounts(key) {
-  try {
-    return JSON.parse(localStorage.getItem(key)) || {};
-  } catch(e) {
-    return {};
-  }
+  return readStoredJson(key, {});
 }
 function incrementClickCount(key, value) {
   const counts = getClickCounts(key);
@@ -881,48 +859,31 @@ copyUrlBtn.addEventListener("click", async (e) => {
 
 // QR code 固定指向正式站網址（見 icons/qrcode.png，用 vendor/qrcode-generator.js 離線產生），
 // 不再即時用 JS 產生：省掉一整包 56KB 的 QR 函式庫，換成一張幾 KB 的靜態圖。
-const qrCodeBtn = document.getElementById("qrCodeBtn");
-const qrCodeTooltip = document.getElementById("qrCodeTooltip");
-qrCodeBtn.addEventListener("click", (e) => {
-  e.stopPropagation();
-  qrCodeTooltip.classList.toggle("visible");
-  if (qrCodeTooltip.classList.contains("visible")) trackEvent("open_qr_code", {});
-});
-document.addEventListener("click", (e) => {
-  if (!qrCodeTooltip.classList.contains("visible")) return;
-  if (e.target.closest("#qrCodeBtnWrap")) return;
-  qrCodeTooltip.classList.remove("visible");
-});
+// 點按鈕開關浮層、點浮層與按鈕以外的地方收起（QR code、隱私說明、通知說明共用）。
+// wrapSelector 是按鈕與浮層共同的外層，點在裡面不算「點外面」；onOpen 在剛打開時呼叫。
+function setupTogglePopover(btn, tooltip, wrapSelector, onOpen){
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    tooltip.classList.toggle("visible");
+    if (onOpen && tooltip.classList.contains("visible")) onOpen();
+  });
+  document.addEventListener("click", (e) => {
+    if (!tooltip.classList.contains("visible")) return;
+    if (e.target.closest(wrapSelector)) return;
+    tooltip.classList.remove("visible");
+  });
+}
+setupTogglePopover(document.getElementById("qrCodeBtn"), document.getElementById("qrCodeTooltip"), "#qrCodeBtnWrap", () => trackEvent("open_qr_code", {}));
 
 // 隱私說明：點擊切換顯示，內容講清楚只做匿名統計、資料來源是 World Gym 官網、本站非官方工具。
-const privacyBtn = document.getElementById("privacyBtn");
-const privacyTooltip = document.getElementById("privacyTooltip");
-privacyBtn.addEventListener("click", (e) => {
-  e.stopPropagation();
-  privacyTooltip.classList.toggle("visible");
-});
-document.addEventListener("click", (e) => {
-  if (!privacyTooltip.classList.contains("visible")) return;
-  if (e.target.closest("#privacyBtnWrap")) return;
-  privacyTooltip.classList.remove("visible");
-});
+setupTogglePopover(document.getElementById("privacyBtn"), document.getElementById("privacyTooltip"), "#privacyBtnWrap");
 
 // 通知說明：只在「還不是 PWA 模式」時顯示，讓使用者知道怎麼加入主畫面開啟通知；
 // 已經是 PWA 模式（standalone）就不需要這顆按鈕了。點擊切換顯示提示文字。
 const notifyInfoBtnWrap = document.getElementById("notifyInfoBtnWrap");
 const isStandaloneMode = window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
 if (isStandaloneMode) notifyInfoBtnWrap.classList.add("hidden");
-const notifyInfoBtn = document.getElementById("notifyInfoBtn");
-const notifyInfoTooltip = document.getElementById("notifyInfoTooltip");
-notifyInfoBtn.addEventListener("click", (e) => {
-  e.stopPropagation();
-  notifyInfoTooltip.classList.toggle("visible");
-});
-document.addEventListener("click", (e) => {
-  if (!notifyInfoTooltip.classList.contains("visible")) return;
-  if (e.target.closest("#notifyInfoBtnWrap")) return;
-  notifyInfoTooltip.classList.remove("visible");
-});
+setupTogglePopover(document.getElementById("notifyInfoBtn"), document.getElementById("notifyInfoTooltip"), "#notifyInfoBtnWrap");
 
 // 星期／分店／課程／老師：勾選後記住選擇，下次打開頁面自動套用。
 function saveSelection(key, names){
@@ -941,9 +902,7 @@ function applyStateToInputs(state, names){
   });
 }
 function applySavedSelection(key, names){
-  let state;
-  try{ state = JSON.parse(localStorage.getItem(key)); }
-  catch(e){ state = null; }
+  const state = readStoredJson(key, null);
   if (!state) return;
   applyStateToInputs(state, names);
 }
@@ -955,7 +914,7 @@ function getUrlFilterState(){
   const params = new URLSearchParams(location.search);
   if ([...params.keys()].length === 0) return null;
   const state = {};
-  ["day", "time", "branch", "room", "course", "teacher"].forEach(name => {
+  FILTER_GROUPS.forEach(name => {
     let values = params.getAll(name);
     if (name === "room") values = values.map(v => ROOM_URL_DECODE[v] || v);
     // branch 的短代碼要等 initBranchGrid() 把 BRANCH_URL_DECODE 填好後才解得開，
@@ -966,7 +925,7 @@ function getUrlFilterState(){
 }
 function buildShareUrl(state){
   const params = new URLSearchParams();
-  ["day", "time", "branch", "room", "course", "teacher"].forEach(name => {
+  FILTER_GROUPS.forEach(name => {
     (state[name] || []).forEach(v => {
       const code = name === "room" ? (ROOM_URL_CODE[v] || v) : name === "branch" ? (BRANCH_URL_CODE[v] || v) : v;
       params.append(name, code);
@@ -978,7 +937,7 @@ function buildShareUrl(state){
 }
 function updateResetButtonState(){
   // room 一定會有預設值（團體教室），所以不算進「有沒有選篩選」的判斷，不然按鈕永遠不會變灰。
-  const hasSelection = ["day", "time", "branch", "course", "teacher"].some(name =>
+  const hasSelection = FILTER_GROUPS.filter(name => name !== "room").some(name =>
     document.querySelector(`input[name="${name}"]:checked`)
   );
   const btn = document.getElementById("resetFiltersBtn");
@@ -1005,12 +964,10 @@ document.getElementById("teacherGrid").addEventListener("change", (e) => {
 document.getElementById("resetFiltersBtn").addEventListener("click", (e) => {
   trackEvent("reset_filters", {});
   showPillWarning(e.currentTarget, "已清除所有篩選條件");
-  ["day", "time", "branch", "room", "course", "teacher"].forEach(name => {
+  FILTER_GROUPS.forEach(name => {
     document.querySelectorAll(`input[name="${name}"]`).forEach(input => { input.checked = false; });
   });
-  ["wg_selected_day", "wg_selected_time", "wg_selected_branch", "wg_selected_room", "wg_selected_course", "wg_selected_teacher"].forEach(key => {
-    localStorage.removeItem(key);
-  });
+  SELECTION_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));
   document.querySelectorAll("#filterForm .section-search").forEach(input => {
     input.value = "";
     input.dispatchEvent(new Event("input"));
@@ -1023,11 +980,9 @@ document.getElementById("resetFiltersBtn").addEventListener("click", (e) => {
 
 // 我的最愛：把目前勾選的篩選存成一組快照，之後可以一鍵套用。
 const FAVORITES_KEY = "wg_favorites";
-const FILTER_GROUPS = ["day", "time", "branch", "room", "course", "teacher"];
 
 function getFavorites(){
-  try{ return JSON.parse(localStorage.getItem(FAVORITES_KEY)) || []; }
-  catch(e){ return []; }
+  return readStoredJson(FAVORITES_KEY, []);
 }
 function saveFavorites(favs){
   localStorage.setItem(FAVORITES_KEY, JSON.stringify(favs));
@@ -1072,10 +1027,7 @@ const FUNNY_DEFAULT_FAVORITE_LABELS = [
   "咕嚕咕嚕 🌀",
 ];
 function favoriteLabel(state){
-  const branchLabels = (state.branch || []).map(slug => {
-    const input = document.querySelector(`input[name="branch"][value="${CSS.escape(slug)}"]`);
-    return input ? input.nextElementSibling.textContent : slug;
-  });
+  const branchLabels = (state.branch || []).map(branchSlugToName);
   if (branchLabels.length){
     const joined = branchLabels.join("、");
     return joined.length > 15 ? joined.slice(0, 15) + "…" : joined;
@@ -1102,7 +1054,7 @@ function renderFavorites(){
     btn.innerHTML = `<i class="fa-solid fa-${escapeHtml(fav.icon || "heart")}"></i>${escapeHtml(fav.label)}`;
     btn.addEventListener("click", () => {
       applyFilterState(fav.state);
-      ["wg_selected_day", "wg_selected_time", "wg_selected_branch", "wg_selected_room", "wg_selected_course", "wg_selected_teacher"].forEach(key => localStorage.removeItem(key));
+      SELECTION_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));
       FILTER_GROUPS.forEach(name => saveSelection(`wg_selected_${name}`, [name]));
       updateResetButtonState();
       trackEventOncePerSession("apply_favorite", fav.label, { favorite_label: fav.label });
@@ -1287,6 +1239,8 @@ function distanceKm(lat1, lng1, lat2, lng2){
 // 同頁查詢結果：按查詢後不換頁，改成隱藏篩選 pill、顯示結果，按返回再換回來。
 const WEEKDAY_LABEL = { today: "今天", tomorrow: "明天", 1: "一", 2: "二", 3: "三", 4: "四", 5: "五", 6: "六", 7: "日" };
 
+// 分店 slug → 畫面上看到的分店名稱（找不到就回 slug）。記錄查詢次數（admin 的長條圖才看得懂）、
+// 篩選摘要、最愛的預設名稱都用這一個。
 function branchSlugToName(slug){
   const input = document.querySelector(`input[name="branch"][value="${CSS.escape(slug)}"]`);
   return input ? input.nextElementSibling.textContent : slug;
@@ -1640,11 +1594,7 @@ document.getElementById("mailSendBtn").addEventListener("click", async () => {
   }
   btn.disabled = true;
   try{
-    const res = await fetch(`${WORKER_BASE}/sendMessageToAuthor`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content }),
-    });
+    const res = await postJson("/sendMessageToAuthor", { content });
     if (!res.ok) throw new Error(`sendMessageToAuthor failed: ${res.status}`);
     trackEvent("send_message", {});
     input.disabled = true;
@@ -1683,7 +1633,7 @@ async function runSearchAndShowResults(state){
         trigger_source: searchTriggerSource,
       });
       if (searchTriggerSource !== "favorite"){
-        logSearchEvents(state.teacher, state.course, (state.branch || []).map(branchSlugToLabel));
+        logSearchEvents(state.teacher, state.course, (state.branch || []).map(branchSlugToName));
       }
       showResultView();
       history.replaceState(null, "", buildShareUrl(state));
