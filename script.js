@@ -1411,6 +1411,34 @@ async function runScheduleQuery(state, isRetry){
   // 回傳格式：{ rows, fetchedCount, displayedCount, oldestScrapedAt }
 }
 
+// 查詢結果的記憶體快取：同一組條件在 QUERY_CACHE_TTL_MS 內重複查（查詢→返回→再查、點最愛、點老師名字…）
+// 直接用上一次的結果，不再打 /queryClasses，也不會用掉每分鐘 20 次的限流額度。
+// 只存在這個頁面的 JS 記憶體，不寫 localStorage：重新整理、關掉 PWA 就清空；隔了一段時間再回來
+// （即使 localStorage 還原了同一組篩選，不是在來回查詢）超過存活時間，也會真的重新跟伺服器要資料。
+// 課表一天只更新兩次（台灣時間 03:00/17:00），5 分鐘內重複查詢看到的資料不會比伺服器舊多少。
+const QUERY_CACHE_TTL_MS = 5 * 60 * 1000; // 從「抓回來」那一刻起算，不會因為一直命中而延長
+const QUERY_CACHE_MAX_ENTRIES = 20;
+const queryResultCache = new Map(); // key → { at, result }；Map 依插入順序，最舊的排最前面
+// key 含台灣今天的日期：跨日後「今天起 7 天」的視窗會變，不能沿用前一天的結果。
+// 陣列欄位排序後再比對：查詢條件是集合，勾選順序不同不該算不同條件。
+function queryCacheKey(queryState){
+  const normalized = Object.fromEntries(Object.keys(queryState).sort().map((k) => [k, Array.isArray(queryState[k]) ? [...queryState[k]].sort() : queryState[k]]));
+  return JSON.stringify([todayIso(), normalized]);
+}
+async function runScheduleQueryCached(queryState){
+  const key = queryCacheKey(queryState);
+  const hit = queryResultCache.get(key);
+  if (hit && Date.now() - hit.at < QUERY_CACHE_TTL_MS) return hit.result;
+  queryResultCache.delete(key); // 過期的順便移掉（沒有就什麼都不做）
+  const result = await runScheduleQuery(queryState); // 失敗（逾時、限流、伺服器錯誤）會直接丟出去，不會被存起來
+  // 超過上限的結果前端不會顯示（只提示「結果太多」），不存，避免佔記憶體
+  if (result.displayedCount <= RESULT_COUNT_WARN_LIMIT){
+    queryResultCache.set(key, { at: Date.now(), result });
+    while (queryResultCache.size > QUERY_CACHE_MAX_ENTRIES) queryResultCache.delete(queryResultCache.keys().next().value);
+  }
+  return result;
+}
+
 let lastResultRows = [];
 let TEACHER_NAMES = [];
 function renderTeacherGrid(){
@@ -1590,7 +1618,7 @@ async function runSearchAndShowResults(state){
   // 送給後端查詢時才 resolve：明確星期幾送 day（1-7 數字），"今天"/"明天" 送 exactDates（實際日期）。
   const queryState = resolveQueryState(state);
   try{
-    const { rows, displayedCount, oldestScrapedAt } = await runScheduleQuery(queryState);
+    const { rows, displayedCount, oldestScrapedAt } = await runScheduleQueryCached(queryState);
     logSearchEvent(displayedCount);
     if (displayedCount === 0){
       showPillWarning(submitBtn, "查無符合條件的課程，請調整篩選條件");

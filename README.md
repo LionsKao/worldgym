@@ -184,7 +184,8 @@ Pages（`functions/_middleware.js`）與 Worker 都只放行台灣 IP（拿不�
 
 1. **流量限制**：每 IP 每 60 秒 20 次（`/queryClasses`）／10 次（`/issueToken`），用 KV（`QUERY_RATE_LIMIT`）記 fixed-window 計數，超過回 `429`。KV 是最終一致、讀後寫也不是原子操作，所以這只是「夠用的防濫用」，不是精確計費。
 2. **短效 HMAC token**：`GET /issueToken` 發 15 分鐘效期的 token（payload 只有 `exp`，用 `QUERY_TOKEN_SECRET` 簽名）；`/queryClasses` 沒帶對的 token 回 `401`，並用 `token_invalid`／`token_expired` 區分。前端頁面載入時預熱一張，過期時自動重拿並重試一次，使用者無感。
-3. **結果筆數上限**：`RESULT_HARD_CAP = 600`。前端本來就在超過 250 筆時整包不顯示，後端沒必要把全表撈出來又被丟棄；600 比前端門檻高，正常情況不受影響。
+3. **前端查詢結果快取**：同一組條件 5 分鐘內重複查詢（查詢、返回、再查）直接用裝置上的結果，不再打 API；只存在頁面記憶體，重新整理或隔一段時間再回來就會重新要資料。
+4. **結果筆數上限**：`RESULT_HARD_CAP = 600`。前端本來就在超過 250 筆時整包不顯示，後端沒必要把全表撈出來又被丟棄；600 比前端門檻高，正常情況不受影響。
 
 這套機制擋不住「認真讀網頁怎麼呼叫 API 再模仿」的人，目標只是擋掉隨手直接打 API 的腳本。
 
