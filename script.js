@@ -163,6 +163,15 @@ function getClientId(){
 function logFavoriteEvent(type){
   fireAndForgetPost("/trackFavorite", { clientId: getClientId(), type });
 }
+// 廣告連結只收 http(s)：ads.url 是寫在資料庫裡的字串，會直接變成 <a href>，
+// 要是不小心（或被人）寫成 javascript: 之類，點下去就會執行。不合格的廣告當作沒有這則。
+function hasWebUrl(ad){
+  try {
+    return ["http:", "https:"].includes(new URL(ad.url).protocol);
+  } catch(err){
+    return false;
+  }
+}
 function withUtmSource(url){
   try {
     const u = new URL(url);
@@ -201,7 +210,7 @@ if (cameFromOldDomain){
 } else {
   fetch(`${WORKER_BASE}/ads`)
     .then((res) => (res.ok ? res.json() : { ads: [] }))
-    .then((data) => { AD_BANNERS = Array.isArray(data.ads) ? data.ads : []; })
+    .then((data) => { AD_BANNERS = Array.isArray(data.ads) ? data.ads.filter(hasWebUrl) : []; })
     .catch(() => { AD_BANNERS = []; })
     .finally(initAdBanner);
 }
