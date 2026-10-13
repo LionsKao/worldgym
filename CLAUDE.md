@@ -122,7 +122,7 @@ worker/
 | `meta_filter_options` | 篩選用課程/老師名稱清單快取（爬蟲跑完才更新；也是 `/trackSearchEvents` 驗證老師/課程名稱的來源） |
 | `reminders` | 課前推播提醒登記與發送狀態 |
 | `reminder_add_events` / `reminder_add_monthly` | 提醒功能使用量（只記「登記」次數） |
-| `ads` | 首頁廣告內容與上下架時間（沒有輪播，每次載入隨機挑一則） |
+| `ads` | 首頁廣告內容與上下架時間（沒有輪播，每次載入隨機挑一則）。橫幅 `#adBanner` 在 `index.html` 預設 `hidden`、沒有預設文字與連結，有生效中的廣告（或舊網域提示）才由 `script.js` 的 `initAdBanner()` 填內容並顯示——不要把預設改回顯示，否則沒廣告時載入會先閃一下再消失 |
 | `ad_events` / `ad_monthly` | 廣告曝光/點擊打點與月度彙總 |
 | `teacher_search_events` / `course_search_events` / `branch_search_events`（各有 `*_monthly`） | 老師/課程/分店查詢次數打點與月度彙總 |
 | `search_events` / `search_monthly` | 整體查詢次數與結果數 |

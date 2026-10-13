@@ -184,6 +184,8 @@ function withUtmSource(url){
 }
 
 // 一次工作階段只隨機挑一則廣告顯示，不再輪播；使用者要看到別的廣告只能重新整理頁面（等同開新的工作階段）。
+// 橫幅在 index.html 裡預設就是 hidden、也沒有預設文字與連結：沒有生效中的廣告時完全不會出現，
+// 不會在等 /ads 回應的那段時間先閃一下舊內容再消失；有廣告（或舊網域提示）才在這裡填內容並顯示。
 function initAdBanner(){
   const banner = document.getElementById("adBanner");
   const el = document.getElementById("adBannerText");
@@ -194,15 +196,14 @@ function initAdBanner(){
     const tag = banner.querySelector(".ad-banner-tag");
     tag.setAttribute("aria-label", "提示");
     tag.innerHTML = '<i class="fa-solid fa-fw fa-bookmark"></i>';
+    banner.classList.remove("hidden");
     return;
   }
-  if (AD_BANNERS.length === 0) {
-    banner.classList.add("hidden");
-    return;
-  }
+  if (AD_BANNERS.length === 0) return;
   currentAdIndex = Math.floor(Math.random() * AD_BANNERS.length);
   el.textContent = AD_BANNERS[currentAdIndex].text;
   banner.href = withUtmSource(AD_BANNERS[currentAdIndex].url);
+  banner.classList.remove("hidden");
   bufferAdImpression(AD_BANNERS[currentAdIndex].id);
 }
 if (cameFromOldDomain){
