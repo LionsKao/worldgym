@@ -63,7 +63,9 @@ npx wrangler d1 execute worldgym-schedule --remote --file=migrations/xxx.sql
 ```bash
 cd worker && npm run check:branches -- --base=origin/main
 ```
-分店資料散在 `worker/src/branches-seed.js`（唯一來源）、`script.js` 的 `BRANCH_SLUG_ORDER`、`index.html` 寫死的分店 pill（含縣市、顯示名稱、經緯度）與備援用的靜態 `sitemap.xml`，沒有 build step 能自動同步。這支腳本只讀檔，檢查四處是否對得上；**加上 `--base=<git ref>` 才會驗證 seed 的順序「只能往後附加」**——三處同步插到中間時，光比對三處是看不出來的，但舊的短代碼分享網址會指到別間分店。有錯誤 exit code 為 1。
+分店資料散在 `worker/src/branches-seed.js`（唯一來源）、`script.js` 的 `BRANCH_SLUG_ORDER`、`index.html` 寫死的分店 pill（含縣市、顯示名稱、經緯度）與備援用的靜態 `sitemap.xml`，沒有 build step 能自動同步。這支腳本只讀檔，檢查四處是否對得上；**加上 `--base=<git ref>` 才會驗證 seed 的順序「只能往後附加」**——三處同步插到中間時，光比對三處是看不出來的，但舊的短代碼分享網址會指到別間分店。同時會檢查 `branches-excluded.js`（見下）的格式、重複與跟 seed 有沒有重疊。有錯誤 exit code 為 1。
+
+**本站只收「不用付費的團體課」，官網有、但沒收進 seed 的分店都是刻意的**（Express 店、只有付費課如 Studio X 的店、尚未開幕的），不是漏掉。為了讓每月 2 號的分店掃描只通知「真正新出現」的網址，這些不收的網址記在 `worker/src/branches-excluded.js` 的 `EXCLUDED_BRANCHES`（slug → 理由；2026-10-13 逐一查證過 37 間）。收到 Teams「疑似新分店」通知時：有不用付費的團課 → 照上面流程加進 seed（`BRANCH_SLUG_ORDER`、`index.html` pill 一起，只能往後附加）；不收 → 加進 `EXCLUDED_BRANCHES` 並寫理由。同一個 slug 不能同時在 seed 與 `EXCLUDED_BRANCHES`（`check:branches` 會擋）。另有 `EXPECTED_MISSING_FROM_SITEMAP`：已收進 seed、但官網 sitemap 還沒有的預售分店（目前是桃園藝文 `taoyuan-yiwen`），掃描不把它當「疑似下架」；官網建了分店頁、有課表之後爬蟲會自動抓進來，那時可以順手刪掉這一項。已收進 seed 但官網分店頁還沒有任何課的（目前是苗栗竹南 `miaoli-zhunan`）不需要登記——它在 sitemap 裡，掃描本來就不會報。
 
 There is no test suite and no lint/build command in this repo（只有上面這支檢查腳本）。
 
@@ -99,10 +101,11 @@ worker/
   src/util.js                       共用小工具：台灣時間（nowTaiwanIso 等）、fnv1aHex、爬官網的 UA、推 Teams；functions/ 也會 import
   src/queryClasses.js               課表查詢邏輯
   src/scrape.js                     爬蟲邏輯（重抓官網課表寫入 D1）
-  src/branchScan.js                 每月比對官網 sitemap 與 branches-seed.js，有差異才通知 Teams（只通知，不改資料）
+  src/branchScan.js                 每月比對官網 sitemap 與 branches-seed.js，有差異才通知 Teams（只通知，不改資料）；已知不收的網址（branches-excluded.js）不算差異
   src/reminders.js                  課前推播提醒：登記/取消/到期發送 Web Push
   src/analytics.js                  報表的「明細 + 月度彙總」合併查詢與每月壓縮（rollupAnalyticsEvents）
   src/branches-seed.js              分店清單固定資料
+  src/branches-excluded.js          月度掃描用：官網有、但刻意不收的分店（EXCLUDED_BRANCHES，附理由）＋已收進 seed、官網 sitemap 還沒有的預售分店（EXPECTED_MISSING_FROM_SITEMAP）
   scripts/check-branches.mjs        分店清單一致性檢查（npm run check:branches，見 Commands）
   schema.sql                        D1 完整 schema（重建資料庫用，會 DROP 所有表）
   migrations/                       針對既有正式資料庫的單張 table migration

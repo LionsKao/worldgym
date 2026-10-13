@@ -8,6 +8,8 @@
 //   4. 根目錄靜態 sitemap.xml（動態 sitemap 失敗時的備援）：不能出現 seed 裡已經沒有的分店
 //   5. （選用）--base=<git ref>：seed 的 slug 順序只能「往後附加」，不能插入/調換/刪除
 //      例如 npm run check:branches -- --base=origin/main
+//   6. worker/src/branches-excluded.js（月度掃描用的「已知不收清單」）：slug 格式合法、不重複、有寫理由，
+//      而且不能同時出現在 seed（收了就不該還在不收清單）；預售清單的 slug 必須是 seed 裡的分店
 // 有錯誤（✗）exit code 為 1；警告（⚠）只是提醒，不影響 exit code。
 // --root=<目錄> 可以指定另一份 repo 根目錄（測試用），預設是這支腳本所在 repo。
 import fs from "node:fs";
@@ -121,6 +123,25 @@ if (args.base) {
     errors.push(`無法讀取 ${ref} 的 ${SEED_PATH}：${String(e.stderr || e.message).trim().split("\n")[0]}`);
   }
 }
+
+// ---- 6. 已知不收清單 ----
+const EXCLUDED_PATH = "worker/src/branches-excluded.js";
+const excludedModule = await import(pathToFileURL(path.join(ROOT, EXCLUDED_PATH)).href);
+const excludedSlugs = Object.keys(excludedModule.EXCLUDED_BRANCHES);
+const expectedMissing = Object.keys(excludedModule.EXPECTED_MISSING_FROM_SITEMAP);
+// 物件字面值寫了兩個相同的 key 不會報錯（後面蓋掉前面），import 後看不出來，所以直接讀原始碼數 key
+const excludedKeyDupes = dupes([...read(EXCLUDED_PATH).matchAll(/^\s*"([^"]+)"\s*:/gm)].map((m) => m[1]));
+if (excludedKeyDupes.length) errors.push(`${EXCLUDED_PATH} 有重複的 slug：${fmt(excludedKeyDupes)}`);
+const badExcluded = [...excludedSlugs, ...expectedMissing].filter((s) => !SAFE_SLUG_PATTERN.test(s));
+if (badExcluded.length) errors.push(`${EXCLUDED_PATH} 有不合法的 slug（只能小寫英數與連字號）：${fmt(badExcluded)}`);
+const noReason = [...Object.entries(excludedModule.EXCLUDED_BRANCHES), ...Object.entries(excludedModule.EXPECTED_MISSING_FROM_SITEMAP)]
+  .filter(([, reason]) => typeof reason !== "string" || !reason.trim()).map(([slug]) => slug);
+if (noReason.length) errors.push(`${EXCLUDED_PATH} 有沒寫理由的項目：${fmt(noReason)}`);
+const excludedAndSeed = excludedSlugs.filter((s) => seedBySlug.has(s));
+if (excludedAndSeed.length) errors.push(`${EXCLUDED_PATH} 的 EXCLUDED_BRANCHES 列了已收進 seed 的分店（收了就要從不收清單刪掉）：${fmt(excludedAndSeed)}`);
+const missingNotInSeed = expectedMissing.filter((s) => !seedBySlug.has(s));
+if (missingNotInSeed.length) errors.push(`${EXCLUDED_PATH} 的 EXPECTED_MISSING_FROM_SITEMAP 列了 seed 裡沒有的分店（這份清單只給「已收進 seed、官網 sitemap 還沒有」的分店用）：${fmt(missingNotInSeed)}`);
+console.log(`${EXCLUDED_PATH}：不收 ${excludedSlugs.length} 間、預售（官網尚無分店頁）${expectedMissing.length} 間`);
 
 console.log("");
 for (const w of warnings) console.log(`⚠ ${w}`);

@@ -57,7 +57,8 @@
         ├── analytics.js                 #   報表的「明細＋月度彙總」查詢與每月壓縮
         ├── crawlers.js                  #   海外 IP 存取判斷與爬蟲 UA 清單（Pages 的中介層也用）
         ├── util.js                      #   共用小工具：台灣時間、fnv1aHex、爬官網的 UA、推 Teams（functions/ 也會 import）
-        └── branches-seed.js             #   分店清單固定資料（slug 對應官網 find-a-club/{slug}）
+        ├── branches-seed.js             #   分店清單固定資料（slug 對應官網 find-a-club/{slug}）
+        └── branches-excluded.js         #   已知不收的分店（Express、付費課）與預售分店，月度掃描不重複通知
 ```
 
 ### 排程（`worker/wrangler.toml` 的 cron，時間為台灣時間）
@@ -67,7 +68,7 @@
 | `*/5 * * * *` | 每 5 分鐘 | 掃描課前推播是否到期並送出 |
 | `0 19 * * *`、`0 9 * * *` | 每天 03:00、17:00 | 重抓全部分店課表（需要 Workers Paid：單次執行要發一百多個 subrequest，免費方案上限只有 50） |
 | `0 20 1 * *` | 每月 1 號 04:00 | 兩件互不相關的事：①把**當月以前**（實務上就是剛結束的上個月）的報表明細壓縮成月度彙總並刪掉明細；②另外清掉 90 天前的 `query_access_log`（這個「90 天」只針對這張存取紀錄表，跟報表明細無關） |
-| `0 21 2 * *` | 每月 2 號 05:00 | 比對官網 sitemap 與 `branches-seed.js`，有差異才發 Teams 通知（只通知，不會自動改資料） |
+| `0 21 2 * *` | 每月 2 號 05:00 | 比對官網 sitemap 與 `branches-seed.js`，有差異才發 Teams 通知（只通知，不會自動改資料）；`branches-excluded.js` 裡已知不收的網址不算差異 |
 
 也可以在 `admin.html` 手動重抓。
 
@@ -272,6 +273,8 @@ npm run check:branches -- --base=origin/main
 ```
 
 它只讀檔，檢查四處是否對得上；加 `--base=<git ref>` 還會驗證 seed 的順序「**只能往後附加**」——短代碼就是分店在陣列裡的位置，順序一變，舊的分享網址就會指到別間分店。
+
+**本站只收不用付費的團體課**，官網有、但沒收進來的分店（Express 店、只有 Studio X 等付費課的店、尚未開幕的）都是刻意不收，記在 `worker/src/branches-excluded.js`（附理由），每月分店掃描不會再重複通知它們。收到「疑似新分店」的 Teams 通知時：有免費團課就加進 `branches-seed.js`（並同步其他三處）；不收就加進 `branches-excluded.js`。`check:branches` 也會檢查這份清單的格式，以及同一個 slug 不能同時出現在 seed 與不收清單。預售中、官網 sitemap 還沒有分店頁的分店（目前是桃園藝文）登記在同檔案的 `EXPECTED_MISSING_FROM_SITEMAP`，掃描不會把它當成疑似下架。
 
 ## 🚀 部署
 
