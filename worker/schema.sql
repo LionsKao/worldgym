@@ -24,10 +24,9 @@ CREATE INDEX idx_classes_date ON classes(date, startTime);
 CREATE INDEX idx_classes_branch ON classes(branchSlug, date, startTime);
 CREATE INDEX idx_classes_className ON classes(className);
 CREATE INDEX idx_classes_teacherName ON classes(teacherName);
-CREATE INDEX idx_classes_teacherEmpNo ON classes(teacherEmpNo);
-CREATE INDEX idx_classes_dayOfWeek ON classes(dayOfWeek);
-CREATE INDEX idx_classes_roomName ON classes(roomName);
 CREATE INDEX idx_classes_startHour ON classes(startHour);
+-- teacherEmpNo / dayOfWeek / roomName 刻意不建索引：沒有查詢需要，或選擇性太低反而讓計畫變差，
+-- 理由與實測數字見 migrations/019_drop_unused_classes_indexes.sql。
 
 DROP TABLE IF EXISTS branches;
 CREATE TABLE branches (

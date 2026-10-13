@@ -1,0 +1,41 @@
+-- classes 表的 8 個單欄索引裡，有 3 個沒有用處，甚至讓查詢計畫變差。表一天被爬蟲整個重寫兩次
+-- （約 8.7 千列），每個索引都讓每一列多寫一筆索引項目，所以不需要的索引是純成本。
+--
+-- 這張表只放約 8 天的資料（今天起 7 天固定班＋之後一週的代課），roomName 只有 2 種值、
+-- dayOfWeek 只有 7 種值，選擇性極低。SQLite 沒有統計資料（沒有 sqlite_stat1），遇到「等於」條件
+-- 就偏好挑這種索引，結果是：撈出約半張表、再用暫存 B-tree 排序，反而放棄了
+-- idx_classes_date(date, startTime)——它的順序剛好等於 ORDER BY date, startTime，用它掃描
+-- 湊滿 LIMIT 250 就能提早停止、完全不用排序。
+--
+-- 逐一實測（正式庫，EXPLAIN QUERY PLAN＋meta.rows_read；「改用」是用 INDEXED BY 模擬沒有該索引時
+-- 計畫會選的索引）：
+--   近 7 天＋教室（首頁預設就是勾「團體教室」，最常見）  rows_read 14,530 → 278，12.5ms → 3.2ms
+--   近 7 天＋星期                                          4,700 → 1,409，11.9ms → 3.7ms
+--   遠窗（代課）＋星期                                     2,412 → 108
+--   遠窗（代課）＋教室                                     7,408 → 108
+--   近 7 天＋教室＋時段                                    7,904 → 1,229（改走 idx_classes_startHour）
+--   近 7 天＋教室＋分店 5 間＋星期                         7,391 → 478（改走 idx_classes_branch）
+--   近 7 天＋課程＋老師＋教室＋時段＋分店＋星期            7,314 → 20（改走 idx_classes_teacherName）
+-- 代價：sitemap.xml / llms.txt 用的 getBranchesWithSchedule（WHERE roomName=? AND isSubstitute=0
+-- AND date 區間 GROUP BY branchSlug）少了 roomName 索引，改掃 date 索引，約 7ms → 21ms；
+-- 這個查詢結果會被 Cache API 快取 30 分鐘，可以接受。
+-- 本機用同一份資料模擬：重寫整張表的時間約 60ms → 45ms，檔案大小約 -12%。
+--
+-- 1) idx_classes_teacherEmpNo：沒有任何查詢用 teacherEmpNo 當條件（它只用來組 id 與寫入），
+--    所有 EXPLAIN 都沒出現過。
+-- 2) idx_classes_dayOfWeek：如上，選擇性太低，反而讓計畫變差。
+-- 3) idx_classes_roomName：同上。
+--
+-- 刻意保留：idx_classes_date、idx_classes_branch（主力）、idx_classes_className、
+-- idx_classes_teacherName（課程/老師查詢，而且 finalizeFilterOptions 的 GROUP BY 靠它們做 covering scan）、
+-- idx_classes_startHour（時段查詢實測 rows_read 1,261 vs 強制走 date 的 2,370，有幫助）。
+-- 也評估過新增 (roomName, isSubstitute, date) 複合索引：只能幫 sitemap/llms 那一條精準 seek，
+-- 但「教室」條件的一般查詢遇到它還是會被選走、再排序，一樣讓計畫變差，所以不加。
+--
+-- 還原用（需要時再建）：
+--   CREATE INDEX idx_classes_teacherEmpNo ON classes(teacherEmpNo);
+--   CREATE INDEX idx_classes_dayOfWeek ON classes(dayOfWeek);
+--   CREATE INDEX idx_classes_roomName ON classes(roomName);
+DROP INDEX IF EXISTS idx_classes_teacherEmpNo;
+DROP INDEX IF EXISTS idx_classes_dayOfWeek;
+DROP INDEX IF EXISTS idx_classes_roomName;
