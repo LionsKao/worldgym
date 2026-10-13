@@ -236,8 +236,6 @@ function addMonths(monthStr, delta){
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-function monthLabel(monthStr){ return monthStr; }
-
 function buildChartWindow(ad, endMonth){
   const months = [];
   for (let i = CHART_MONTHS - 1; i >= 0; i--) months.push(addMonths(endMonth, -i));

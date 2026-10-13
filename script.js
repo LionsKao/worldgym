@@ -180,7 +180,7 @@ function withUtmSource(url){
 }
 
 // 一次工作階段只隨機挑一則廣告顯示，不再輪播；使用者要看到別的廣告只能重新整理頁面（等同開新的工作階段）。
-function initAdBannerCarousel(){
+function initAdBanner(){
   const banner = document.getElementById("adBanner");
   const el = document.getElementById("adBannerText");
   if (!banner || !el) return;
@@ -202,13 +202,13 @@ function initAdBannerCarousel(){
   bufferAdImpression(AD_BANNERS[currentAdIndex].id);
 }
 if (cameFromOldDomain){
-  initAdBannerCarousel();
+  initAdBanner();
 } else {
   fetch(`${WORKER_BASE}/ads`)
     .then((res) => (res.ok ? res.json() : { ads: [] }))
     .then((data) => { AD_BANNERS = Array.isArray(data.ads) ? data.ads : []; })
     .catch(() => { AD_BANNERS = []; })
-    .finally(initAdBannerCarousel);
+    .finally(initAdBanner);
 }
 document.querySelector(".ad-banner")?.addEventListener("click", () => {
   if (cameFromOldDomain) return;
@@ -476,7 +476,7 @@ async function preloadRegisteredReminders(){
 // slug -> Google Maps 連結，從 #branchGrid 分店 checkbox 的 data-map-url 讀進來（不是每間分店都有）。
 let BRANCH_MAP_URLS = {};
 // 分店 slug 在網址參數裡很長，選很多間會讓網址爆長，改用這份固定順序表的位置當短代碼。
-// 順序要保持不變（原本是 branches.json 的陣列順序），不然舊的分享網址會解碼出錯的分店。
+// 順序要保持不變、只能往後附加（跟 worker/src/branches-seed.js 同一個順序），不然舊的分享網址會解碼出錯的分店。
 const BRANCH_SLUG_ORDER = ["taipei-101","taipei-minsheng","taipei-gongguan","taipei-station","taipei-dazhi","taipei-changchun","taipei-minquan-east","taipei-nanjing","taipei-daan","taipei-tonling","taipei-guangfu","taipei-ximen","taipei-songren","taipei-songlong","taipei-tienmu-dexing","taipei-shilin","taipei-tienmu","taipei-beitou-zhonghe","taipei-neihu","taipei-neihu-fuhwa","new-taipei-banqiao-shuangshi","new-taipei-banciao-chongcing","new-taipei-banqiao-fuzhong","new-taipei-banqiao-zhongshan","new-taipei-xizhi","new-taipei-xike","new-taipei-hsindian","new-taipei-yonghe","new-taipei-yonghe-minquan","new-taipei-zhonghe","new-taipei-jingping","new-taipei-tucheng","new-taipei-sanchong","new-taipei-beihsinzhuang","new-taipei-hsinzhuang","new-taipei-danshui","new-taipei-linkou","taoyuan-taimall","taoyuan-neili","taoyuan-pingzhen","taoyuan-dayou","taoyuan-fuxing","taoyuan-guoqiang","hsinchu-zhonghua","hsinchu-zhongzheng","hsinchu-zhubei","miaoli-yuanli","taichung-xuefu","taichung-meicun","taichung-e-chung","taichung-chongde","taichung-dongshan","taichung-xitun","taichung-liming","taichung-wuri","taichung-fengyuan","taichung-qingshui","taichung-dajia","nantou-caotun","changhua-heping","changhua-yuanlin","chiayi-minzu","tainan-focus","tainan-shulin","tainan-ximen","tainan-yongkang","tainan-shanhua","kaohsiung-zhonghua","kaohsiung-datong-heping","kaohsiung-sogo","kaohsiung-baocheng","kaohsiung-gangshan","kaohsiung-fengshan-zhongshan","pingtung-ziyou","pingtung-chaozhou","yilan-youai","yilan-luodong","hualian-guolian","keelung-xinyi","changhua-lukang","kaohsiung-yangming","yunlin-douliu","taichung-daya","taipei-minsheng-yuanhuan","taipei-neihu-gangqia","taichung-shalu","taoyuan-yangmei","taoyuan-zhongli-zhongyuan","taichung-taiping","miaoli-zhunan","miaoli-toufen","new-taipei-tucheng-haishan","hualien-jian","tainan-rende","tainan-yongkang-yongda","yunlin-huwei","tainan-haian","tainan-annan","tainan-xinying","tainan-anping","hsinchu-xinfeng","hsinchu-zhubei-huaxing","kaohsiung-zuoying","kaohsiung-fengshan-wujia","chiayi-xingye","hsinchu-xiangshan","tainan-zhonghua-east","taoyuan-yiwen","miaoli-zhongzheng","changhua-xihu"];
 let BRANCH_URL_CODE = {};
 let BRANCH_URL_DECODE = {};
@@ -626,7 +626,7 @@ function sortByClickCount(items, key, getValue = (x) => x) {
   return [...items].sort((a, b) => (counts[getValue(b)] || 0) - (counts[getValue(a)] || 0));
 }
 
-// 分店 pill、1/3/5km 距離按鈕、全選按鈕都已經寫死在 index.html 裡（不再 fetch branches.json 動態產生），
+// 分店 pill、1/3/5km 距離按鈕、全選按鈕都已經寫死在 index.html 裡（不是用 JS 動態產生），
 // 這裡只負責讀出寫死的 data-* 屬性、把事件綁上去，並套用使用者的分區展開狀態跟分店點擊次數排序。
 function initBranchGrid(){
   const grid = document.getElementById("branchGrid");
@@ -958,8 +958,8 @@ function getUrlFilterState(){
   ["day", "time", "branch", "room", "course", "teacher"].forEach(name => {
     let values = params.getAll(name);
     if (name === "room") values = values.map(v => ROOM_URL_DECODE[v] || v);
-    // branch 的短代碼要等 branches.json 載入、BRANCH_URL_DECODE 填好後才解得開，
-    // 這裡先留原始代碼，實際解碼發生在 init() 裡 branches.json 抓回來之後。
+    // branch 的短代碼要等 initBranchGrid() 把 BRANCH_URL_DECODE 填好後才解得開，
+    // 這裡先留原始代碼，實際解碼發生在 init() 裡呼叫完 initBranchGrid() 之後。
     if (values.length) state[name] = values;
   });
   return Object.keys(state).length ? state : null;
@@ -1082,9 +1082,7 @@ function favoriteLabel(state){
   }
   return FUNNY_DEFAULT_FAVORITE_LABELS[Math.floor(Math.random() * FUNNY_DEFAULT_FAVORITE_LABELS.length)];
 }
-const FAVORITE_EMPTY_HINTS = [
-  "現在可以自訂最愛，選好篩選後按「加到最愛」。",
-];
+const FAVORITE_EMPTY_HINT = "現在可以自訂最愛，選好篩選後按「加到最愛」。";
 function escapeHtml(str){
   return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
@@ -1093,8 +1091,7 @@ function renderFavorites(){
   grid.querySelectorAll(".fav-item, .empty-hint").forEach(el => el.remove());
   const favs = getFavorites();
   if (favs.length === 0){
-    const hint = FAVORITE_EMPTY_HINTS[Math.floor(Math.random() * FAVORITE_EMPTY_HINTS.length)];
-    grid.insertAdjacentHTML("beforeend", `<span class="empty-hint fav-empty-hint">${hint}</span>`);
+    grid.insertAdjacentHTML("beforeend", `<span class="empty-hint fav-empty-hint">${FAVORITE_EMPTY_HINT}</span>`);
     return;
   }
   favs.forEach(fav => {
@@ -1321,7 +1318,7 @@ function renderActiveFilters(state){
     iconEl.className = `fa-solid ${icon}`;
     tag.appendChild(iconEl);
     if (key === "branch"){
-      // 分店名稱裡，有 Google Maps 連結（branches.json 的 mapUrl）的就顯示成可點的藍字，沒有的維持一般文字。
+      // 分店名稱裡，有 Google Maps 連結（index.html 分店 pill 的 data-map-url）的就顯示成可點的藍字，沒有的維持一般文字。
       values.slice(0, maxShown).forEach((slug, i) => {
         if (i > 0) tag.appendChild(document.createTextNode("、"));
         const mapUrl = BRANCH_MAP_URLS[slug];
@@ -1800,7 +1797,7 @@ async function init(){
     const defaultRoomInput = document.querySelector('input[name="room"][value="團體教室"]');
     if (defaultRoomInput) defaultRoomInput.checked = true;
   }
-  // 分店資料已經寫死在 index.html，不用再 fetch branches.json，只剩 /filterOptions 需要等。
+  // 分店資料已經寫死在 index.html，只剩 /filterOptions 需要等。
   const filterOptionsPromise = withRetryTimeout(() => fetch(`${WORKER_BASE}/filterOptions`).then(r => r.json()), QUERY_RETRY_AFTER_MS, QUERY_GIVE_UP_AFTER_MS);
   // 頁面載入就先預熱一張查詢用的 token，大部分情況使用者按查詢時早就備好了，不用多等。
   fetchFreshQueryToken().catch(e => console.error("issueToken 預熱失敗", e));

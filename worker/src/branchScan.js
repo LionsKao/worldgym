@@ -47,7 +47,7 @@ async function notifyTeams(env, added, removed) {
 }
 
 // 每月排程用：跟官網 sitemap 比對出新增/疑似下架的分店 slug，有差異才發 Teams 通知，沒有差異就靜靜結束。
-// 只負責「發現差異、通知」，實際加不加分店（branches-seed.js / branches.json / index.html）還是手動決定。
+// 只負責「發現差異、通知」，實際加不加分店（branches-seed.js / script.js 的 BRANCH_SLUG_ORDER / index.html 的分店 pill）還是手動決定。
 export async function scanForNewBranches(env) {
   const sitemapSlugs = await fetchSitemapSlugs();
   const seedSlugs = new Set(BRANCHES.map((b) => b.slug));

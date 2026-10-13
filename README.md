@@ -18,7 +18,6 @@
 ├── manifest.json / sw.js / icons/       # PWA 設定與 Service Worker(推播提醒用)
 ├── admin.html / admin.js                # 後台:登入、手動觸發重抓、查看爬蟲紀錄、報表(Chart.js 畫圖)
 ├── vendor/chart.umd.min.js              # Chart.js(vendor 進來,不吃 CDN,admin.html 報表用)
-├── branches.json                        # 分店清單快取(前端用)
 ├── functions/_middleware.js             # Cloudflare Pages Functions:只放行台灣 IP
 ├── _headers                             # 靜態資源快取設定(style.css/icons 走長效快取,script.js 開發中暫不快取)
 ├── hosting/                             # Cloudflare Workers 靜態託管設定(wrangler)

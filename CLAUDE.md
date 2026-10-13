@@ -66,7 +66,6 @@ index.html / script.js / style.css   前端：課表查詢頁 + 首頁廣告輪�
 manifest.json / sw.js / icons/       PWA + Service Worker（推播提醒用）
 admin.html / admin.js                後台：手動重抓、爬蟲紀錄、報表（Chart.js）
 vendor/chart.umd.min.js              Chart.js，vendor 進來不吃 CDN
-branches.json                        分店清單快取（前端用）
 functions/_middleware.js             Cloudflare Pages Functions：只放行台灣 IP（爬蟲 UA 例外）、擋掉非網站檔案（worker/、*.md、點開頭檔案等）回 404
 functions/index.js                  Pages Function：單一分店網址在伺服器端注入課表（見下方「伺服器端注入課表」）
 functions/sitemap.xml.js            動態 /sitemap.xml（備援：根目錄靜態 sitemap.xml）
