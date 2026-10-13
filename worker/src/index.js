@@ -405,6 +405,11 @@ async function handleSendMessageToAuthor({ req, env, origin }) {
   if (!content || content.length > 500) {
     return json({ error: "invalid content" }, 400, origin);
   }
+  // 沒設 TEAMS_WEBHOOK_URL 就明確回錯誤、並留下 log（以前 fetch(undefined) 丟 TypeError，只會看到含糊的 500 internal error）。
+  if (!env.TEAMS_WEBHOOK_URL) {
+    console.error("TEAMS_WEBHOOK_URL 未設定，無法轉發留言");
+    return json({ error: "teams webhook not configured" }, 503, origin);
+  }
   const teamsRes = await postTeamsCard(env, [
     { type: "TextBlock", text: "課表查詢網站有新留言：", weight: "bolder", wrap: true },
     { type: "TextBlock", text: content, wrap: true },
