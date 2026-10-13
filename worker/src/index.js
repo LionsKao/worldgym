@@ -459,6 +459,19 @@ async function handleSendMessageToAuthor({ req, env, origin }) {
   return json({ ok: true }, 200, origin);
 }
 
+// 點推播通知會打開的網址（sw.js 的 notificationclick）：只接受本站自己的網址，不收 javascript:、別人的網站。
+// 允許：空字串（推播時退回首頁 "/"）、本站的相對路徑（"/" 開頭，但 "//host"、"/\host" 瀏覽器會當成別的網站，不算）、
+// 或 origin 在 ALLOWED_ORIGINS 裡的完整網址（前端實際送的是 location.href）。
+function isValidClickUrl(clickUrl) {
+  if (typeof clickUrl !== "string" || clickUrl.length > 500) return false;
+  if (clickUrl === "" || /^\/(?![/\\])/.test(clickUrl)) return true;
+  try {
+    return ALLOWED_ORIGINS.includes(new URL(clickUrl).origin);
+  } catch {
+    return false;
+  }
+}
+
 // 課表通知(單次,上課前 30 分鐘):登記一顆課的 Web Push 通知。
 async function handleRegisterReminder({ req, env, ctx, origin }) {
   const body = await readJson(req);
@@ -473,7 +486,7 @@ async function handleRegisterReminder({ req, env, ctx, origin }) {
     typeof startTime !== "string" || !/^\d{4}$/.test(startTime) ||
     !pushSubscription || typeof pushSubscription.endpoint !== "string" || !pushSubscription.endpoint ||
     !isAllowedPushEndpoint(pushSubscription.endpoint) ||
-    (clickUrl !== undefined && (typeof clickUrl !== "string" || clickUrl.length > 500))
+    (clickUrl !== undefined && !isValidClickUrl(clickUrl))
   ) {
     return json({ error: "invalid reminder" }, 400, origin);
   }

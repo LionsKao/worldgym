@@ -23,9 +23,19 @@ self.addEventListener("push", (event) => {
   );
 });
 
+// 通知帶的網址只允許本站（同源）：Worker 登記時已驗證過，這裡再擋一次（以防舊資料或日後漏驗證），不同源一律回首頁。
+function sameOriginUrl(url) {
+  try {
+    const u = new URL(url, self.location.origin);
+    return u.origin === self.location.origin ? u.href : "/";
+  } catch (e) {
+    return "/";
+  }
+}
+
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const targetUrl = (event.notification.data && event.notification.data.url) || "/";
+  const targetUrl = sameOriginUrl((event.notification.data && event.notification.data.url) || "/");
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientsArr) => {
       const existing = clientsArr.find((c) => "focus" in c);
