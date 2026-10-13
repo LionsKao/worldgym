@@ -312,7 +312,10 @@ async function handleTrackSearchEvents({ req, env, origin }) {
 // 預設抓最近 7 天，只列前 30 個 IP（照總次數排序）。
 async function handleQueryAccessStats({ env, url, origin }) {
   const days = parseInt(url.searchParams.get("days") || "7", 10);
-  const since = taiwanIso(-days * 86400000);
+  // 不是正整數就回 400（以前 parseInt 得到 NaN，後面 new Date(NaN) 丟 RangeError，變成 500）。
+  // 上限收斂到明細保留天數：更早的紀錄早就被每月排程清掉了，而且天數太大（例如 1e9）會讓日期溢位同樣丟 RangeError。
+  if (!Number.isInteger(days) || days < 1) return json({ error: "invalid days" }, 400, origin);
+  const since = taiwanIso(-Math.min(days, QUERY_ACCESS_LOG_RETENTION_DAYS) * 86400000);
   const { results } = await env.DB.prepare(`
     SELECT ip, userAgent, COUNT(*) AS cnt, SUM(rateLimited) AS rateLimitedCnt, MAX(createdAt) AS lastSeen
     FROM query_access_log
