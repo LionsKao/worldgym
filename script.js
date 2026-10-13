@@ -1740,7 +1740,10 @@ document.getElementById("shareUrlBtn").addEventListener("click", () => {
 })();
 
 async function init(){
-  await preloadRegisteredReminders();
+  // 已登記的通知（已裝 PWA 且已授權通知才會真的打 API）只有「畫查詢結果的鈴鐺」要用，不必擋在最前面：
+  // 這裡先讓它在背景跑，跟 /filterOptions、token 預熱同時進行，到要查詢結果、收掉載入遮罩之前才等它（見 finally）。
+  // 它內部自己 try/catch，不會 reject。
+  const preloadRemindersPromise = preloadRegisteredReminders();
   const urlState = getUrlFilterState();
   // 星期/時段/教室類型的選項是固定的，已經寫死在 index.html（同分店清單那次的做法），
   // 不用再用 JS 重新產生 pill，避免頁面剛載入、JS 還沒跑完時 fieldset 是空的造成 CLS。
@@ -1789,6 +1792,7 @@ async function init(){
     showServiceErrorModal();
   } finally {
     updateResetButtonState();
+    await preloadRemindersPromise; // 查詢結果的鈴鐺要靠它判斷哪些已登記（見 renderScheduleResults）
     // 帶網址參數進來時，遮罩要一路蓋到查詢結果準備好才收掉，
     // 不然中間會先露出篩選畫面再跳到結果畫面（分享網址的使用情境最容易看到這個閃爍）。
     // 網址只帶星期/時段/課程、沒帶分店或老師的話，isSearchValid() 會是 false，
