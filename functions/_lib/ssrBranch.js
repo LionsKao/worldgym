@@ -44,7 +44,7 @@ function renderBlock(branch, rows, oldestScrapedAt) {
   }
   const days = [...byDay.keys()].sort((a, b) => a - b).map((day) => {
     const items = byDay.get(day).map((c) =>
-      `<li>${c.startTime.slice(0, 2)}:${c.startTime.slice(2)} ${escapeHtml(c.className)}｜${escapeHtml(c.teacherName)}</li>`
+      `<li>${escapeHtml(c.startTime.slice(0, 2))}:${escapeHtml(c.startTime.slice(2))} ${escapeHtml(c.className)}｜${escapeHtml(c.teacherName)}</li>`
     ).join("");
     return `<h3>週${WEEKDAY_LABEL[day]}</h3><ul>${items}</ul>`;
   }).join("");
@@ -84,7 +84,8 @@ export async function getFragment(context, branch) {
     return { fragment, status };
   } catch (e) {
     console.error("SSR 片段查詢失敗，退回原頁", e);
-    return { fragment: null, status: `error: ${String(e && e.message).slice(0, 80)}` };
+    // 狀態只回固定字串，不帶例外訊息：X-SSR-Status 是公開的回應標頭，訊息可能含 D1 / 內部細節；詳細內容已經在上面 console.error 記了。
+    return { fragment: null, status: "error" };
   }
 }
 

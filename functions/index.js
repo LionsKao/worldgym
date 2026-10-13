@@ -23,7 +23,7 @@ export async function onRequestGet(context) {
 }
 
 // X-SSR-Status：只在網址符合注入條件時才加，標示這次有沒有注入、沒注入的原因（hit/miss=有注入，
-// no-data/too-many/no-fixed/error:…=退回原頁），純粹排查用，不影響頁面內容。
+// no-data/too-many/no-fixed/error=退回原頁），純粹排查用，不影響頁面內容。
 function withStatus(response, status) {
   const out = new Response(response.body, response);
   out.headers.set("X-SSR-Status", status);
