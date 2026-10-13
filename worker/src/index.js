@@ -117,16 +117,18 @@ async function signToken(key, ttlMs) {
 async function verifyToken(getKey, token) {
   if (!token || typeof token !== "string" || !token.includes(".")) return { ok: false, reason: "token_invalid" };
   const [payloadPart, sigPart] = token.split(".");
-  let payloadBytes, payload;
+  let payloadBytes, payload, sigBytes;
   try {
     payloadBytes = base64urlToBytes(payloadPart);
     payload = JSON.parse(new TextDecoder().decode(payloadBytes));
+    // 簽章部分含非法字元時 atob 會丟錯，要當成無效 token（401/403），不能讓它變成 500。
+    sigBytes = base64urlToBytes(sigPart);
   } catch {
     return { ok: false, reason: "token_invalid" };
   }
   const key = await getKey();
   // 要驗證的是「當初被簽名的那份原始 payload bytes」，不是 base64url 編碼後的字串本身。
-  const valid = await crypto.subtle.verify("HMAC", key, base64urlToBytes(sigPart), payloadBytes);
+  const valid = await crypto.subtle.verify("HMAC", key, sigBytes, payloadBytes);
   if (!valid) return { ok: false, reason: "token_invalid" };
   if (typeof payload.exp !== "number" || Date.now() > payload.exp) return { ok: false, reason: "token_expired" };
   return { ok: true };
