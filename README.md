@@ -22,7 +22,7 @@
 ├── _headers                             # 靜態資源快取設定(style.css/icons 走長效快取,script.js 開發中暫不快取)
 ├── hosting/                             # Cloudflare Workers 靜態託管設定(wrangler)
 └── worker/                              # Cloudflare Worker API
-    ├── src/index.js                     # 路由 / CORS / 入口 / cron scheduled()
+    ├── src/index.js                     # 路由表 ROUTES(限流、後台驗證統一處理)/ CORS / 入口 / cron scheduled()
     ├── src/queryClasses.js              # 課表查詢邏輯
     ├── src/scrape.js                    # 爬蟲邏輯(重抓官網課表寫入 D1)
     ├── src/reminders.js                 # 課前推播提醒:登記/取消/到期後發送 Web Push
@@ -118,7 +118,7 @@ npx wrangler d1 execute worldgym-schedule --remote --command="UPDATE ads SET ena
 
 網站沒有帳號系統,所以「幾個人」這類統計是靠前端在 `localStorage` 存一個 `crypto.randomUUID()` 產生的匿名 id(`wg_client_id`,最愛功能用)或裝置的 push 訂閱網址雜湊(提醒功能的使用量統計不需要分辨是不是同一人,所以沒有用到這個 id),這些都不對應任何真實身分,純粹統計用。
 
-新增報表面板的大致流程:worker 開一個打點端點(`/trackXxx` 或直接在既有動作發生時打點)+ 一個 `/xxxStats` 給 admin 讀,新增對應的 D1 table(記得同步寫 migration),需要長期累積的話評估要不要比照「分析報表明細轉月度彙總」的模式做保留窗口。
+新增報表面板的大致流程:worker 開一個打點端點(`/trackXxx` 或直接在既有動作發生時打點)+ 一個 `/xxxStats` 給 admin 讀(都是在 `worker/src/index.js` 的 `ROUTES` 表加一列),新增對應的 D1 table(記得同步寫 migration),需要長期累積的話評估要不要比照「分析報表明細轉月度彙總」的模式做保留窗口。
 
 這些統計都不蒐集可識別個人身份的資料,GA4 事件跟這裡的匿名 id 都只用來看使用量,不會對應到任何真實使用者身分。
 
@@ -146,7 +146,7 @@ npx wrangler d1 execute worldgym-schedule --remote --command="UPDATE ads SET ena
 
 ### 其他端點
 
-除了 `/queryClasses`/`/issueToken`,其餘所有會寫入 D1 或觸發外部動作的公開端點(`/trackXxx` 系列、`/registerReminder`、`/cancelReminder`、`/sendMessageToAuthor` 等)跟後台端點,也都各自掛了流量限制(每分鐘 5~60 次不等,依端點的敏感/成本程度而定),見 `worker/src/index.js` 的 `rateLimitOrNull()`。
+除了 `/queryClasses`/`/issueToken`,其餘所有會寫入 D1 或觸發外部動作的公開端點(`/trackXxx` 系列、`/registerReminder`、`/cancelReminder`、`/sendMessageToAuthor` 等)跟後台端點,也都各自掛了流量限制(每分鐘 5~60 次不等,依端點的敏感/成本程度而定),見 `worker/src/index.js` 的 `ROUTES` 表(每個端點的 `limit` 欄位,由 `fetch()` 統一套用)。
 
 ## ⚡ 靜態資源快取
 

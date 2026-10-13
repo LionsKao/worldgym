@@ -81,7 +81,7 @@ functions/_lib/                     注入設定（ssrConfig.js）、實作（ss
 _headers                             靜態資源快取設定
 hosting/                             Workers Assets 靜態託管設定（wrangler.jsonc）
 worker/
-  src/index.js                      路由 / CORS / 入口 / cron scheduled()
+  src/index.js                      路由表 ROUTES（限流、後台驗證統一處理）/ CORS / 入口 / cron scheduled()
   src/crawlers.js                   海外 IP 存取判斷：爬蟲 UA 清單（Pages 的 _middleware.js 也 import 這份）+ 只放行的唯讀路徑
   src/util.js                       共用小工具：台灣時間（nowTaiwanIso 等）、fnv1aHex、爬官網的 UA、推 Teams；functions/ 也會 import
   src/queryClasses.js               課表查詢邏輯
@@ -142,7 +142,7 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 前端過期自動重拿 token 重試一次，使用者無感（見 `script.js` 的 query 流程）。
 
 ### 後台報表 / 首頁公開排行
-`admin.html` 有廣告/最愛/提醒三個報表面板（加上 IP 存取紀錄表），折線圖用 Chart.js 的共用元件 `createDualLineChart`/`createSingleLineChart`。首頁「通知」分頁下方有查詢量趨勢與老師/課程/分店查詢次數排行（`/publicSearchStats`、`/publicTeacherStats` 等端點，不驗證 token，因為這些是課表本身的公開資訊），用 `script.js` 的 `setupPublicRankingStats()` 畫圖，每張只顯示前 10 名。年/月選單是自製的 `.custom-select` 元件（`enhanceCustomSelect()`），跟 admin 的廣告篩選下拉共用同一套慣例。新增報表面板的模式：worker 開打點端點（`/trackXxx`，同一次查詢動作會一起寫入的就併進批次端點，如 `/trackSearchEvents`）+ `/xxxStats` 讀取端點（公開的用 `/publicXxxStats`，後台的要驗證 session token）、新增對應 D1 table（含 migration）、前端在對應動作打點。
+`admin.html` 有廣告/最愛/提醒三個報表面板（加上 IP 存取紀錄表），折線圖用 Chart.js 的共用元件 `createDualLineChart`/`createSingleLineChart`。首頁「通知」分頁下方有查詢量趨勢與老師/課程/分店查詢次數排行（`/publicSearchStats`、`/publicTeacherStats` 等端點，不驗證 token，因為這些是課表本身的公開資訊），用 `script.js` 的 `setupPublicRankingStats()` 畫圖，每張只顯示前 10 名。年/月選單是自製的 `.custom-select` 元件（`enhanceCustomSelect()`），跟 admin 的廣告篩選下拉共用同一套慣例。新增報表面板的模式：worker 開打點端點（`/trackXxx`，同一次查詢動作會一起寫入的就併進批次端點，如 `/trackSearchEvents`）+ `/xxxStats` 讀取端點（公開的用 `/publicXxxStats`，後台的要驗證 session token）、新增對應 D1 table（含 migration）、前端在對應動作打點。**新增端點只要在 `worker/src/index.js` 的 `ROUTES` 表加一列**（key 是 `"METHOD /path"`，填 `limit` 每 IP 每分鐘上限、後台端點加 `admin: true`、`handler`）：限流（KV key 前綴 = 路徑名）、後台 session 驗證、429/403/404/500 都由 `fetch()` 統一處理，handler 只寫業務邏輯；老師/課程/分店排行三個端點共用 `rankingHandler()`。
 
 網站沒有帳號系統，「幾個人」的統計靠前端 `localStorage` 存的匿名 `wg_client_id`（`crypto.randomUUID()`），後端用 `COUNT(DISTINCT clientId)` 估算，不對應真實身分。
 
