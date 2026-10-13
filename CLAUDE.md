@@ -23,7 +23,7 @@ cd hosting && npm install && npm run dev
 # API (worker/.dev.vars 需先手動建立，見 README「本機開發」章節)
 cd worker && npm install && npm run dev
 ```
-Both dev servers are also registered in `.claude/launch.json` (`worldgym-hosting`, `worldgym-worker`) for use with the preview/browser tools.
+Both dev servers are also registered in `.claude/launch.json` (`worldgym-hosting`, `worldgym-worker`) for use with the preview/browser tools. 兩個都直接用 `node` 啟動（不經 bash/npm），Mac 與 Windows 通用，前提是 `hosting/`、`worker/` 都跑過 `npm install`。`hosting/dev.mjs` 把 wrangler 狀態存在 `os.tmpdir()` 底下：`hosting/wrangler.jsonc` 的 `assets.directory` 是 `..`（整個 repo），狀態若放在 repo 內（預設的 `.wrangler/state`）會被當成資源異動而無限重新載入。
 
 ### Deploy
 

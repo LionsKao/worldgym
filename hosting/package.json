@@ -2,7 +2,7 @@
   "name": "worldgym-web",
   "private": true,
   "scripts": {
-    "dev": "wrangler dev --port 1069 --persist-to \"$TMPDIR/wrangler-state/worldgym-web\"",
+    "dev": "node dev.mjs",
     "deploy": "cd .. && wrangler pages deploy . --project-name worldgym --branch main"
   },
   "devDependencies": {
