@@ -182,12 +182,18 @@ async function rollupAnalyticsEvents(db) {
   const cutoff = taiwanMonthOffset(RAW_RETENTION_MONTHS - 1); // 比這個月份舊的才處理
   const summary = {};
 
-  async function rollupNameTable(rawTable, nameColumn, monthlyTable) {
-    const { results: months } = await db.prepare(
+  // 明細表裡所有比保留窗口舊的月份（YYYY-MM）。
+  async function monthsBefore(rawTable) {
+    const { results } = await db.prepare(
       `SELECT DISTINCT substr(createdAt, 1, 7) AS month FROM ${rawTable} WHERE substr(createdAt, 1, 7) < ?`
     ).bind(cutoff).all();
+    return results.map((r) => r.month);
+  }
+
+  async function rollupNameTable(rawTable, nameColumn, monthlyTable) {
+    const months = await monthsBefore(rawTable);
     let rowsAggregated = 0;
-    for (const { month } of months) {
+    for (const month of months) {
       const { results } = await db.prepare(
         `SELECT ${nameColumn} AS name, COUNT(*) AS cnt FROM ${rawTable} WHERE substr(createdAt, 1, 7) = ? GROUP BY ${nameColumn}`
       ).bind(month).all();
@@ -204,35 +210,36 @@ async function rollupAnalyticsEvents(db) {
     summary[rawTable] = { monthsRolledUp: months.length, rowsAggregated };
   }
 
+  // 沒有名稱維度、每個月只彙總成一列的表（search_events、reminder_add_events）：
+  // selectSql 是「這個月」的聚合查詢（唯一的參數是月份）、insertSql 是寫進彙總表的語句、valuesOf(month, 聚合結果) 是它的綁定值。
+  async function rollupMonthlyTotals(rawTable, { selectSql, insertSql, valuesOf }) {
+    const months = await monthsBefore(rawTable);
+    for (const month of months) {
+      const row = await db.prepare(selectSql).bind(month).first();
+      await db.batch([
+        db.prepare(insertSql).bind(...valuesOf(month, row)),
+        db.prepare(`DELETE FROM ${rawTable} WHERE substr(createdAt, 1, 7) = ?`).bind(month),
+      ]);
+    }
+    summary[rawTable] = { monthsRolledUp: months.length };
+  }
+
   await rollupNameTable("teacher_search_events", "teacherName", "teacher_search_monthly");
   await rollupNameTable("course_search_events", "courseName", "course_search_monthly");
   await rollupNameTable("branch_search_events", "branchName", "branch_search_monthly");
 
   // search_events：沒有名稱維度，直接彙總成 (month -> cnt, resultSum)。
-  {
-    const { results: months } = await db.prepare(
-      "SELECT DISTINCT substr(createdAt, 1, 7) AS month FROM search_events WHERE substr(createdAt, 1, 7) < ?"
-    ).bind(cutoff).all();
-    for (const { month } of months) {
-      const row = await db.prepare(
-        "SELECT COUNT(*) AS cnt, SUM(resultCount) AS resultSum FROM search_events WHERE substr(createdAt, 1, 7) = ?"
-      ).bind(month).first();
-      await db.batch([
-        db.prepare("INSERT OR REPLACE INTO search_monthly (month, cnt, resultSum) VALUES (?, ?, ?)")
-          .bind(month, row.cnt, row.resultSum || 0),
-        db.prepare("DELETE FROM search_events WHERE substr(createdAt, 1, 7) = ?").bind(month),
-      ]);
-    }
-    summary.search_events = { monthsRolledUp: months.length };
-  }
+  await rollupMonthlyTotals("search_events", {
+    selectSql: "SELECT COUNT(*) AS cnt, SUM(resultCount) AS resultSum FROM search_events WHERE substr(createdAt, 1, 7) = ?",
+    insertSql: "INSERT OR REPLACE INTO search_monthly (month, cnt, resultSum) VALUES (?, ?, ?)",
+    valuesOf: (month, row) => [month, row.cnt, row.resultSum || 0],
+  });
 
   // favorite_events：'add' 要先把去重人數算好凍結，'apply' 直接加總；
   // 真正的「全時間去重人數」另外靠 favorite_client_seen 即時維護，不受這裡影響。
   {
-    const { results: months } = await db.prepare(
-      "SELECT DISTINCT substr(createdAt, 1, 7) AS month FROM favorite_events WHERE substr(createdAt, 1, 7) < ?"
-    ).bind(cutoff).all();
-    for (const { month } of months) {
+    const months = await monthsBefore("favorite_events");
+    for (const month of months) {
       const addRow = await db.prepare(
         "SELECT COUNT(DISTINCT clientId) AS cnt FROM favorite_events WHERE type = 'add' AND substr(createdAt, 1, 7) = ?"
       ).bind(month).first();
@@ -249,29 +256,16 @@ async function rollupAnalyticsEvents(db) {
   }
 
   // reminder_add_events：沒有名稱維度，直接彙總成 (month -> cnt)，邏輯跟 search_events 一樣。
-  {
-    const { results: months } = await db.prepare(
-      "SELECT DISTINCT substr(createdAt, 1, 7) AS month FROM reminder_add_events WHERE substr(createdAt, 1, 7) < ?"
-    ).bind(cutoff).all();
-    for (const { month } of months) {
-      const row = await db.prepare(
-        "SELECT COUNT(*) AS cnt FROM reminder_add_events WHERE substr(createdAt, 1, 7) = ?"
-      ).bind(month).first();
-      await db.batch([
-        db.prepare("INSERT OR REPLACE INTO reminder_add_monthly (month, cnt) VALUES (?, ?)")
-          .bind(month, row.cnt),
-        db.prepare("DELETE FROM reminder_add_events WHERE substr(createdAt, 1, 7) = ?").bind(month),
-      ]);
-    }
-    summary.reminder_add_events = { monthsRolledUp: months.length };
-  }
+  await rollupMonthlyTotals("reminder_add_events", {
+    selectSql: "SELECT COUNT(*) AS cnt FROM reminder_add_events WHERE substr(createdAt, 1, 7) = ?",
+    insertSql: "INSERT OR REPLACE INTO reminder_add_monthly (month, cnt) VALUES (?, ?)",
+    valuesOf: (month, row) => [month, row.cnt],
+  });
 
   // ad_events：(month, adId, type) 三個維度都要留。
   {
-    const { results: months } = await db.prepare(
-      "SELECT DISTINCT substr(createdAt, 1, 7) AS month FROM ad_events WHERE substr(createdAt, 1, 7) < ?"
-    ).bind(cutoff).all();
-    for (const { month } of months) {
+    const months = await monthsBefore("ad_events");
+    for (const month of months) {
       const { results } = await db.prepare(
         "SELECT adId, type, COUNT(*) AS cnt FROM ad_events WHERE substr(createdAt, 1, 7) = ? GROUP BY adId, type"
       ).bind(month).all();
