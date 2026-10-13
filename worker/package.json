@@ -4,7 +4,8 @@
   "scripts": {
     "dev": "wrangler dev --remote",
     "deploy": "wrangler deploy",
-    "tail": "wrangler tail"
+    "tail": "wrangler tail",
+    "check:branches": "node --no-warnings scripts/check-branches.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.120.1"

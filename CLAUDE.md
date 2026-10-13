@@ -52,7 +52,13 @@ npx wrangler d1 execute worldgym-schedule --remote --command="SELECT ..."
 npx wrangler d1 execute worldgym-schedule --remote --file=migrations/xxx.sql
 ```
 
-There is no test suite and no lint/build command in this repo.
+分店清單一致性檢查（新增/調整分店後一定要跑）：
+```bash
+cd worker && npm run check:branches -- --base=origin/main
+```
+分店資料散在 `worker/src/branches-seed.js`（唯一來源）、`script.js` 的 `BRANCH_SLUG_ORDER`、`index.html` 寫死的分店 pill（含縣市、顯示名稱、經緯度）與備援用的靜態 `sitemap.xml`，沒有 build step 能自動同步。這支腳本只讀檔，檢查四處是否對得上；**加上 `--base=<git ref>` 才會驗證 seed 的順序「只能往後附加」**——三處同步插到中間時，光比對三處是看不出來的，但舊的短代碼分享網址會指到別間分店。有錯誤 exit code 為 1。
+
+There is no test suite and no lint/build command in this repo（只有上面這支檢查腳本）。
 
 ### 部署注意
 `hosting/wrangler.jsonc` 是另一套 Workers Assets 設定，`name: "worldgym-web"`，曾經對應過一個叫 `worldgym-web.lions2100.workers.dev` 的 Worker，但那個 Worker 已刪除——它跟 `worldgym.pages.dev` 是互相獨立、不互相依賴的兩個部署目標，且沒有 `functions/_middleware.js` 的台灣 IP 限制。不要再用 `npx wrangler deploy` 部署到它。
@@ -82,6 +88,7 @@ worker/
   src/scrape.js                     爬蟲邏輯（重抓官網課表寫入 D1）
   src/reminders.js                  課前推播提醒：登記/取消/到期發送 Web Push
   src/branches-seed.js              分店清單固定資料
+  scripts/check-branches.mjs        分店清單一致性檢查（npm run check:branches，見 Commands）
   schema.sql                        D1 完整 schema（重建資料庫用，會 DROP 所有表）
   migrations/                       針對既有正式資料庫的單張 table migration
 ```
@@ -121,7 +128,7 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 - 注入清單：`functions/_lib/ssrConfig.js` 的 `SSR_BRANCH_SLUGS`，目前直接取 `worker/src/branches-seed.js` 的全部分店（新增分店自動納入）；想縮小範圍就改成明確的 slug 陣列。查不到團體課表的分店會退回原頁，不會回錯誤；回應標頭 `X-SSR-Status`（hit/miss=有注入，no-data/too-many/no-fixed/error:…=退回原頁的原因）可用來排查（要用 GET，HEAD 不會經過這個 Function）。
 - **動態 sitemap**：`functions/sitemap.xml.js`（邏輯在 `functions/_lib/sitemap.js`）處理 `/sitemap.xml`，只列「近 7 天真的有團體教室固定班」的分店（跟注入條件一致，列出來的網址一定查得到內容；查詢與過濾在 `functions/_lib/scheduleBranches.js` 的 `getBranchesWithSchedule()`，與 llms.txt 共用，排序依短代碼，`<loc>` 用 slug 網址）＋首頁，lastmod 取該分店最新的 `scrapedAt` 日期，結果用 Cache API 快取 30 分鐘。新分店有資料自動出現、沒資料自動消失，不用手動維護。任何失敗（沒有 D1 綁定、逾時、查無資料）會 `context.next()` 退回根目錄的靜態 `sitemap.xml`，所以**靜態檔要留著當備援**，內容只是備援用，不必常更新。
 - 資料來源：Pages 專案綁 D1（binding 名 `DB`，**在 Cloudflare Dashboard → worldgym → Settings → Bindings 設定，不在版控裡**，改完要重新部署才生效），直接 `import` `worker/src/queryClasses.js`，所以內容與前端查詢（`/queryClasses`）同源。注入「本週固定課表」，不含代課（代課帶日期、很快過期）。
-- **給爬蟲與 AI 看的分店網址一律用 slug**（`/?branch=taipei-daan&room=1`）：canonical、og:url、動態/靜態 sitemap、llms.txt、JSON-LD 都是，由 `functions/_lib/branchUrl.js` 的 `branchUrlParam()` 統一產生（slug 不符 `/^[a-z0-9-]+$/` 才退回短代碼）。**短代碼只保留給前端的分享網址（`script.js` 的 `buildShareUrl`）與舊連結相容**：解析端 `resolveSsrTarget` 兩種寫法都收，且兩種寫法得到的 canonical 都是 slug 版。短代碼 = `worker/src/branches-seed.js` 陣列位置，跟 `script.js` 的 `BRANCH_SLUG_ORDER` 同一個順序，**這個限制仍然有效：兩邊順序必須一致、只能往後附加，不能插入/調換**（順序一變，舊的短代碼分享網址就會指到別間分店）。我的最愛存的是 slug，不受影響。
+- **給爬蟲與 AI 看的分店網址一律用 slug**（`/?branch=taipei-daan&room=1`）：canonical、og:url、動態/靜態 sitemap、llms.txt、JSON-LD 都是，由 `functions/_lib/branchUrl.js` 的 `branchUrlParam()` 統一產生（slug 不符 `/^[a-z0-9-]+$/` 才退回短代碼）。**短代碼只保留給前端的分享網址（`script.js` 的 `buildShareUrl`）與舊連結相容**：解析端 `resolveSsrTarget` 兩種寫法都收，且兩種寫法得到的 canonical 都是 slug 版。短代碼 = `worker/src/branches-seed.js` 陣列位置，跟 `script.js` 的 `BRANCH_SLUG_ORDER` 同一個順序，**這個限制仍然有效：兩邊順序必須一致、只能往後附加，不能插入/調換**（順序一變，舊的短代碼分享網址就會指到別間分店；改完用 `npm run check:branches -- --base=origin/main` 檢查）。我的最愛存的是 slug，不受影響。
 - **分店頁專屬 JSON-LD**：`rewriteHtml()` 會把頁面上第一個 `application/ld+json` 換成 `buildBranchJsonLd()` 的輸出（其餘的移除，確保只剩一個）：`@graph` 只有 WebSite（原樣沿用首頁那個節點，要跟 `index.html` 一致）加一個 WebPage（`@id`/`url` 是 slug 版 canonical，`name`/`description` 與 title/meta 共用 `buildBranchMeta()` 同一份來源，`dateModified` 沿用台灣時間的 `scrapedAt`）。輸出時 `<` 跳脫成 `\u003c`（JSON 裡等同 `<`，避免分店名稱含 `</script>` 破壞 HTML）。**刻意只用 WebPage、不輸出 ExerciseGym / LocalBusiness / SportsActivityLocation / Event / Course / ItemList / BreadcrumbList，也不輸出地址、電話、座標、評分**：課表區塊是視覺隱藏的，Google 規定結構化資料要與可見內容相符；而且不能替真實的健身房建立實體。首頁的 WebApplication 節點也不放進分店頁。所有 UA 拿到的 JSON-LD 完全相同；產生失敗就沿用首頁的。
 - **動態 `/llms.txt`**：`functions/llms.txt.js`（邏輯在 `functions/_lib/llms.js`）= 根目錄靜態 `llms.txt` 的內容（取自 `env.ASSETS`，文字只有一份）+ `## 分店課表` 索引（`- [名稱 分店（地區）團體課表](slug 網址)`，順序與 sitemap 相同，因為共用 `scheduleBranches.js` 的 `getBranchesWithSchedule()`）。連結文字會跳脫 Markdown 特殊字元（`\`、`[`、`]`），結果用 Cache API 快取 30 分鐘。任何失敗（沒有 D1/ASSETS 綁定、逾時、查無分店、例外）`context.next()` 退回靜態 `llms.txt`，所以**靜態檔要留著當備援**（它不列分店）。**刻意不列出**：任何 API 端點、後台（/admin）、GitHub、Worker 網址、技術架構或爬取機制；更新頻率只寫「每日更新」；也不加「非官方」等聲明。所有請求（不分 UA）內容相同。
 - 注入內容放在 `#loadingOverlay` 裡（`.visually-hidden`）：overlay 是不透明全螢幕載入遮罩，`init()` 結束時整個 `remove()`，區塊跟著消失，所以使用者畫面不變、`script.js` 不用改。同時改寫 `<title>`、description、og/twitter、canonical（slug 版）與 JSON-LD。

@@ -29,6 +29,7 @@
     ├── src/analytics.js                 # 分析報表的「明細 + 月度彙總」查詢與每月排程壓縮邏輯
     ├── src/util.js                      # 共用小工具:台灣時間、fnv1aHex、爬官網的 UA、推 Teams(functions/ 也會 import)
     ├── src/branches-seed.js             # 分店清單固定資料(slug 對應官網 find-a-club/{slug})
+    ├── scripts/check-branches.mjs       # 分店清單一致性檢查(seed / script.js / index.html / sitemap.xml),npm run check:branches
     ├── schema.sql                       # D1 完整 schema(含預設種子資料),重建資料庫時整份下
     └── migrations/                      # 針對既有正式資料庫的單張 table migration(不動其他表)
 ```
