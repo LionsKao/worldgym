@@ -144,13 +144,26 @@ async function upsertBranches(db, branches) {
 // - 清除語句放在最後一批，跟最後一批的 upsert 在同一個 transaction 裡一起成功或一起失敗
 // 這一輪所有列共用同一個 scrapedAt，它就是「比它舊的才算舊資料」的分水嶺。
 // 這間分店這一輪沒有任何課（transformed 空）時，只剩清除語句，等於整間清空，跟以前一樣。
+//
+// 「upsert」用 ON CONFLICT(id) DO UPDATE，不用 INSERT OR REPLACE：後者遇到相同 id 是「先刪整列再插入」，
+// 連帶把這列在每個索引裡的項目都刪掉重寫；而一天兩輪、每輪重寫整張表（約 8.7 千列），絕大多數列跟上一輪一模一樣，
+// 白白多寫好幾倍的索引項目（D1 的 rows_written 是連索引項目一起算）。
+// id 已經由 branchSlug、date、startTime、className、老師員編（沒有就用老師名）決定（見 transformRawClass），
+// 同一個 id 的這些欄位（以及由它們推導出的 dayOfWeek、startHour）一定相同，所以只更新「同一個 id 之下還可能變」的欄位：
+// 分店名稱、老師名稱與員編、教室、是否代課，以及 scrapedAt（新舊資料的分水嶺，每一輪都要更新）。
+// className 刻意不放進 SET：它有索引，放進去等於每輪都重寫那條索引項目，而且同 id 下它不會變。
+// （id 尾端是 32 位元 FNV 雜湊，同一分店同一天同一時間的兩堂不同課撞 id 的機率約 1/40 億；
+// 撞了的話 INSERT OR REPLACE 是後者蓋掉前者，這裡會變成欄位混合，兩者都是壞資料，下一輪爬蟲會自己修正。）
 async function replaceBranchClasses(db, branchSlug, transformed, scrapedAt) {
   const stmts = transformed.map((c) =>
     db
       .prepare(
-        `INSERT OR REPLACE INTO classes
+        `INSERT INTO classes
           (id, branchSlug, branchName, date, dayOfWeek, startTime, startHour, className, teacherName, teacherEmpNo, roomName, isSubstitute, scrapedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+          branchName = excluded.branchName, teacherName = excluded.teacherName, teacherEmpNo = excluded.teacherEmpNo,
+          roomName = excluded.roomName, isSubstitute = excluded.isSubstitute, scrapedAt = excluded.scrapedAt`
       )
       .bind(c.id, c.branchSlug, c.branchName, c.date, c.dayOfWeek, c.startTime, c.startHour, c.className, c.teacherName, c.teacherEmpNo, c.roomName, c.isSubstitute, c.scrapedAt)
   );
