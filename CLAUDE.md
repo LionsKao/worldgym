@@ -76,7 +76,8 @@ functions/_middleware.js             Cloudflare Pages Functions：只放行台�
 functions/index.js                  Pages Function：單一分店網址在伺服器端注入課表（見下方「伺服器端注入課表」）
 functions/sitemap.xml.js            動態 /sitemap.xml（備援：根目錄靜態 sitemap.xml）
 functions/llms.txt.js               動態 /llms.txt（備援：根目錄靜態 llms.txt）
-functions/_lib/                     注入設定（ssrConfig.js）、實作（ssrBranch.js）、slug 網址（branchUrl.js）、
+functions/_lib/                     注入設定與 SITE_ORIGIN（ssrConfig.js）、實作（ssrBranch.js）、slug 網址（branchUrl.js）、
+                                    分店查找表（branches.js）、D1 逾時與 Cache API 共用流程（util.js）、
                                     有課表的分店清單（scheduleBranches.js，sitemap 與 llms.txt 共用）、sitemap.js、llms.js
 _headers                             靜態資源快取設定
 hosting/                             Workers Assets 靜態託管設定（wrangler.jsonc）
@@ -134,7 +135,7 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 - **分店頁專屬 JSON-LD**：`rewriteHtml()` 會把頁面上第一個 `application/ld+json` 換成 `buildBranchJsonLd()` 的輸出（其餘的移除，確保只剩一個）：`@graph` 只有 WebSite（原樣沿用首頁那個節點，要跟 `index.html` 一致）加一個 WebPage（`@id`/`url` 是 slug 版 canonical，`name`/`description` 與 title/meta 共用 `buildBranchMeta()` 同一份來源，`dateModified` 沿用台灣時間的 `scrapedAt`）。輸出時 `<` 跳脫成 `\u003c`（JSON 裡等同 `<`，避免分店名稱含 `</script>` 破壞 HTML）。**刻意只用 WebPage、不輸出 ExerciseGym / LocalBusiness / SportsActivityLocation / Event / Course / ItemList / BreadcrumbList，也不輸出地址、電話、座標、評分**：課表區塊是視覺隱藏的，Google 規定結構化資料要與可見內容相符；而且不能替真實的健身房建立實體。首頁的 WebApplication 節點也不放進分店頁。所有 UA 拿到的 JSON-LD 完全相同；產生失敗就沿用首頁的。
 - **動態 `/llms.txt`**：`functions/llms.txt.js`（邏輯在 `functions/_lib/llms.js`）= 根目錄靜態 `llms.txt` 的內容（取自 `env.ASSETS`，文字只有一份）+ `## 分店課表` 索引（`- [名稱 分店（地區）團體課表](slug 網址)`，順序與 sitemap 相同，因為共用 `scheduleBranches.js` 的 `getBranchesWithSchedule()`）。連結文字會跳脫 Markdown 特殊字元（`\`、`[`、`]`），結果用 Cache API 快取 30 分鐘。任何失敗（沒有 D1/ASSETS 綁定、逾時、查無分店、例外）`context.next()` 退回靜態 `llms.txt`，所以**靜態檔要留著當備援**（它不列分店）。**刻意不列出**：任何 API 端點、後台（/admin）、GitHub、Worker 網址、技術架構或爬取機制；更新頻率只寫「每日更新」；也不加「非官方」等聲明。所有請求（不分 UA）內容相同。
 - 注入內容放在 `#loadingOverlay` 裡（`.visually-hidden`）：overlay 是不透明全螢幕載入遮罩，`init()` 結束時整個 `remove()`，區塊跟著消失，所以使用者畫面不變、`script.js` 不用改。同時改寫 `<title>`、description、og/twitter、canonical（slug 版）與 JSON-LD。
-- 查 D1 的結果（片段，含 `scrapedAt`）用 Cache API 快取 30 分鐘，不快取整份 HTML；片段快取 key 是 `/_ssr/v2/{slug}`（v2 = 多了 `scrapedAt` 欄位，升版避免跟舊格式混用；讀取時仍容忍沒有此欄位，缺的話 JSON-LD 就不輸出 `dateModified`），動態 sitemap 的 key 是 `/_ssr/v2/sitemap`（v2 = `<loc>` 由短代碼改 slug），llms.txt 是 `/_ssr/v2/llms`；D1 逾時（1.5 秒）、查不到、超過 250 筆、出錯都退回原頁，不回錯誤頁。課程/老師名稱一律 HTML 跳脫。
+- 查 D1 的結果（片段，含 `scrapedAt`）用 Cache API 快取 30 分鐘，不快取整份 HTML；片段快取 key 是 `/_ssr/v2/{slug}`（v2 = 多了 `scrapedAt` 欄位，升版避免跟舊格式混用；讀取時仍容忍沒有此欄位，缺的話 JSON-LD 就不輸出 `dateModified`），動態 sitemap 的 key 是 `/_ssr/v2/sitemap`（v2 = `<loc>` 由短代碼改 slug），llms.txt 是 `/_ssr/v2/llms`（三種 key 都由 `functions/_lib/util.js` 的 `cacheRequest()` 產生，版號只在那裡改一處；sitemap 與 llms.txt 共用 `cachedTextResponse()` 的「快取→產生→快取」流程）；D1 逾時（1.5 秒）、查不到、超過 250 筆、出錯都退回原頁，不回錯誤頁。課程/老師名稱一律 HTML 跳脫。
 - 本機測試：`wrangler pages dev . --compatibility-date=2026-08-11 --d1 DB=<database_id> --persist-to <dir>`；本機 D1 是空的，要先匯入資料。
 
 ### /queryClasses 防濫用

@@ -1,22 +1,16 @@
 import { queryClasses } from "../../worker/src/queryClasses.js";
-import BRANCHES from "../../worker/src/branches-seed.js";
 import {
-  SSR_BRANCH_SLUGS,
+  SITE_ORIGIN,
   FRAGMENT_CACHE_SECONDS,
   D1_TIMEOUT_MS,
   RESULT_COUNT_WARN_LIMIT,
   IGNORED_PARAM_PATTERN,
 } from "./ssrConfig.js";
 import { branchUrlParam } from "./branchUrl.js";
+import { BRANCH_BY_SLUG, SLUG_BY_CODE, SSR_SLUGS } from "./branches.js";
+import { withTimeout, cacheRequest, cacheGet, cachePut } from "./util.js";
 
-const SITE_ORIGIN = "https://worldgym.pages.dev";
 const WEEKDAY_LABEL = { 1: "一", 2: "二", 3: "三", 4: "四", 5: "五", 6: "六", 7: "日" };
-
-// branch 網址短代碼 = branches-seed.js 陣列的位置（跟 script.js 的 BRANCH_SLUG_ORDER 同一個順序，
-// 這份順序只能往後附加，不能插入或調換，不然舊的分享網址會指到別間分店）。
-const BRANCH_BY_SLUG = new Map(BRANCHES.map((b, i) => [b.slug, { ...b, code: String(i) }]));
-const SLUG_BY_CODE = new Map(BRANCHES.map((b, i) => [String(i), b.slug]));
-const SSR_SLUGS = new Set(SSR_BRANCH_SLUGS);
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
@@ -33,12 +27,6 @@ export function resolveSsrTarget(url) {
   const slug = SLUG_BY_CODE.get(branchValues[0]) ?? (BRANCH_BY_SLUG.has(branchValues[0]) ? branchValues[0] : null);
   if (!slug || !SSR_SLUGS.has(slug)) return null;
   return BRANCH_BY_SLUG.get(slug);
-}
-
-function withTimeout(promise, ms) {
-  let timer;
-  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("D1 查詢逾時")), ms); });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 // oldestScrapedAt 是 nowTaiwanIso() 產生的 "YYYY-MM-DDTHH:mm:ss.sss+08:00"，直接切字串，不經過 Date（會變裝置時區）。
@@ -79,25 +67,19 @@ async function buildFragment(env, branch) {
 }
 
 // 片段快取：只快取查 D1 的結果，不快取整份 HTML，index.html 一部署就是最新的。
-// key 用正規化後的 /_ssr/v2/{slug}，不同的 query 寫法（slug/短代碼、參數順序、utm）共用同一份。
-// v2：片段多了 scrapedAt 欄位（給 JSON-LD 的 dateModified 用），升版避免跟舊格式的快取混用；
-// 讀取時仍容忍沒有這個欄位（缺的話 JSON-LD 就不輸出 dateModified）。
+// key 用正規化後的 /_ssr/v2/{slug}（見 util.js 的 cacheRequest），不同的 query 寫法（slug/短代碼、參數順序、utm）共用同一份。
+// 讀取時仍容忍快取裡的片段沒有 scrapedAt 欄位（缺的話 JSON-LD 就不輸出 dateModified）。
 export async function getFragment(context, branch) {
-  const cache = caches.default;
-  const cacheKey = new Request(`${SITE_ORIGIN}/_ssr/v2/${branch.slug}`);
-  try {
-    const hit = await cache.match(cacheKey);
-    if (hit) return { fragment: await hit.json(), status: "hit" };
-  } catch (e) {
-    console.error("SSR 片段快取讀取失敗", e);
-  }
+  const cacheKey = cacheRequest(branch.slug);
+  const cached = await cacheGet(cacheKey, "SSR 片段", (response) => response.json());
+  if (cached) return { fragment: cached, status: "hit" };
   try {
     const { fragment, status } = await buildFragment(context.env, branch);
     if (fragment) {
       const body = new Response(JSON.stringify(fragment), {
         headers: { "Content-Type": "application/json", "Cache-Control": `public, max-age=${FRAGMENT_CACHE_SECONDS}` },
       });
-      context.waitUntil(cache.put(cacheKey, body).catch((e) => console.error("SSR 片段快取寫入失敗", e)));
+      cachePut(context, cacheKey, body, "SSR 片段");
     }
     return { fragment, status };
   } catch (e) {

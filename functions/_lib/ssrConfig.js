@@ -1,5 +1,8 @@
 import BRANCHES from "../../worker/src/branches-seed.js";
 
+// 站台網址：canonical、sitemap、llms.txt、JSON-LD、快取 key 都用這一個。
+export const SITE_ORIGIN = "https://worldgym.pages.dev";
+
 // 伺服器端注入課表的設定。目前涵蓋 branches-seed.js 裡的全部分店（新增分店會自動納入）。
 // 想縮小範圍（例如只開放部分分店）時，把下面改成明確的 slug 陣列即可；沒列在這裡的分店網址
 // 完全維持原樣，不查 D1、不改 HTML。
