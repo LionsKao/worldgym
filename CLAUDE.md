@@ -69,6 +69,7 @@ There is no test suite and no lint/build command in this repo（只有上面這�
 
 ```
 index.html / script.js / style.css   前端：課表查詢頁 + 首頁廣告輪播 + 首頁公開排行報表
+common.js                            前台與後台共用的前端工具：escapeHtml、自製下拉選單、月份計算、折線圖工廠、下拉重新整理
 manifest.json / sw.js / icons/       PWA + Service Worker（推播提醒用）
 admin.html / admin.js                後台：手動重抓、爬蟲紀錄、報表（Chart.js）
 vendor/chart.umd.min.js              Chart.js，vendor 進來不吃 CDN
@@ -150,7 +151,7 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 網站沒有帳號系統，「幾個人」的統計靠前端 `localStorage` 存的匿名 `wg_client_id`（`crypto.randomUUID()`），後端用 `COUNT(DISTINCT clientId)` 估算，不對應真實身分。
 
 ### 靜態資源快取
-`style.css`/`icons/` 走 `_headers` 長效快取，搭配 `index.html`/`admin.html` 裡的 `?v=` 版號機制——內容改了要同步更新版號，否則使用者吃到快取住的舊檔案。`script.js` 目前故意不設長效快取（改動頻繁），只靠 `?v=` 版號控制。Font Awesome 圖示直接吃 cdnjs 的完整套件，`fa-` class 可以照官方圖示庫直接用。
+`style.css`/`icons/` 走 `_headers` 長效快取，搭配 `index.html`/`admin.html` 裡的 `?v=` 版號機制——內容改了要同步更新版號，否則使用者吃到快取住的舊檔案。`script.js`、`admin.js`、`common.js` 目前故意不設長效快取（改動頻繁），只靠 `?v=` 版號控制；`common.js` 同時被 `index.html` 與 `admin.html` 引用（都要排在自己的 script 之前），改了要兩個檔案裡的 `common.js?v=` 一起更新。Font Awesome 圖示直接吃 cdnjs 的完整套件，`fa-` class 可以照官方圖示庫直接用。
 
 ## Secrets
 

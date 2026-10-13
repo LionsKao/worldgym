@@ -133,60 +133,6 @@ adminBackBtn.addEventListener("mouseleave", () => adminBackTooltip.classList.rem
   }
 })();
 
-function escapeHtml(str){
-  return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
-
-// 自製下拉選單：外觀跟 .section-search 一致，但不用原生 <select>（原生下拉的箭頭位置/樣式沒辦法客製）。
-// root 是 .custom-select 容器，內含 .custom-select-trigger 按鈕跟 .custom-select-menu 選項列表。
-// 用 root.value（getter/setter）+ root.addEventListener("change", ...) 模擬原生 select 的介面，
-// 呼叫端程式碼幾乎不用改。root.setOptions(options, selectedValue) 用來動態換選項（廣告清單用）。
-function enhanceCustomSelect(root){
-  const trigger = root.querySelector(".custom-select-trigger");
-  const label = root.querySelector(".custom-select-label");
-  const menu = root.querySelector(".custom-select-menu");
-
-  function close(){ root.classList.remove("open"); }
-  function open(){ root.classList.add("open"); }
-
-  function selectOption(optionEl, { silent = false } = {}){
-    menu.querySelectorAll(".custom-select-option").forEach((o) => o.classList.toggle("selected", o === optionEl));
-    label.innerHTML = optionEl.innerHTML;
-    root.dataset.value = optionEl.dataset.value;
-    close();
-    if (!silent) root.dispatchEvent(new Event("change"));
-  }
-
-  trigger.addEventListener("click", (e) => {
-    e.stopPropagation();
-    root.classList.contains("open") ? close() : open();
-  });
-  menu.addEventListener("click", (e) => {
-    const opt = e.target.closest(".custom-select-option");
-    if (opt) selectOption(opt);
-  });
-  document.addEventListener("click", (e) => {
-    if (!root.contains(e.target)) close();
-  });
-
-  Object.defineProperty(root, "value", {
-    get(){ return root.dataset.value || ""; },
-    set(v){
-      const opt = menu.querySelector(`.custom-select-option[data-value="${CSS.escape(String(v))}"]`);
-      if (opt) selectOption(opt, { silent: true });
-    },
-  });
-
-  root.setOptions = function(options, selectedValue){
-    menu.innerHTML = options
-      .map((o) => `<div class="custom-select-option${o.value === selectedValue ? " selected" : ""}" data-value="${escapeHtml(o.value)}">${o.html}</div>`)
-      .join("");
-    const sel = options.find((o) => o.value === selectedValue) || options[0];
-    label.innerHTML = sel ? sel.html : "";
-    root.dataset.value = sel ? sel.value : "";
-  };
-}
-
 // --- 廣告統計面板：一次抓全部廣告（含已下架）+ 累計曝光/點擊，下拉選單切換不用重打 API ---
 let AD_STATS = [];
 const adStatsSelect = document.getElementById("adStatsSelect");
@@ -223,129 +169,27 @@ const adChartPrevBtn = document.getElementById("adChartPrevBtn");
 const adChartNextBtn = document.getElementById("adChartNextBtn");
 const adChartViewport = document.getElementById("adChartViewport");
 const CHART_W = 560, CHART_H = 210;
-const CHART_MONTHS = 12;
+const CHART_ASPECT_RATIO = CHART_W / CHART_H;
 
 let chartEndMonth = null;
 let currentChartAd = null;
 
-function currentMonthKey(){ return new Date().toISOString().slice(0, 7); }
-
-function addMonths(monthStr, delta){
-  const [y, m] = monthStr.split("-").map(Number);
-  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-}
-
 function buildChartWindow(ad, endMonth){
-  const months = [];
-  for (let i = CHART_MONTHS - 1; i >= 0; i--) months.push(addMonths(endMonth, -i));
-  return months.map((m) => ({
-    month: m,
+  return buildMonthWindow(CHART_MONTHS, endMonth, (m) => ({
     impressions: ad.monthly?.[m]?.impressions || 0,
     clicks: ad.monthly?.[m]?.clicks || 0,
   }));
 }
 
-// --- Chart.js 共用設定：跟站內字體/配色風格一致，雙折線圖(曝光/點擊、查詢次數/結果數)共用同一套工廠函式 ---
+// --- Chart.js 設定：字型跟站內一致；折線圖工廠、月份計算與配色常數在 common.js ---
 Chart.defaults.font.family = "Nunito, sans-serif";
 Chart.defaults.font.weight = "600";
-const THEME_INK = "#2b2b2b", THEME_SUB = "#7a7a7a", THEME_LINE = "#ececec";
 
-function monthTickLabel(d){
-  const [yyyy, mm] = d.month.split("-");
-  return [yyyy, mm];
-}
-
-// 雙 Y 軸折線圖工廠：曝光/點擊、查詢次數/結果數圖都用這個，用左右各自獨立座標軸避免量級差太大時
-// 其中一條線貼著 0 看不出變化。ticks.count 固定成一樣的格線數，讓左右座標的刻度對齊同一條水平格線。
-function createDualLineChart(canvas, { data, keyA, labelA, colorA, keyB, labelB, colorB, ariaLabel }){
-  canvas.setAttribute("role", "img");
-  canvas.setAttribute("aria-label", ariaLabel);
-  const chart = new Chart(canvas, {
-    type: "line",
-    data: {
-      labels: data.map(monthTickLabel),
-      datasets: [
-        { label: labelA, data: data.map((d) => d[keyA]), borderColor: colorA, backgroundColor: colorA, yAxisID: "yA", tension: 0.3, pointRadius: 4, pointHoverRadius: 5, borderWidth: 3 },
-        { label: labelB, data: data.map((d) => d[keyB]), borderColor: colorB, backgroundColor: colorB, yAxisID: "yB", tension: 0.3, pointRadius: 4, pointHoverRadius: 5, borderWidth: 3 },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: true,
-      aspectRatio: CHART_W / CHART_H,
-      animation: { duration: 1600 },
-      interaction: { mode: "index", intersect: false },
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: THEME_INK, titleColor: "#fff", bodyColor: "#fff",
-          titleFont: { size: 11, weight: "700" }, bodyFont: { size: 11 },
-          padding: 8, cornerRadius: 8, displayColors: false,
-          callbacks: {
-            title: (items) => items[0].chart.wgData[items[0].dataIndex].month,
-            label: (item) => `${item.dataset.label} ${item.formattedValue}`,
-          },
-        },
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { color: THEME_SUB, font: { size: 9 } } },
-        yA: { position: "left", beginAtZero: true, ticks: { color: colorA, font: { size: 9 }, count: 5, precision: 0, callback: (v) => Math.round(v) }, grid: { color: THEME_LINE } },
-        yB: { position: "right", beginAtZero: true, ticks: { color: colorB, font: { size: 9 }, count: 5, precision: 0, callback: (v) => Math.round(v) }, grid: { display: false } },
-      },
-    },
-  });
-  chart.wgData = data;
-  return chart;
-}
-
-function updateDualLineChart(chart, data, keyA, keyB){
-  chart.data.labels = data.map(monthTickLabel);
-  chart.data.datasets[0].data = data.map((d) => d[keyA]);
-  chart.data.datasets[1].data = data.map((d) => d[keyB]);
-  chart.wgData = data;
-  chart.update();
-}
-
-// 單 Y 軸折線圖工廠：只有一條數列時用這個（提醒登記次數），視覺風格跟雙數列圖共用。
-function createSingleLineChart(canvas, { data, keyA, labelA, colorA, ariaLabel }){
-  canvas.setAttribute("role", "img");
-  canvas.setAttribute("aria-label", ariaLabel);
-  const chart = new Chart(canvas, {
-    type: "line",
-    data: {
-      labels: data.map(monthTickLabel),
-      datasets: [
-        { label: labelA, data: data.map((d) => d[keyA]), borderColor: colorA, backgroundColor: colorA, yAxisID: "yA", tension: 0.3, pointRadius: 4, pointHoverRadius: 5, borderWidth: 3 },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: true,
-      aspectRatio: CHART_W / CHART_H,
-      animation: { duration: 1600 },
-      interaction: { mode: "index", intersect: false },
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: THEME_INK, titleColor: "#fff", bodyColor: "#fff",
-          titleFont: { size: 11, weight: "700" }, bodyFont: { size: 11 },
-          padding: 8, cornerRadius: 8, displayColors: false,
-          callbacks: {
-            title: (items) => items[0].chart.wgData[items[0].dataIndex].month,
-            label: (item) => `${item.dataset.label} ${item.formattedValue}`,
-          },
-        },
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { color: THEME_SUB, font: { size: 9 } } },
-        yA: { position: "left", beginAtZero: true, ticks: { color: colorA, font: { size: 9 }, count: 5, precision: 0, callback: (v) => Math.round(v) }, grid: { color: THEME_LINE } },
-      },
-    },
-  });
-  chart.wgData = data;
-  return chart;
-}
+// 曝光/點擊用雙 Y 軸（兩者量級差很多，單一座標軸會讓其中一條線貼著 0 看不出變化）
+const AD_CHART_SERIES = [
+  { key: "impressions", label: "曝光次數", color: "#2a78d6" },
+  { key: "clicks", label: "點擊次數", color: "#eb6834" },
+];
 
 let adChartInstance = null;
 
@@ -372,8 +216,8 @@ function showAdChart(ad){
   chartEndMonth = currentMonthKey();
   const data = buildChartWindow(ad, chartEndMonth);
   adChartViewport.innerHTML = "<canvas></canvas>";
-  adChartInstance = createDualLineChart(adChartViewport.querySelector("canvas"), {
-    data, keyA: "impressions", labelA: "曝光次數", colorA: "#2a78d6", keyB: "clicks", labelB: "點擊次數", colorB: "#eb6834",
+  adChartInstance = createLineChart(adChartViewport.querySelector("canvas"), {
+    data, series: AD_CHART_SERIES, aspectRatio: CHART_ASPECT_RATIO,
     ariaLabel: `近 ${CHART_MONTHS} 個月曝光與點擊趨勢`,
   });
   updateChartNavState();
@@ -388,7 +232,7 @@ function navigateAdChart(direction){
   if (direction === "prev" && nextStartMonth <= adStartMonth && addMonths(chartEndMonth, -(CHART_MONTHS - 1)) <= adStartMonth) return;
 
   chartEndMonth = nextEndMonth;
-  updateDualLineChart(adChartInstance, buildChartWindow(currentChartAd, chartEndMonth), "impressions", "clicks");
+  updateLineChart(adChartInstance, buildChartWindow(currentChartAd, chartEndMonth));
   updateChartNavState();
 }
 
@@ -449,9 +293,7 @@ const favoriteTrendWrap = document.getElementById("favoriteTrendWrap");
 let favoriteTrendChartInstance = null;
 
 function buildFavoriteTrendWindow(monthlyAdders, monthlyApplies, endMonth){
-  const months = [];
-  for (let i = CHART_MONTHS - 1; i >= 0; i--) months.push(addMonths(endMonth, -i));
-  return months.map((m) => ({ month: m, adders: monthlyAdders[m] || 0, applies: monthlyApplies[m] || 0 }));
+  return buildMonthWindow(CHART_MONTHS, endMonth, (m) => ({ adders: monthlyAdders[m] || 0, applies: monthlyApplies[m] || 0 }));
 }
 
 async function loadFavoriteStats(){
@@ -466,8 +308,12 @@ async function loadFavoriteStats(){
     const data12 = buildFavoriteTrendWindow(data.monthlyAdders || {}, data.monthlyApplies || {}, currentMonthKey());
     if (favoriteTrendChartInstance){ favoriteTrendChartInstance.destroy(); favoriteTrendChartInstance = null; }
     favoriteTrendWrap.innerHTML = '<div class="ad-chart-viewport"><canvas></canvas></div>';
-    favoriteTrendChartInstance = createDualLineChart(favoriteTrendWrap.querySelector("canvas"), {
-      data: data12, keyA: "adders", labelA: "建立人數", colorA: "#2a78d6", keyB: "applies", labelB: "使用次數", colorB: "#eb6834",
+    favoriteTrendChartInstance = createLineChart(favoriteTrendWrap.querySelector("canvas"), {
+      data: data12, aspectRatio: CHART_ASPECT_RATIO,
+      series: [
+        { key: "adders", label: "建立人數", color: "#2a78d6" },
+        { key: "applies", label: "使用次數", color: "#eb6834" },
+      ],
       ariaLabel: `近 ${CHART_MONTHS} 個月最愛建立人數與使用次數趨勢`,
     });
   } catch(e){
@@ -487,9 +333,7 @@ let reminderTrendChartInstance = null;
 function buildReminderMonthlyWindow(monthly, endMonth){
   const byMonth = {};
   for (const row of monthly) byMonth[row.month] = row.count;
-  const months = [];
-  for (let i = CHART_MONTHS - 1; i >= 0; i--) months.push(addMonths(endMonth, -i));
-  return months.map((m) => ({ month: m, count: byMonth[m] || 0 }));
+  return buildMonthWindow(CHART_MONTHS, endMonth, (m) => ({ count: byMonth[m] || 0 }));
 }
 
 async function loadReminderStats(){
@@ -503,8 +347,9 @@ async function loadReminderStats(){
     const data12 = buildReminderMonthlyWindow(data.monthly || [], currentMonthKey());
     if (reminderTrendChartInstance){ reminderTrendChartInstance.destroy(); reminderTrendChartInstance = null; }
     reminderTrendWrap.innerHTML = '<div class="ad-chart-viewport"><canvas></canvas></div>';
-    reminderTrendChartInstance = createSingleLineChart(reminderTrendWrap.querySelector("canvas"), {
-      data: data12, keyA: "count", labelA: "登記次數", colorA: "#3fae8f",
+    reminderTrendChartInstance = createLineChart(reminderTrendWrap.querySelector("canvas"), {
+      data: data12, aspectRatio: CHART_ASPECT_RATIO,
+      series: [{ key: "count", label: "登記次數", color: "#3fae8f" }],
       ariaLabel: `近 ${CHART_MONTHS} 個月提醒登記次數趨勢`,
     });
   } catch(e){
@@ -689,48 +534,3 @@ document.getElementById("cleanupStaleBtn").addEventListener("click", () => runAc
 document.querySelectorAll(".admin-link-btn[data-log-text]").forEach((link) => {
   link.addEventListener("click", () => logToTerminal(link.dataset.logText));
 });
-
-// iOS「加入主畫面」後是獨立模式，沒有瀏覽器原生的下拉重新整理，補一個簡易版本。
-(function setupPullToRefresh(){
-  const isStandalone = window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
-  if (!isStandalone) return;
-  const indicator = document.getElementById("ptrIndicator");
-  const THRESHOLD = 70;
-  const MAX_PULL = 100;
-  let startY = 0;
-  let pulling = false;
-  let refreshing = false;
-
-  document.addEventListener("touchstart", (e) => {
-    if (refreshing) return;
-    if (window.scrollY > 0){ pulling = false; return; }
-    startY = e.touches[0].clientY;
-    pulling = true;
-    indicator.classList.remove("ptr-releasing");
-  }, { passive: true });
-
-  document.addEventListener("touchmove", (e) => {
-    if (!pulling || refreshing) return;
-    const delta = e.touches[0].clientY - startY;
-    if (delta <= 0){ indicator.style.top = "-50px"; return; }
-    const pull = Math.min(delta / 2, MAX_PULL);
-    indicator.style.top = `${pull - 50}px`;
-    indicator.style.transform = `translate(-50%, 0) rotate(${pull * 3}deg)`;
-  }, { passive: true });
-
-  document.addEventListener("touchend", () => {
-    if (!pulling || refreshing) return;
-    pulling = false;
-    indicator.classList.add("ptr-releasing");
-    const top = parseFloat(indicator.style.top || "-50");
-    if (top + 50 >= THRESHOLD){
-      refreshing = true;
-      indicator.style.top = "16px";
-      indicator.style.transform = "translate(-50%, 0) rotate(0deg)";
-      indicator.classList.add("ptr-refreshing");
-      setTimeout(() => location.reload(), 300);
-    } else {
-      indicator.style.top = "-50px";
-    }
-  });
-})();

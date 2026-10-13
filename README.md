@@ -15,6 +15,7 @@
 ```
 .
 ├── index.html / script.js / style.css   # 前端:課表查詢頁(含首頁廣告輪播 + 公開排行報表)
+├── common.js                            # 前台與後台共用的前端工具(自製下拉選單、折線圖工廠、月份計算等)
 ├── manifest.json / sw.js / icons/       # PWA 設定與 Service Worker(推播提醒用)
 ├── admin.html / admin.js                # 後台:登入、手動觸發重抓、查看爬蟲紀錄、報表(Chart.js 畫圖)
 ├── vendor/chart.umd.min.js              # Chart.js(vendor 進來,不吃 CDN,admin.html 報表用)

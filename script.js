@@ -1035,9 +1035,6 @@ function favoriteLabel(state){
   return FUNNY_DEFAULT_FAVORITE_LABELS[Math.floor(Math.random() * FUNNY_DEFAULT_FAVORITE_LABELS.length)];
 }
 const FAVORITE_EMPTY_HINT = "現在可以自訂最愛，選好篩選後按「加到最愛」。";
-function escapeHtml(str){
-  return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
 function renderFavorites(){
   const grid = document.getElementById("favoriteGrid");
   grid.querySelectorAll(".fav-item, .empty-hint").forEach(el => el.remove());
@@ -1824,56 +1821,6 @@ function loadChartJs(){
   return loadChartJs._promise;
 }
 
-// 自製下拉選單：外觀跟 .section-btn 一致，但不用原生 <select>（原生下拉的箭頭位置/樣式沒辦法客製）。
-// root 是 .custom-select 容器，內含 .custom-select-trigger 按鈕跟 .custom-select-menu 選項列表。
-// 用 root.value（getter/setter）+ root.addEventListener("change", ...) 模擬原生 select 的介面。
-// root.setOptions(options, selectedValue) 用來動態換選項（年份/月份清單都是動態抓的）。
-function enhanceCustomSelect(root){
-  const trigger = root.querySelector(".custom-select-trigger");
-  const label = root.querySelector(".custom-select-label");
-  const menu = root.querySelector(".custom-select-menu");
-
-  function close(){ root.classList.remove("open"); }
-  function open(){ root.classList.add("open"); }
-
-  function selectOption(optionEl, { silent = false } = {}){
-    menu.querySelectorAll(".custom-select-option").forEach((o) => o.classList.toggle("selected", o === optionEl));
-    label.innerHTML = optionEl.innerHTML;
-    root.dataset.value = optionEl.dataset.value;
-    close();
-    if (!silent) root.dispatchEvent(new Event("change"));
-  }
-
-  trigger.addEventListener("click", (e) => {
-    e.stopPropagation();
-    root.classList.contains("open") ? close() : open();
-  });
-  menu.addEventListener("click", (e) => {
-    const opt = e.target.closest(".custom-select-option");
-    if (opt) selectOption(opt);
-  });
-  document.addEventListener("click", (e) => {
-    if (!root.contains(e.target)) close();
-  });
-
-  Object.defineProperty(root, "value", {
-    get(){ return root.dataset.value || ""; },
-    set(v){
-      const opt = menu.querySelector(`.custom-select-option[data-value="${CSS.escape(String(v))}"]`);
-      if (opt) selectOption(opt, { silent: true });
-    },
-  });
-
-  root.setOptions = function(options, selectedValue){
-    menu.innerHTML = options
-      .map((o) => `<div class="custom-select-option${o.value === selectedValue ? " selected" : ""}" data-value="${o.value}">${o.html}</div>`)
-      .join("");
-    const sel = options.find((o) => o.value === selectedValue) || options[0];
-    label.innerHTML = sel ? sel.html : "";
-    root.dataset.value = sel ? sel.value : "";
-  };
-}
-
 function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint, itemsKey, barColor, ariaLabel, maxItems }){
   const wrapEl = document.getElementById(wrapId);
   const yearSelect = document.getElementById(yearSelectId);
@@ -1882,7 +1829,6 @@ function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint
   enhanceCustomSelect(yearSelect);
   enhanceCustomSelect(monthSelect);
 
-  const THEME_INK = "#2b2b2b", THEME_SUB = "#7a7a7a", THEME_LINE = "#ececec";
   const ROW_H = 28, MIN_H = 60;
   let chartInstance = null;
 
@@ -1911,11 +1857,7 @@ function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint
         animation: { duration: 1600 },
         plugins: {
           legend: { display: false },
-          tooltip: {
-            backgroundColor: THEME_INK, titleColor: "#fff", bodyColor: "#fff",
-            titleFont: { size: 11, weight: "700" }, bodyFont: { size: 11 },
-            padding: 8, cornerRadius: 8, displayColors: false,
-          },
+          tooltip: { ...CHART_TOOLTIP_STYLE },
         },
         scales: {
           x: { beginAtZero: true, grid: { color: THEME_LINE }, ticks: { color: THEME_SUB, font: { size: 10 }, precision: 0 } },
@@ -1979,24 +1921,10 @@ function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint
   const wrapEl = document.getElementById("searchTrendWrap");
   if (!wrapEl) return;
 
-  const THEME_INK = "#2b2b2b", THEME_SUB = "#7a7a7a", THEME_LINE = "#ececec";
-  const CHART_MONTHS = 12;
   let chartInstance = null;
 
-  function currentMonthKey(){ return new Date().toISOString().slice(0, 7); }
-  function addMonths(monthStr, delta){
-    const [y, m] = monthStr.split("-").map(Number);
-    const d = new Date(Date.UTC(y, m - 1 + delta, 1));
-    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-  }
-  function monthTickLabel(d){
-    const [yyyy, mm] = d.month.split("-");
-    return [yyyy, mm];
-  }
   function buildWindow(monthly, monthlyResults, endMonth){
-    const months = [];
-    for (let i = CHART_MONTHS - 1; i >= 0; i--) months.push(addMonths(endMonth, -i));
-    return months.map((m) => ({ month: m, count: monthly[m] || 0, resultCount: monthlyResults[m] || 0 }));
+    return buildMonthWindow(CHART_MONTHS, endMonth, (m) => ({ count: monthly[m] || 0, resultCount: monthlyResults[m] || 0 }));
   }
 
   async function load(){
@@ -2008,44 +1936,16 @@ function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint
       const chartData = buildWindow(data.monthly || {}, data.monthlyResults || {}, currentMonthKey());
       wrapEl.innerHTML = "<canvas></canvas>";
       const canvas = wrapEl.querySelector("canvas");
-      canvas.setAttribute("role", "img");
-      canvas.setAttribute("aria-label", `近 ${CHART_MONTHS} 個月查詢次數與查詢結果數趨勢`);
-      chartInstance = new Chart(canvas, {
-        type: "line",
-        data: {
-          labels: chartData.map(monthTickLabel),
-          datasets: [
-            { label: "查詢次數", data: chartData.map((d) => d.count), borderColor: "#2a78d6", backgroundColor: "#2a78d6", yAxisID: "yA", tension: 0.3, pointRadius: 4, pointHoverRadius: 5, borderWidth: 3 },
-            { label: "結果數", data: chartData.map((d) => d.resultCount), borderColor: "#eb6834", backgroundColor: "#eb6834", yAxisID: "yB", tension: 0.3, pointRadius: 4, pointHoverRadius: 5, borderWidth: 3 },
-          ],
-        },
-        options: {
-          responsive: true,
-          // 用固定寬高比（原本 560/210 是照桌機寬度抓的）縮放的話，手機版容器變窄，
-          // 算出來的圖表高度會比 .branch-stats-wrap 的 min-height:200px 矮一截，
-          // 下面就會留白；改成不維持比例，直接撐滿容器本身的高度（由 CSS min-height 決定，
-          // 不是這裡動態設定，才不會又造成 CLS）。
-          maintainAspectRatio: false,
-          animation: { duration: 1600 },
-          interaction: { mode: "index", intersect: false },
-          plugins: {
-            legend: { display: false },
-            tooltip: {
-              backgroundColor: THEME_INK, titleColor: "#fff", bodyColor: "#fff",
-              titleFont: { size: 11, weight: "700" }, bodyFont: { size: 11 },
-              padding: 8, cornerRadius: 8, displayColors: false,
-              callbacks: {
-                title: (items) => chartData[items[0].dataIndex].month,
-                label: (item) => `${item.dataset.label} ${item.formattedValue}`,
-              },
-            },
-          },
-          scales: {
-            x: { grid: { display: false }, ticks: { color: THEME_SUB, font: { size: 9 } } },
-            yA: { position: "left", beginAtZero: true, ticks: { color: "#2a78d6", font: { size: 9 }, count: 5, precision: 0, callback: (v) => Math.round(v) }, grid: { color: THEME_LINE } },
-            yB: { position: "right", beginAtZero: true, ticks: { color: "#eb6834", font: { size: 9 }, count: 5, precision: 0, callback: (v) => Math.round(v) }, grid: { display: false } },
-          },
-        },
+      // 不給 aspectRatio（不維持固定寬高比）：原本 560/210 是照桌機寬度抓的，手機版容器變窄，
+      // 算出來的圖表高度會比 .branch-stats-wrap 的 min-height:200px 矮一截，下面就會留白；
+      // 改成直接撐滿容器本身的高度（由 CSS min-height 決定，不是這裡動態設定，才不會又造成 CLS）。
+      chartInstance = createLineChart(canvas, {
+        data: chartData,
+        series: [
+          { key: "count", label: "查詢次數", color: "#2a78d6" },
+          { key: "resultCount", label: "結果數", color: "#eb6834" },
+        ],
+        ariaLabel: `近 ${CHART_MONTHS} 個月查詢次數與查詢結果數趨勢`,
       });
     } catch(e){
       console.error(e);
@@ -2076,48 +1976,3 @@ setupPublicRankingStats({
   wrapId: "teacherStatsWrap", yearSelectId: "teacherStatsYear", monthSelectId: "teacherStatsMonth",
   endpoint: "publicTeacherStats", itemsKey: "teachers", barColor: "#c9922e", ariaLabel: "老師查詢次數排行",
 });
-
-// iOS「加入主畫面」後是獨立模式，沒有瀏覽器原生的下拉重新整理，補一個簡易版本。
-(function setupPullToRefresh(){
-  const isStandalone = window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
-  if (!isStandalone) return;
-  const indicator = document.getElementById("ptrIndicator");
-  const THRESHOLD = 70;
-  const MAX_PULL = 100;
-  let startY = 0;
-  let pulling = false;
-  let refreshing = false;
-
-  document.addEventListener("touchstart", (e) => {
-    if (refreshing) return;
-    if (window.scrollY > 0){ pulling = false; return; }
-    startY = e.touches[0].clientY;
-    pulling = true;
-    indicator.classList.remove("ptr-releasing");
-  }, { passive: true });
-
-  document.addEventListener("touchmove", (e) => {
-    if (!pulling || refreshing) return;
-    const delta = e.touches[0].clientY - startY;
-    if (delta <= 0){ indicator.style.top = "-50px"; return; }
-    const pull = Math.min(delta / 2, MAX_PULL);
-    indicator.style.top = `${pull - 50}px`;
-    indicator.style.transform = `translate(-50%, 0) rotate(${pull * 3}deg)`;
-  }, { passive: true });
-
-  document.addEventListener("touchend", () => {
-    if (!pulling || refreshing) return;
-    pulling = false;
-    indicator.classList.add("ptr-releasing");
-    const top = parseFloat(indicator.style.top || "-50");
-    if (top + 50 >= THRESHOLD){
-      refreshing = true;
-      indicator.style.top = "16px";
-      indicator.style.transform = "translate(-50%, 0) rotate(0deg)";
-      indicator.classList.add("ptr-refreshing");
-      setTimeout(() => location.reload(), 300);
-    } else {
-      indicator.style.top = "-50px";
-    }
-  });
-})();
