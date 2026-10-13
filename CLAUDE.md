@@ -32,7 +32,10 @@ Both dev servers are also registered in `.claude/launch.json` (`worldgym-hosting
 - 沒 push 的 commit 在 Dashboard 按「Retry deployment」會失敗（`not our ref`），因為 Cloudflare 抓不到。
 - Pages 的 D1 綁定（`DB`）設在 Dashboard 的 Production 環境，要改綁定需重新部署才生效。
 
-**Worker API（`worldgym-api`）沒有接 Git 自動部署，改了 `worker/` 要手動部署：**
+**Worker API（`worldgym-api`）也是 push 到 `main` 就自動部署（Cloudflare Workers Builds）。** 設定在 Dashboard → Workers 和 Pages → worldgym-api → 設定 → 建置：Git 存放庫 `LionsKao/worldgym`、生產分支 `main`、根目錄 `worker`、部署指令 `npx wrangler deploy`、監看路徑 `*`（**任何**檔案有變動的 push——包含只改前端的——都會觸發一次 Worker 建置，約 15 秒到 2 分鐘）；「非生產分支的組建」有開（推到其他分支只會用 `wrangler versions upload` 建預覽版本，不影響線上）。Dashboard 的部署紀錄裡，標「建置 ⎇ main」的是 Git 觸發、標「已手動部署 / Wrangler」的是用指令部署。所以：
+- **push 到 `main` ＝ 同時部署 Pages 與 Worker**，沒有「只 push、先不部署 Worker」這個選項。想先不上線，就推到別的分支，或晚點再 push。
+- Worker 程式碼與 D1 migration 是分開的：自動部署**不會**跑 migration。改了 schema 要先 `wrangler d1 execute ... --remote --file=migrations/xxx.sql`（或確保新舊程式碼都相容），再 push。
+- 手動部署只在要「不經 push、立刻上線」時用：
 ```bash
 cd worker && npm run deploy     # 部署 API (wrangler deploy)
 ```

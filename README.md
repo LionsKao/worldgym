@@ -204,11 +204,15 @@ npm run dev
 ### 3. 部署
 
 ```bash
+# 平常不需要手動部署:push 到 main 就會自動部署 Pages(靜態站 + functions/)與 Worker(Cloudflare Workers Builds,見 CLAUDE.md)。
+# 要「不經 push」立刻手動部署時:
+
 # 部署 API
 cd worker && npm run deploy
 
-# 部署前端靜態站到 Cloudflare Pages(唯一正確的前端部署目標,發布到 https://worldgym.pages.dev)
-cd hosting && npx wrangler pages deploy .. --project-name worldgym --branch main
+# 部署前端靜態站到 Cloudflare Pages(發布到 https://worldgym.pages.dev)。
+# 一定要在 repo 根目錄執行,不能在 hosting/ 底下:wrangler 是用目前工作目錄找 functions/,在 hosting/ 執行會漏掉整份 Pages Functions。
+worker/node_modules/.bin/wrangler pages deploy . --project-name worldgym --branch main
 ```
 
 `hosting/wrangler.jsonc` 是另一套 Workers Assets 設定(`name: "worldgym-web"`),曾經對應一個叫 `worldgym-web.lions2100.workers.dev` 的 Worker,但那個 Worker 已經刪除、不再使用——**不要用 `npx wrangler deploy` 部署到它**,那不會更新到 `worldgym.pages.dev` 這個實際在跑的網站,只會白白部署到一個沒人在看的地方。
