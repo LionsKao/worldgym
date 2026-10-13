@@ -3,21 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-  gtag('config', 'G-Q7NZN45T0D');
-  window.addEventListener('load', function () {
-    var s = document.createElement('script');
-    s.async = true;
-    s.src = 'https://www.googletagmanager.com/gtag/js?id=G-Q7NZN45T0D';
-    // gtag.js 真的載入完成才觸發這個事件，讓 script.js 清網址上的 utm_source 時機
-    // 跟著 GA4 實際送出 pageview 的時機走，不要用寫死的秒數瞎猜（見 script.js 開頭的說明）。
-    s.onload = function () { window.dispatchEvent(new Event('wg-ga-loaded')); };
-    document.head.appendChild(s);
-  });
-</script>
+<script src="ga-init.js"></script>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 44'%3E%3Ctext x='22' y='19' text-anchor='middle' font-family='sans-serif' font-weight='900' font-size='16' fill='%23e8604c'%3E課表%3C/text%3E%3Ctext x='22' y='38' text-anchor='middle' font-family='sans-serif' font-weight='900' font-size='16' fill='%233a3a4a'%3E查詢%3C/text%3E%3C/svg%3E">
 <title>💪 課表查詢</title>
 <meta name="description" content="快速查詢 World Gym（WG）各分店課表、老師、時段。">
@@ -88,8 +74,9 @@
   src:url(https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/webfonts/fa-brands-400.woff2) format("woff2");
 }
 </style>
-<link rel="preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha384-PPIZEGYM1v8zp5Py7UjFb79S58UeqCL9pYVnVPURKEqvioPROaVAJKKLzvH2rDnI" crossorigin="anonymous" onload="this.onload=null;this.rel='stylesheet'">
+<link rel="preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha384-PPIZEGYM1v8zp5Py7UjFb79S58UeqCL9pYVnVPURKEqvioPROaVAJKKLzvH2rDnI" crossorigin="anonymous">
 <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha384-PPIZEGYM1v8zp5Py7UjFb79S58UeqCL9pYVnVPURKEqvioPROaVAJKKLzvH2rDnI" crossorigin="anonymous"></noscript>
+<script src="css-async.js"></script>
 <link rel="stylesheet" href="style.css?v=104">
 <style>#loadingOverlay{position:fixed;top:0;left:0;width:100%;height:100%;background:#fff;z-index:9999;}</style>
 <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "8513ca23d1fc42f2af05b18ff29c709d"}'></script><!-- End Cloudflare Web Analytics -->

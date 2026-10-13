@@ -153,6 +153,14 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 ### 靜態資源快取
 `style.css`/`icons/` 走 `_headers` 長效快取，搭配 `index.html`/`admin.html` 裡的 `?v=` 版號機制——內容改了要同步更新版號，否則使用者吃到快取住的舊檔案。`script.js`、`admin.js`、`common.js` 目前故意不設長效快取（改動頻繁），只靠 `?v=` 版號控制；`common.js` 同時被 `index.html` 與 `admin.html` 引用（都要排在自己的 script 之前），改了要兩個檔案裡的 `common.js?v=` 一起更新。Font Awesome 圖示直接吃 cdnjs 的完整套件，`fa-` class 可以照官方圖示庫直接用。
 
+### 安全標頭與 CSP（`_headers` 的 `/*`）
+所有頁面都帶 `Content-Security-Policy`、`X-Frame-Options: DENY`（後台不能被嵌入）、`Strict-Transport-Security`、`Permissions-Policy`（只開 `geolocation=(self)`，分店依距離篩選要用）等標頭。CSP 的重點：
+- **`script-src` 不含 `'unsafe-inline'`**：頁面裡不能再寫 inline `<script>` 或 `onclick=`/`onload=` 這類 inline 事件處理（會被擋、而且是靜默失效）。需要時放成外部檔（現有 `ga-init.js` 是 GA4 初始化，只有 `index.html` 載入，且必須同步載入；`css-async.js` 非阻塞載入 Font Awesome CSS，`index.html`/`admin.html` 都載入）。`type="application/ld+json"` 不是可執行腳本，不受影響。
+- `style-src` 保留 `'unsafe-inline'`（HTML 裡有大量 `style=` 屬性）。
+- **新增任何外部來源（CDN、字型、分析服務、新的 API 網域）都要同步改 CSP**，否則在正式站被擋、本機看不出差別以外的問題；改完用本機 hosting 開發伺服器（會套用 `_headers`）載入頁面，看主控台有沒有 `violates the following Content Security Policy`。萬用字元 `*.example.com` **不包含** `example.com` 本身，要另外列（GA4 的 `analytics.google.com` 就是這樣漏掉過）。
+- GA4 會打 `www.google.com.tw` 的受眾像素，所以 `img-src`/`connect-src` 有列這個在地化網域；站台只開放台灣 IP，不必列其他國家網域。
+- 本機（localhost）載入時 Cloudflare Web Analytics beacon 會出現 CORS 錯誤，是因為 localhost 不是它登記的網域，跟 CSP 無關，可忽略。
+
 ## Secrets
 
 `worker/.dev.vars`（gitignore，不進版控）本機開發用，需要 `MANUAL_SCRAPE_TOKEN` / `TEAMS_WEBHOOK_URL`(選填) / `VAPID_PRIVATE_KEY` / `QUERY_TOKEN_SECRET`。正式環境用 `npx wrangler secret put VAPID_PRIVATE_KEY` / `QUERY_TOKEN_SECRET` 設定（`QUERY_TOKEN_SECRET` 沒設會讓 `/queryClasses` 變 500）。
