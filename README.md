@@ -274,7 +274,7 @@ npm run check:branches -- --base=origin/main
 
 它只讀檔，檢查四處是否對得上；加 `--base=<git ref>` 還會驗證 seed 的順序「**只能往後附加**」——短代碼就是分店在陣列裡的位置，順序一變，舊的分享網址就會指到別間分店。
 
-**本站只收不用付費的團體課**，官網有、但沒收進來的分店（Express 店、只有 Studio X 等付費課的店、尚未開幕的）都是刻意不收，記在 `worker/src/branches-excluded.js`（附理由），每月分店掃描不會再重複通知它們。收到「疑似新分店」的 Teams 通知時：有免費團課就加進 `branches-seed.js`（並同步其他三處）；不收就加進 `branches-excluded.js`。`check:branches` 也會檢查這份清單的格式，以及同一個 slug 不能同時出現在 seed 與不收清單。預售中、官網 sitemap 還沒有分店頁的分店（目前是桃園藝文）登記在同檔案的 `EXPECTED_MISSING_FROM_SITEMAP`，掃描不會把它當成疑似下架。
+**本站只收不用付費的團體課**，官網有、但沒收進來的分店（Express 店，有的另外只有 Studio X 付費課；另有一個草屯店的別名網址 `caotun`）都是刻意不收，記在 `worker/src/branches-excluded.js`（附理由），每月分店掃描不會再重複通知它們。收到「疑似新分店」的 Teams 通知時：有免費團課就加進 `branches-seed.js`（並同步其他三處）；不收就加進 `branches-excluded.js`。`check:branches` 也會檢查這份清單的格式，以及同一個 slug 不能同時出現在 seed 與不收清單。預售中、官網 sitemap 還沒有分店頁的分店（目前是桃園藝文）登記在同檔案的 `EXPECTED_MISSING_FROM_SITEMAP`，掃描不會把它當成疑似下架。
 
 ## 🚀 部署
 
