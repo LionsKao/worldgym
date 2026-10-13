@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 回覆一律使用繁體中文。
 
+## 文件分工
+
+`README.md` 是給人看的專案總覽；本檔是給 AI 協作者的維護細節（為什麼這樣設計、改動時要小心什麼）。兩邊重疊的資訊（資料表、API 端點、cron）以 `worker/schema.sql`、`worker/src/index.js` 的 `ROUTES`、`worker/wrangler.toml` 為準；改了行為就兩份文件都要檢查。**發現文件與實際行為矛盾時，先查證（讀程式、查 Dashboard 或 `wrangler deployments list`）再下結論，不要直接相信文件**——這份文件就曾經寫錯「Worker 沒有接 Git 自動部署」。
+
 ## What this is
 
 World Gym 台灣課表查詢網站。純靜態前端 + Cloudflare Worker API + D1 資料庫，沒有 build step、沒有前端框架、沒有 bundler。`script.js`/`admin.js`/`style.css` 都是直接編輯後部署的原始檔。
@@ -23,7 +27,7 @@ cd hosting && npm install && npm run dev
 # API (worker/.dev.vars 需先手動建立，見 README「本機開發」章節)
 cd worker && npm install && npm run dev
 ```
-Both dev servers are also registered in `.claude/launch.json` (`worldgym-hosting`, `worldgym-worker`) for use with the preview/browser tools. 兩個都直接用 `node` 啟動（不經 bash/npm），Mac 與 Windows 通用，前提是 `hosting/`、`worker/` 都跑過 `npm install`。`hosting/dev.mjs` 把 wrangler 狀態存在 `os.tmpdir()` 底下：`hosting/wrangler.jsonc` 的 `assets.directory` 是 `..`（整個 repo），狀態若放在 repo 內（預設的 `.wrangler/state`）會被當成資源異動而無限重新載入。
+Windows PowerShell 5.1 不支援 `&&`，上面這種串起來的指令要分成兩行執行。Both dev servers are also registered in `.claude/launch.json` (`worldgym-hosting`, `worldgym-worker`) for use with the preview/browser tools. 兩個都直接用 `node` 啟動（不經 bash/npm），Mac 與 Windows 通用，前提是 `hosting/`、`worker/` 都跑過 `npm install`。`hosting/dev.mjs` 把 wrangler 狀態存在 `os.tmpdir()` 底下：`hosting/wrangler.jsonc` 的 `assets.directory` 是 `..`（整個 repo），狀態若放在 repo 內（預設的 `.wrangler/state`）會被當成資源異動而無限重新載入。
 
 ### Deploy
 
@@ -71,11 +75,15 @@ There is no test suite and no lint/build command in this repo（只有上面這�
 ## Architecture
 
 ```
-index.html / script.js / style.css   前端：課表查詢頁 + 首頁廣告輪播 + 首頁公開排行報表
-common.js                            前台與後台共用的前端工具：escapeHtml、自製下拉選單、月份計算、折線圖工廠、下拉重新整理
+index.html / script.js / style.css   前端：課表查詢頁 + 首頁廣告橫幅 + 首頁公開排行報表
+common.js                            前台與後台共用的前端工具：escapeHtml、readJsonOrThrow/fetchJson、isStandaloneDisplay、自製下拉選單、月份計算、折線圖工廠 createLineChart、下拉重新整理
+ga-init.js                           GA4 初始化（只有 index.html 載入，必須同步載入；因 CSP 不允許 inline script 而獨立成檔）
+css-async.js                         非阻塞載入 Font Awesome CSS（同樣因 CSP；index.html、admin.html 都載入）
 manifest.json / sw.js / icons/       PWA + Service Worker（推播提醒用）
-admin.html / admin.js                後台：手動重抓、爬蟲紀錄、報表（Chart.js）
+admin.html / admin.js                後台：登入、報表（Chart.js）、手動重抓與清除孤兒資料
 vendor/chart.umd.min.js              Chart.js，vendor 進來不吃 CDN
+404.html / robots.txt / llms.txt / sitemap.xml   sitemap.xml 與 llms.txt 是動態版失敗時的備援靜態檔
+GA_EVENTS.md                         前端送出的 GA4 事件清單
 functions/_middleware.js             Cloudflare Pages Functions：只放行台灣 IP（爬蟲 UA 例外）、擋掉非網站檔案（worker/、*.md、點開頭檔案等）回 404
 functions/index.js                  Pages Function：單一分店網址在伺服器端注入課表（見下方「伺服器端注入課表」）
 functions/sitemap.xml.js            動態 /sitemap.xml（備援：根目錄靜態 sitemap.xml）
@@ -83,22 +91,24 @@ functions/llms.txt.js               動態 /llms.txt（備援：根目錄靜態 
 functions/_lib/                     注入設定與 SITE_ORIGIN（ssrConfig.js）、實作（ssrBranch.js）、slug 網址（branchUrl.js）、
                                     分店查找表（branches.js）、D1 逾時與 Cache API 共用流程（util.js）、
                                     有課表的分店清單（scheduleBranches.js，sitemap 與 llms.txt 共用）、sitemap.js、llms.js
-_headers                             靜態資源快取設定
-hosting/                             Workers Assets 靜態託管設定（wrangler.jsonc）
+_headers                             Pages 回應標頭：安全標頭與 CSP（見「安全標頭與 CSP」）、style.css/icons 長效快取
+hosting/                             只用於本機開發（dev.mjs 啟動 wrangler 靜態伺服器），不是正式部署目標
 worker/
   src/index.js                      路由表 ROUTES（限流、後台驗證統一處理）/ CORS / 入口 / cron scheduled()
   src/crawlers.js                   海外 IP 存取判斷：爬蟲 UA 清單（Pages 的 _middleware.js 也 import 這份）+ 只放行的唯讀路徑
   src/util.js                       共用小工具：台灣時間（nowTaiwanIso 等）、fnv1aHex、爬官網的 UA、推 Teams；functions/ 也會 import
   src/queryClasses.js               課表查詢邏輯
   src/scrape.js                     爬蟲邏輯（重抓官網課表寫入 D1）
+  src/branchScan.js                 每月比對官網 sitemap 與 branches-seed.js，有差異才通知 Teams（只通知，不改資料）
   src/reminders.js                  課前推播提醒：登記/取消/到期發送 Web Push
+  src/analytics.js                  報表的「明細 + 月度彙總」合併查詢與每月壓縮（rollupAnalyticsEvents）
   src/branches-seed.js              分店清單固定資料
   scripts/check-branches.mjs        分店清單一致性檢查（npm run check:branches，見 Commands）
   schema.sql                        D1 完整 schema（重建資料庫用，會 DROP 所有表）
   migrations/                       針對既有正式資料庫的單張 table migration
 ```
 
-前端呼叫 `worker` 的 API（`/queryClasses` 等），API 讀寫 D1（`worldgym-schedule`）。`worker/wrangler.toml` 的 `[triggers]` cron：`*/5 * * * *` 每 5 分鐘掃描課前推播是否到期；`0 19 * * *`、`0 9 * * *`（台灣時間 03:00/17:00）各自動重抓一次全部分店（需要 Workers Paid，單次執行 subrequest 上限拉到 1000 才跑得完 110 間分店）。也可以透過 `admin.html` 手動觸發重抓。
+前端呼叫 `worker` 的 API（`/queryClasses` 等），API 讀寫 D1（`worldgym-schedule`）。`worker/wrangler.toml` 的 `[triggers]` 有五個 cron：`*/5 * * * *` 每 5 分鐘掃描課前推播是否到期；`0 19 * * *`、`0 9 * * *`（台灣時間 03:00/17:00）各自動重抓一次全部分店（需要 Workers Paid，單次執行 subrequest 上限拉到 1000 才跑得完 110 間分店）；`0 20 1 * *`（每月 1 號 04:00）清 `query_access_log` 90 天前的紀錄並把報表明細壓縮成月度彙總；`0 21 2 * *`（每月 2 號 05:00）跑分店清單掃描。也可以透過 `admin.html` 手動觸發重抓。
 
 ### D1 資料表（完整定義見 worker/schema.sql）
 
@@ -106,17 +116,21 @@ worker/
 | --- | --- |
 | `classes` | 爬蟲抓下來的課表 |
 | `branches` | 分店清單（slug、名稱、地區） |
-| `meta_filter_options` | 篩選用課程/老師名稱清單快取 |
+| `meta_filter_options` | 篩選用課程/老師名稱清單快取（爬蟲跑完才更新；也是 `/trackSearchEvents` 驗證老師/課程名稱的來源） |
 | `reminders` | 課前推播提醒登記與發送狀態 |
-| `ads` | 首頁廣告輪播內容與上下架時間 |
-| `ad_events` | 廣告曝光/點擊打點 |
-| `teacher_search_events` / `course_search_events` / `branch_search_events` | 老師/課程/分店查詢次數打點 |
-| `search_events` | 整體查詢次數與結果數打點 |
-| `favorite_events` | 「我的最愛」建立/使用打點，用匿名 clientId 去重估算人數 |
+| `reminder_add_events` / `reminder_add_monthly` | 提醒功能使用量（只記「登記」次數） |
+| `ads` | 首頁廣告內容與上下架時間（沒有輪播，每次載入隨機挑一則） |
+| `ad_events` / `ad_monthly` | 廣告曝光/點擊打點與月度彙總 |
+| `teacher_search_events` / `course_search_events` / `branch_search_events`（各有 `*_monthly`） | 老師/課程/分店查詢次數打點與月度彙總 |
+| `search_events` / `search_monthly` | 整體查詢次數與結果數 |
+| `favorite_events` / `favorite_monthly` / `favorite_client_seen` | 「我的最愛」建立/使用打點，用匿名 clientId 去重估算人數；`favorite_client_seen` 即時維護全時間去重人數 |
+| `query_access_log` | `/issueToken`、`/queryClasses` 的存取紀錄，每月清 90 天前的 |
+
+事件明細表（`*_events`）只保留當月，上個月由每月 cron 壓縮進 `*_monthly` 後刪除明細；所有報表查詢是「彙總表 UNION ALL 明細表」。細節見 README「分析報表明細轉月度彙總」與 `worker/src/analytics.js`。
 
 **時間戳一律用台灣時間（`+08:00`），不是 UTC**：`createdAt`/`updatedAt`/`scrapedAt`/`ads.startAt`/`ads.endAt` 都是位移 8 小時再貼 `+08:00` 後綴的 ISO 字串，才能跟其他時間戳直接用字串比較/排序。一律用 `worker/src/util.js` 的 `nowTaiwanIso()`（要往前/往後推用 `taiwanIso(offsetMs)`，要台灣年月日時分用 `taiwanClock()` 再讀 `getUTC*()`，台灣今天的日期用 `todayIsoTaipei()`），不要在各檔案自己寫 `Date.now() + 8 * 3600 * 1000`，也不要混用 `new Date().toISOString()`（那是 UTC）。
 
-**爬蟲寫入 `classes` 的方式（`worker/src/scrape.js` 的 `replaceBranchClasses`）：先 upsert 這間分店這一輪的全部列、最後在最後一批裡清掉「這間分店 `scrapedAt` 比這一輪舊」的列**，不是先整間 DELETE 再分批重寫。那樣寫入的這幾百毫秒到幾秒，這間分店是空的或只有一部分，剛好有人查詢、或 sitemap/SSR 在這時重建並快取 30 分鐘就會看到殘缺資料；寫到一半失敗更會留下殘缺資料。現在任何時刻看到的至少是舊資料（換了老師的課短暫有兩筆），中途失敗舊資料原封不動、下一輪再清。因此**同一間分店同一輪的所有列共用同一個 `scrapedAt`**（它是新舊資料的分水嶺），改這段時不要改回逐列 `nowTaiwanIso()`，也不要改回先刪光。`staleDeleted` 現在是「真正過期被清掉的筆數」，不是「整間先刪光的筆數」。
+**爬蟲寫入 `classes` 的方式（`worker/src/scrape.js` 的 `replaceBranchClasses`）：先 upsert 這間分店這一輪的全部列、最後在最後一批裡清掉「這間分店 `scrapedAt` 比這一輪舊」的列**，不是先整間 DELETE 再分批重寫。那樣寫入的這幾百毫秒到幾秒，這間分店是空的或只有一部分，剛好有人查詢、或 sitemap/SSR 在這時重建並快取 30 分鐘就會看到殘缺資料；寫到一半失敗更會留下殘缺資料。現在任何時刻看到的至少是舊資料（換了老師的課短暫有兩筆），中途失敗舊資料原封不動、下一輪再清。因此**同一間分店同一輪的所有列共用同一個 `scrapedAt`**（它是新舊資料的分水嶺），改這段時不要改回逐列 `nowTaiwanIso()`，也不要改回先刪光。`staleDeleted` 現在是「真正過期被清掉的筆數」，不是「整間先刪光的筆數」。upsert 用 `ON CONFLICT(id) DO UPDATE SET`，**只更新同一個 id 下還可能變的欄位**（`branchName`、`teacherName`、`teacherEmpNo`、`roomName`、`isSubstitute`、`scrapedAt`），不要改回 `INSERT OR REPLACE`（它遇到相同 id 會「先刪整列再插入」，連帶重寫每個索引項目，寫入量大好幾倍）；`className`、`date`、`startTime`、`branchSlug` 都在 id 裡、同 id 必定相同，而且 `className` 有索引，放進 SET 會每輪重寫那條索引。
 
 新增/修改 ads table 結構：`schema.sql` 只在建立全新資料庫時整份重跑（會清空所有表）；對既有正式資料庫要用 `worker/migrations/` 新增檔案 + `wrangler d1 execute --remote --file=`，不要直接改 schema.sql 後重跑。
 
@@ -145,11 +159,12 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 ### /queryClasses 防濫用
 匿名公開端點，做不到真正私有 API，只拉高濫用成本：
 1. 流量限制：每 IP 每 60 秒 20 次（`/queryClasses`）/ 10 次（`/issueToken`），用 KV namespace `QUERY_RATE_LIMIT`（fixed-window，非原子，夠用不追求精確）。
-2. 短效 HMAC token：`GET /issueToken` 發 15 分鐘效期 token（payload 只有 `exp`，`QUERY_TOKEN_SECRET` 簽名）。`/queryClasses` 沒帶對 token 回 401。
+2. 短效 HMAC token：`GET /issueToken` 發 15 分鐘效期 token（payload 只有 `exp`，`QUERY_TOKEN_SECRET` 簽名）。`/queryClasses` 沒帶對 token 回 401（`token_invalid`/`token_expired`）。
+3. 結果筆數上限：`worker/src/queryClasses.js` 的 `RESULT_HARD_CAP = 600`（前端超過 `RESULT_COUNT_WARN_LIMIT = 250` 就整包不顯示，後端沒必要撈更多）。
 前端過期自動重拿 token 重試一次，使用者無感（見 `script.js` 的 query 流程）。
 
 ### 後台報表 / 首頁公開排行
-`admin.html` 有廣告/最愛/提醒三個報表面板（加上 IP 存取紀錄表），折線圖用 Chart.js 的共用元件 `createDualLineChart`/`createSingleLineChart`。首頁「通知」分頁下方有查詢量趨勢與老師/課程/分店查詢次數排行（`/publicSearchStats`、`/publicTeacherStats` 等端點，不驗證 token，因為這些是課表本身的公開資訊），用 `script.js` 的 `setupPublicRankingStats()` 畫圖，每張只顯示前 10 名。年/月選單是自製的 `.custom-select` 元件（`enhanceCustomSelect()`），跟 admin 的廣告篩選下拉共用同一套慣例。新增報表面板的模式：worker 開打點端點（`/trackXxx`，同一次查詢動作會一起寫入的就併進批次端點，如 `/trackSearchEvents`）+ `/xxxStats` 讀取端點（公開的用 `/publicXxxStats`，後台的要驗證 session token）、新增對應 D1 table（含 migration）、前端在對應動作打點。**新增端點只要在 `worker/src/index.js` 的 `ROUTES` 表加一列**（key 是 `"METHOD /path"`，填 `limit` 每 IP 每分鐘上限、後台端點加 `admin: true`、`handler`）：限流（KV key 前綴 = 路徑名）、後台 session 驗證、429/403/404/500 都由 `fetch()` 統一處理，handler 只寫業務邏輯；老師/課程/分店排行三個端點共用 `rankingHandler()`。
+`admin.html` 有廣告/最愛/提醒三個報表面板（加上 IP 存取紀錄表），折線圖用 `common.js` 的共用工廠 `createLineChart()`（一或兩條線；`updateLineChart()` 換資料）。首頁「通知」分頁下方有查詢量趨勢與老師/課程/分店查詢次數排行（`/publicSearchStats`、`/publicTeacherStats` 等端點，不驗證 token，因為這些是課表本身的公開資訊），用 `script.js` 的 `setupPublicRankingStats()` 畫圖：分店與課程只顯示前 10 名，老師顯示後端回傳的前 15 名（上限在 `rankingHandler` 的 `limit`）。年/月選單是自製的 `.custom-select` 元件（`enhanceCustomSelect()`），跟 admin 的廣告篩選下拉共用同一套慣例。新增報表面板的模式：worker 開打點端點（`/trackXxx`，同一次查詢動作會一起寫入的就併進批次端點，如 `/trackSearchEvents`）+ `/xxxStats` 讀取端點（公開的用 `/publicXxxStats`，後台的要驗證 session token）、新增對應 D1 table（含 migration）、前端在對應動作打點。**新增端點只要在 `worker/src/index.js` 的 `ROUTES` 表加一列**（key 是 `"METHOD /path"`，填 `limit` 每 IP 每分鐘上限、後台端點加 `admin: true`、`handler`）：限流（KV key 前綴 = 路徑名）、後台 session 驗證、429/403/404/500 都由 `fetch()` 統一處理，handler 只寫業務邏輯；老師/課程/分店排行三個端點共用 `rankingHandler()`。
 
 **公開打點端點要驗證內容，不能什麼字串都收**：`/trackSearchEvents` 的名稱會原封不動出現在首頁公開排行榜，所以分店名稱必須在 `branches-seed.js` 裡（跟前端分店 pill 文字一致）、老師/課程名稱必須在 `meta_filter_options`（前端選項的來源，isolate 內快取 5 分鐘），不在名單的值靜默丟掉；`/trackFavorite` 的 `clientId` 必須是 UUID 格式。新增會顯示在公開頁面上的打點時照這個原則做。
 
@@ -166,8 +181,11 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 - GA4 會打 `www.google.com.tw` 的受眾像素，所以 `img-src`/`connect-src` 有列這個在地化網域；站台只開放台灣 IP，不必列其他國家網域。
 - 本機（localhost）載入時 Cloudflare Web Analytics beacon 會出現 CORS 錯誤，是因為 localhost 不是它登記的網域，跟 CSP 無關，可忽略。
 
+### 後台登入
+密碼是 `MANUAL_SCRAPE_TOKEN`；登入成功換發 7 天效期、簽章的 session token（存 `localStorage`，用 `X-Admin-Token` header 帶），只有 `/verifyAdminToken` 收原始密碼，其餘後台端點只認 session token。**登入失敗鎖定**：同一 IP 連續輸錯 5 次鎖 15 分鐘（KV key `admin-fail:<IP>`，TTL 到期自動解除），鎖定期間連正確密碼也會被拒（回 423、畫面顯示「嘗試次數過多，已暫時鎖定」）；要排查可用 `wrangler kv key get "admin-fail:<IP>" --namespace-id <QUERY_RATE_LIMIT 的 id> --remote` 看計數，不要為了「測試登入」刻意輸錯。session 簽章金鑰見下面的 `ADMIN_SESSION_SECRET`。
+
 ## Secrets
 
-`worker/.dev.vars`（gitignore，不進版控）本機開發用，需要 `MANUAL_SCRAPE_TOKEN` / `TEAMS_WEBHOOK_URL`(選填) / `VAPID_PRIVATE_KEY` / `QUERY_TOKEN_SECRET`。正式環境用 `npx wrangler secret put VAPID_PRIVATE_KEY` / `QUERY_TOKEN_SECRET` 設定（`QUERY_TOKEN_SECRET` 沒設會讓 `/queryClasses` 變 500）。
+`worker/.dev.vars`（gitignore，不進版控）本機開發用，需要 `MANUAL_SCRAPE_TOKEN` / `QUERY_TOKEN_SECRET` / `VAPID_PRIVATE_KEY`，`TEAMS_WEBHOOK_URL` 與 `ADMIN_SESSION_SECRET` 選填。正式環境五個 secret 都用 `npx wrangler secret put <名稱>` 設定（`MANUAL_SCRAPE_TOKEN`、`QUERY_TOKEN_SECRET`、`VAPID_PRIVATE_KEY`、`ADMIN_SESSION_SECRET`、`TEAMS_WEBHOOK_URL`；`QUERY_TOKEN_SECRET` 沒設會讓 `/queryClasses` 變 500；`TEAMS_WEBHOOK_URL` 沒設則留言端點回 503、月度掃描靜默略過）。secret 是 Worker 的執行期設定，Git 自動部署不會洗掉它們；wrangler 讀不出 secret 的值，只能覆寫。
 
 `ADMIN_SESSION_SECRET`（選填但建議設，至少 32 字元的隨機字串，`npx wrangler secret put ADMIN_SESSION_SECRET`）：後台 session token 的簽章金鑰。沒設或少於 32 字元就退回舊做法——從 `MANUAL_SCRAPE_TOKEN` 做無鹽 SHA-256 衍生，session token 一旦外洩，攻擊者能離線猜登入密碼；設了獨立金鑰就沒有這個問題。**設定或更換它會讓目前所有後台登入失效**（要重新輸入密碼一次），因為兩種金鑰簽出來的 token 不通用。
