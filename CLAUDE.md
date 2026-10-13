@@ -164,3 +164,5 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 ## Secrets
 
 `worker/.dev.vars`（gitignore，不進版控）本機開發用，需要 `MANUAL_SCRAPE_TOKEN` / `TEAMS_WEBHOOK_URL`(選填) / `VAPID_PRIVATE_KEY` / `QUERY_TOKEN_SECRET`。正式環境用 `npx wrangler secret put VAPID_PRIVATE_KEY` / `QUERY_TOKEN_SECRET` 設定（`QUERY_TOKEN_SECRET` 沒設會讓 `/queryClasses` 變 500）。
+
+`ADMIN_SESSION_SECRET`（選填但建議設，至少 32 字元的隨機字串，`npx wrangler secret put ADMIN_SESSION_SECRET`）：後台 session token 的簽章金鑰。沒設或少於 32 字元就退回舊做法——從 `MANUAL_SCRAPE_TOKEN` 做無鹽 SHA-256 衍生，session token 一旦外洩，攻擊者能離線猜登入密碼；設了獨立金鑰就沒有這個問題。**設定或更換它會讓目前所有後台登入失效**（要重新輸入密碼一次），因為兩種金鑰簽出來的 token 不通用。

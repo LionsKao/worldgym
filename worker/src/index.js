@@ -160,12 +160,26 @@ function constantTimeEqual(a, b) {
   return timingSafeEqual(ha, hb);
 }
 // 登入成功後換一張有效期限的簽章 session token，之後的請求都送這張，不用每次都把真正的密碼
-// 傳一次（降低密碼在網路上被送出的次數）。簽章金鑰是從 MANUAL_SCRAPE_TOKEN 雜湊衍生出來、
-// 不是直接拿密碼當 HMAC key，這樣就算 session token 外流也推不回密碼本身。
+// 傳一次（降低密碼在網路上被送出的次數）。
+// 簽章金鑰優先用獨立的高熵 secret ADMIN_SESSION_SECRET（至少 32 字元的隨機字串）：這樣 session token 就算外洩
+// （token 的 payload 與簽章都看得到，攻擊者可以離線拿候選密碼算簽章比對），也猜不出登入密碼，因為金鑰跟密碼完全無關。
+// 沒設（或太短）就退回舊做法——從 MANUAL_SCRAPE_TOKEN 做無鹽 SHA-256 衍生，只有密碼本身夠長夠隨機才安全，
+// 保留這個後備是為了「先部署程式、再設 secret」時現有登入不會失效。兩種金鑰簽出來的 token 互相不通用，
+// 所以設定／移除 ADMIN_SESSION_SECRET 會讓目前所有後台登入失效、需要重新輸入密碼（只此一次）。
 // 後台端點只認 session token（isAdminRequest），原始密碼只有 /verifyAdminToken 收（isAdminLoginRequest）。
 const ADMIN_SESSION_TTL_MS = 7 * 24 * 3600 * 1000; // 7 天，過期要重新輸入密碼
+const ADMIN_SESSION_SECRET_MIN_LENGTH = 32;
+let warnedWeakSessionSecret = false;
 async function adminSessionKey(env) {
-  const material = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`admin-session:${env.MANUAL_SCRAPE_TOKEN}`));
+  let seed = `admin-session:${env.MANUAL_SCRAPE_TOKEN}`;
+  const secret = env.ADMIN_SESSION_SECRET;
+  if (secret && secret.length >= ADMIN_SESSION_SECRET_MIN_LENGTH) {
+    seed = `admin-session-v2:${secret}`;
+  } else if (secret && !warnedWeakSessionSecret) {
+    warnedWeakSessionSecret = true; // 每個 isolate 只提醒一次，免得每個請求都洗 log
+    console.error(`ADMIN_SESSION_SECRET 少於 ${ADMIN_SESSION_SECRET_MIN_LENGTH} 字元，已忽略、退回用 MANUAL_SCRAPE_TOKEN 衍生金鑰`);
+  }
+  const material = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(seed));
   return crypto.subtle.importKey("raw", material, { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
 }
 async function issueAdminSession(env, ttlMs = ADMIN_SESSION_TTL_MS) {

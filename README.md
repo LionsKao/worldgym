@@ -99,7 +99,7 @@ npx wrangler d1 execute worldgym-schedule --remote --command="UPDATE ads SET ena
 
 `admin.html` 用一組共用密碼登入(對應 worker 的 `MANUAL_SCRAPE_TOKEN` secret),沒有帳號系統,任何人拿到這組密碼都能登入。登入流程:
 
-1. 輸入密碼後打 `POST /verifyAdminToken`,worker 把傳入值跟 `MANUAL_SCRAPE_TOKEN` 各自雜湊成固定長度、用 `timingSafeEqual` 常數時間比較(不能直接用 `!==` 比字串,理論上會被時間側channel慢慢猜出來)。驗證成功會換發一張**簽章、7 天效期**的 session token(payload 只有 `exp`,簽章金鑰是從 `MANUAL_SCRAPE_TOKEN` 雜湊衍生,不是直接拿密碼當 key)。
+1. 輸入密碼後打 `POST /verifyAdminToken`,worker 把傳入值跟 `MANUAL_SCRAPE_TOKEN` 各自雜湊成固定長度、用 `timingSafeEqual` 常數時間比較(不能直接用 `!==` 比字串,理論上會被時間側channel慢慢猜出來)。驗證成功會換發一張**簽章、7 天效期**的 session token(payload 只有 `exp`,簽章金鑰優先用獨立的 `ADMIN_SESSION_SECRET`(至少 32 字元的隨機字串),沒設才退回從 `MANUAL_SCRAPE_TOKEN` 雜湊衍生——後者在 session token 外洩時,攻擊者能離線猜密碼,所以建議一定要設)。
 2. 前端把這張 session token(不是密碼本身)存進 `localStorage`,之後每次後台操作都用 `X-Admin-Token` header 帶著送出去。
 3. 每次重新打開後台頁面都會重新驗證一次、順便換發新的 token(滑動延長效期)——只要 7 天內有開過後台就不用重新輸入密碼,超過 7 天沒用才需要重新輸入。
 4. 只有 `/verifyAdminToken` 接受「直接帶密碼本身」(有連續失敗 5 次鎖定 15 分鐘的保護),其餘所有後台端點一律只認 session token——這樣不能繞過登入鎖定去對其他端點猜密碼。密碼只會在登入當下被送出網路一次。
@@ -180,6 +180,7 @@ npm install
 
 ```
 MANUAL_SCRAPE_TOKEN=your-own-secret-token
+ADMIN_SESSION_SECRET=a-random-string-of-at-least-32-chars   # 後台 session token 簽章金鑰,選填(沒設會退回用上面的密碼衍生)
 TEAMS_WEBHOOK_URL=https://your-teams-webhook-url   # 選填,爬蟲失敗時的 Teams 通知
 VAPID_PRIVATE_KEY=your-own-vapid-private-key       # 推播提醒用,跟 wrangler.toml 裡的 VAPID_PUBLIC_KEY 成對
 QUERY_TOKEN_SECRET=your-own-random-string          # /queryClasses 防濫用用的 token 簽名密鑰,見上方「防濫用機制」章節
