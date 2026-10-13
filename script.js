@@ -1876,15 +1876,16 @@ function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint
   }
 
   async function load(){
-    const now = new Date();
-    const year = yearSelect.value || String(now.getFullYear());
-    const month = monthSelect.value || String(now.getMonth() + 1).padStart(2, "0");
+    // 預設年月用台灣現在（不是裝置時區，也不是 UTC），跟 Worker 沒帶參數時的預設一致
+    const [nowYear, nowMonth] = currentMonthKey().split("-");
+    const year = yearSelect.value || nowYear;
+    const month = monthSelect.value || nowMonth;
     try{
       await loadChartJs();
       const res = await fetch(`${WORKER_BASE}/${endpoint}?year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-      const years = Array.isArray(data.years) && data.years.length ? data.years : [String(now.getFullYear())];
+      const years = Array.isArray(data.years) && data.years.length ? data.years : [nowYear];
       if (!yearSelect.value){
         const yearOptions = years.map((y) => ({ value: y, html: `${y} 年` }));
         const selectedYear = years.includes(year) ? year : years[0];

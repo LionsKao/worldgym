@@ -59,7 +59,11 @@ function enhanceCustomSelect(root){
 // --- 月份計算（折線圖的橫軸固定是「近 CHART_MONTHS 個月」，沒紀錄的月份補 0）---
 const CHART_MONTHS = 12;
 
-function currentMonthKey(){ return new Date().toISOString().slice(0, 7); }
+// 台灣現在是哪個月（YYYY-MM）。用 Asia/Taipei 而不是 UTC（toISOString）：台灣每月 1 號 00:00–08:00 UTC 還是上個月，
+// 用 UTC 的話圖表視窗會少顯示當月，也跟 Worker 用台灣時間算的月份對不起來。
+function currentMonthKey(){
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei" }).format(new Date()).slice(0, 7);
+}
 
 function addMonths(monthStr, delta){
   const [y, m] = monthStr.split("-").map(Number);
