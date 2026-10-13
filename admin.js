@@ -485,7 +485,7 @@ async function rescrapeViaCloudflare(onLog){
 }
 
 // 刪除不在目前分店清單（branches-seed.js）裡的舊課表資料。只是單一次查詢+刪除，不像重抓要跑
-// 106 家分店那麼久，所以不用真的串流，這裡自己組幾行進度文字丟給 onLog，維持跟終端機一致的體驗。
+// 一百多家分店那麼久，所以不用真的串流，這裡自己組幾行進度文字丟給 onLog，維持跟終端機一致的體驗。
 async function cleanupStaleBranches(onLog){
   onLog("🔍 比對目前分店清單...");
   const res = await adminFetch("/cleanupStaleBranches", { method: "POST" });

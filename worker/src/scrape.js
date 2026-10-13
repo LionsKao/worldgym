@@ -11,7 +11,7 @@ const SCHEDULE_DAYS_AHEAD = 13;
 // 多存一天，資料就涵蓋到「下一次爬蟲跑完之前」，也能容忍漏跑一次爬蟲。
 // 多存的 day7 正常班不會被查詢讀到（近窗口只到 +6，遠窗口只看代課），所以不影響任何畫面。
 const NEAR_DAYS_AHEAD = 7;
-// 104 家分店依序（非平行）逐一請求，跟 group.aspx.cs 的爬蟲間隔對齊。
+// 分店依序（非平行）逐一請求，每間之間隔這麼久，對官網客氣一點。
 const BRANCH_REQUEST_DELAY_MS = 500;
 // D1 batch 一次太多語句容易超時，分批送出。
 const BATCH_CHUNK_SIZE = 50;
@@ -79,7 +79,7 @@ function normalizeRoomName(rawRoomName) {
   return name;
 }
 
-// Mirrors the transform rules from the legacy group.aspx.cs GetWorldGymData.
+// 把官網回傳的一堂課轉成 classes 表的一列；沒有課程名稱的回 null。
 // scrapedAt 由呼叫端傳入：同一間分店同一輪的所有列要共用同一個值（見 ingestBranchClasses），
 // 不帶就用現在時間（單獨呼叫這個函式時）。
 function transformRawClass(raw, branchSlug, branchName, scrapedAt = nowTaiwanIso()) {
@@ -200,8 +200,8 @@ async function ingestBranchClasses(db, branchSlug, branchName, rawClasses) {
 // 清掉「不在目前 BRANCHES 清單裡」的分店舊課表資料——處理分店關店、從 branches-seed.js
 // 移除之後留下的孤兒資料（因為 ingestBranchClasses 只會清「自己這間分店」比這一輪舊的資料，
 // 一旦分店整個從清單消失，就再也沒有人會去清它的舊資料）。
-// 不用「scrapedAt 太久沒更新」這種時間門檻來判斷，是因為爬蟲目前沒有自動排程，只能手動按重抓，
-// 太久沒人按的話，還在營業的分店也會被時間門檻誤判成該清了。直接比對清單最準，不管多久沒重抓都不會誤刪。
+// 不用「scrapedAt 太久沒更新」這種時間門檻來判斷，是因為爬蟲萬一連續幾輪都失敗（官網改版、網路問題），
+// 還在營業的分店也會被時間門檻誤判成該清了。直接比對清單最準，不管多久沒重抓成功都不會誤刪。
 async function cleanupStaleBranches(db) {
   const currentSlugs = new Set(BRANCHES.filter((b) => b.slug).map((b) => b.slug));
   if (currentSlugs.size === 0) return { deleted: 0, staleBranches: [] };
@@ -228,7 +228,7 @@ function sortByCountDesc(rows, key) {
     .map((r) => r[key]);
 }
 
-// 整輪爬蟲（不管是 Worker 自己跑還是 Firebase 分批 ingest）跑完後呼叫一次：對 classes 表
+// 整輪爬蟲（每日排程或後台手動重抓）跑完後呼叫一次：對 classes 表
 // GROUP BY 算出目前的課程/老師清單，寫進 meta_filter_options 快取，讓 /filterOptions
 // 只要讀一列資料就好，不用每次頁面載入都重新 GROUP BY 整張表。
 // 跟之前一樣的保護：只有真的算出資料才覆寫，全部分店都失敗、算出來是空的話保留舊快取。
@@ -249,7 +249,7 @@ async function finalizeFilterOptions(db) {
   return { classNames: classNames.length, teacherNames: teacherNames.length, skipped: false };
 }
 
-// 每次一定跑全部分店：104 家分店逐一發出 subrequest，「單次執行」就用掉 104 個，
+// 每次一定跑全部分店：每間分店一個 subrequest（目前 110 間），「單次執行」就用掉一百多個，
 // 需要 Workers Paid 方案（單次執行 subrequest 上限 1000）才跑得完。
 // 由每日排程（scheduled）跟手動的 /scrapeManual 呼叫。不再支援只重抓單一分店。
 // onProgress(text) 是選用的即時進度回報（給 /scrapeManual 串流給前端終端機用），跟 logger 是分開的兩條輸出。

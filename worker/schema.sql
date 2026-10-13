@@ -1,7 +1,6 @@
 -- worldgym-schedule D1 schema
--- Mirrors the old Firestore collections: classes, branches, meta/filterOptions.
--- SQL supports multiple IN clauses per query, so unlike Firestore we don't need
--- the combinatorial composite indexes that firestore.indexes.json had.
+-- 資料表：classes（課表）、branches（分店）、meta_filter_options（篩選選項快取）與各種打點/統計表。
+-- SQL 的 IN 子句可以同時下好幾個條件，所以不需要為每種篩選組合各建一個複合索引。
 
 DROP TABLE IF EXISTS classes;
 CREATE TABLE classes (

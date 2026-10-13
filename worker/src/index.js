@@ -410,7 +410,7 @@ async function handleVerifyAdminToken({ req, env, ctx, origin, ip }) {
 }
 
 // 手動測試整站爬蟲：回傳串流（NDJSON，每行一個 JSON 物件），讓 admin 頁面的終端機能即時顯示進度，
-// 不用等整輪 106 家分店都跑完才拿到結果。最後一行一定是 type:"result" 或 type:"error"。
+// 不用等整輪一百多家分店都跑完才拿到結果。最後一行一定是 type:"result" 或 type:"error"。
 function handleScrapeManual({ env, ctx, origin }) {
   const { readable, writable } = new TransformStream();
   const writer = writable.getWriter();
@@ -436,7 +436,6 @@ function handleScrapeManual({ env, ctx, origin }) {
 }
 
 // 「寫信給作者」表單：把留言轉發到 Teams 頻道 webhook，不落地存資料。
-// 原本是 Firebase Function sendMessageToAuthor，2026-08-12 搬過來合併成單一部署系統。
 async function handleSendMessageToAuthor({ req, env, origin }) {
   const body = await readJson(req);
   const content = String(body?.content || "").trim();
@@ -744,7 +743,7 @@ export default {
 
   async scheduled(event, env, ctx) {
     // 每天台灣時間 03:00、17:00（UTC 19:00、09:00）各自動重抓一次全部分店，見 wrangler.toml 的 cron 設定。
-    // 這支爬蟲對 104 家分店逐一發出 subrequest，「單次執行」就用掉 104 個，
+    // 這支爬蟲對每間分店（目前 110 間）逐一發出 subrequest，「單次執行」就用掉一百多個，
     // 需要 Workers Paid 方案（單次執行 subrequest 上限 1000）才跑得完；免費方案單次執行上限只有 50，會在跑到一半時失敗。
     if (event.cron === "0 19 * * *" || event.cron === "0 9 * * *") {
       ctx.waitUntil(runScrape(env.DB));

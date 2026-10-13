@@ -1,4 +1,4 @@
-// 課表查詢、分店/課程/老師篩選選項都改由 Cloudflare Worker + D1 提供，不再直接用 Firestore client SDK。
+// 課表查詢、分店/課程/老師篩選選項都由 Cloudflare Worker + D1 提供。
 const WORKER_BASE = "https://worldgym-api.lions2100.workers.dev";
 // 篩選後結果超過這個筆數就視為條件太寬鬆，不導到結果頁、只在查詢按鈕上提示使用者多加篩選。
 const RESULT_COUNT_WARN_LIMIT = 250;
@@ -1382,8 +1382,8 @@ async function queryClassesOnce(state){
   return res.json();
 }
 
-// 查課表：前端只送目前勾選的篩選條件，Firestore 查詢＋所有篩選＋去重都在後端
-// （functions/queryClasses.js）做完，這裡只拿最終要顯示的 rows 來渲染。
+// 查課表：前端只送目前勾選的篩選條件，D1 查詢＋所有篩選＋去重都在後端
+// （worker/src/queryClasses.js）做完，這裡只拿最終要顯示的 rows 來渲染。
 // token 過期的話清快取重來一次就好（只重試一次，避免萬一一直失敗就無限迴圈）；
 // withRetryTimeout 本身是「時間到就再打一次」不是「錯誤發生就馬上重試」，所以 token
 // 過期最壞情況要等到 giveUpAfterMs 那次才會浮上來，多花幾秒，但使用者完全不會看到失敗畫面。
