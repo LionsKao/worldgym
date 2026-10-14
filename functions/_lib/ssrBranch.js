@@ -6,7 +6,7 @@ import {
   RESULT_COUNT_WARN_LIMIT,
   IGNORED_PARAM_PATTERN,
 } from "./ssrConfig.js";
-import { branchUrlParam } from "./branchUrl.js";
+import { branchPageUrl } from "./branchUrl.js";
 import { BRANCH_BY_SLUG, SLUG_BY_CODE, SSR_SLUGS } from "./branches.js";
 import { withTimeout, cacheRequest, cacheGet, cachePut } from "./util.js";
 
@@ -17,7 +17,7 @@ function escapeHtml(value) {
 }
 
 // 只有「單一分店 + room=1」（追蹤類參數除外）才會注入，其餘網址回傳 null，由呼叫端原樣放行。
-// branch 接受短代碼或 slug，兩種寫法都會正規化成同一個目標（canonical 一律用短代碼）。
+// branch 接受短代碼或 slug，兩種寫法都會正規化成同一個目標（canonical 一律用 slug 版，見 branchUrl.js 的 branchPageUrl）。
 export function resolveSsrTarget(url) {
   const entries = [...url.searchParams].filter(([key]) => !IGNORED_PARAM_PATTERN.test(key));
   if (entries.length !== 2) return null;
@@ -97,7 +97,7 @@ function buildBranchMeta(branch) {
     ogTitle: `World Gym ${branch.name} 分店團體課表`,
     description: `World Gym ${branch.name} 分店（${branch.region}）團體教室每週課表：依星期列出上課時間、課程與老師，資料每日更新。`,
     // slug 版 canonical（見 branchUrl.js）；短代碼與 slug 兩種寫法的舊網址都會得到同一個 canonical。
-    canonical: `${SITE_ORIGIN}/?branch=${branchUrlParam(branch.slug, branch.code)}&room=1`,
+    canonical: branchPageUrl(branch.slug, branch.code),
   };
 }
 

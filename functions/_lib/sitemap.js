@@ -1,5 +1,5 @@
 import { SITE_ORIGIN } from "./ssrConfig.js";
-import { branchUrlParam } from "./branchUrl.js";
+import { branchPageUrl } from "./branchUrl.js";
 import { getBranchesWithSchedule } from "./scheduleBranches.js";
 import { cachedTextResponse } from "./util.js";
 
@@ -8,7 +8,7 @@ function renderSitemap(branches, homeLastmod) {
   const urls = [
     `  <url>\n    <loc>${SITE_ORIGIN}/</loc>\n    <lastmod>${homeLastmod}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>1.0</priority>\n  </url>`,
     ...branches.map(({ code, slug, lastmod }) =>
-      `  <url>\n    <loc>${SITE_ORIGIN}/?branch=${branchUrlParam(slug, code)}&amp;room=1</loc>\n    <lastmod>${lastmod}</lastmod>\n    <changefreq>daily</changefreq>\n    <priority>0.6</priority>\n  </url>`
+      `  <url>\n    <loc>${branchPageUrl(slug, code).replaceAll("&", "&amp;")}</loc>\n    <lastmod>${lastmod}</lastmod>\n    <changefreq>daily</changefreq>\n    <priority>0.6</priority>\n  </url>`
     ),
   ];
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join("\n")}\n</urlset>\n`;

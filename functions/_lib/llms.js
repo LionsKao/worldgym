@@ -1,5 +1,5 @@
 import { SITE_ORIGIN } from "./ssrConfig.js";
-import { branchUrlParam } from "./branchUrl.js";
+import { branchPageUrl } from "./branchUrl.js";
 import { getBranchesWithSchedule } from "./scheduleBranches.js";
 import { cachedTextResponse } from "./util.js";
 
@@ -13,7 +13,7 @@ function escapeLinkText(text) {
 function renderBranchSection(branches) {
   const lines = branches.map(
     ({ code, slug, name, region }) =>
-      `- [${escapeLinkText(`${name} 分店（${region}）團體課表`)}](${SITE_ORIGIN}/?branch=${branchUrlParam(slug, code)}&room=1)`
+      `- [${escapeLinkText(`${name} 分店（${region}）團體課表`)}](${branchPageUrl(slug, code)})`
   );
   return `\n## 分店課表\n\n${lines.join("\n")}\n`;
 }
