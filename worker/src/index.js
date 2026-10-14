@@ -49,6 +49,24 @@ function jsonCached(data, status, origin, maxAge) {
 }
 const PUBLIC_STATS_CACHE_SECONDS = 300;
 
+// 上面的 Cache-Control 只讓「同一個瀏覽器」省查詢；API 走 workers.dev，邊緣不會替 Worker 回應做共用快取，
+// 所以不同使用者每次打開通知頁，排行與趨勢（3 個排行 + 1 個趨勢，各自合併整個月的事件明細，合計約 13～17 萬列讀取）
+// 都是重新算一遍。這裡在 isolate 記憶體再快取一層（做法同 knownNamesCache）：同一個 isolate 內，
+// 相同的端點與年月在 TTL 內直接回上次算好的資料。代價是排行最多再晚 5 分鐘更新（加上瀏覽器那 5 分鐘）。
+// 只快取成功的結果（算失敗就丟出去、不留）；key 含使用者可控的年月，所以限制筆數、滿了先丟最舊的，避免被亂填撐大記憶體。
+const STATS_ISOLATE_TTL_MS = PUBLIC_STATS_CACHE_SECONDS * 1000;
+const STATS_ISOLATE_MAX_ENTRIES = 64;
+const statsIsolateCache = new Map(); // key -> { at, value }（Map 依插入順序，第一個就是最舊的）
+async function cachedStats(key, compute) {
+  const hit = statsIsolateCache.get(key);
+  if (hit && Date.now() - hit.at < STATS_ISOLATE_TTL_MS) return hit.value;
+  const value = await compute();
+  statsIsolateCache.delete(key); // 重新放到最後面，順序才代表「多久前算的」
+  if (statsIsolateCache.size >= STATS_ISOLATE_MAX_ENTRIES) statsIsolateCache.delete(statsIsolateCache.keys().next().value);
+  statsIsolateCache.set(key, { at: Date.now(), value });
+  return value;
+}
+
 // --- /queryClasses 防濫用：流量限制(KV) + 短效 HMAC token ---
 // 只是拉高濫用成本，不是真的能擋住所有非瀏覽器直接呼叫（見 README 相關討論），
 // 所以刻意選簡單、低成本的做法，不追求密碼學等級的嚴謹。
@@ -241,14 +259,14 @@ function rankingHandler({ rawTable, nameColumn, monthlyTable, itemsKey, limit })
     const year = url.searchParams.get("year") || nowTW.year;
     const month = (url.searchParams.get("month") || nowTW.month).padStart(2, "0");
     const tableArgs = { rawTable, nameColumn, monthlyTable };
-    const [years, rows] = await Promise.all([
-      availableYears(env.DB, tableArgs),
-      monthlyNameRanking(env.DB, { ...tableArgs, monthKey: `${year}-${month}`, limit }),
-    ]);
-    return jsonCached({
-      years,
-      [itemsKey]: rows.map((r) => ({ name: r.name, count: r.cnt })),
-    }, 200, origin, PUBLIC_STATS_CACHE_SECONDS);
+    const data = await cachedStats(`${itemsKey}:${year}-${month}`, async () => {
+      const [years, rows] = await Promise.all([
+        availableYears(env.DB, tableArgs),
+        monthlyNameRanking(env.DB, { ...tableArgs, monthKey: `${year}-${month}`, limit }),
+      ]);
+      return { years, [itemsKey]: rows.map((r) => ({ name: r.name, count: r.cnt })) };
+    });
+    return jsonCached(data, 200, origin, PUBLIC_STATS_CACHE_SECONDS);
   };
 }
 
@@ -610,7 +628,7 @@ const ROUTES = {
   // 不驗證 token（僅回傳每月聚合次數，不含個資）。
   "GET /publicSearchStats": {
     limit: 30,
-    handler: async ({ env, origin }) => jsonCached(await monthlySearchTrend(env.DB), 200, origin, PUBLIC_STATS_CACHE_SECONDS),
+    handler: async ({ env, origin }) => jsonCached(await cachedStats("searchTrend", () => monthlySearchTrend(env.DB)), 200, origin, PUBLIC_STATS_CACHE_SECONDS),
   },
 
   // index.html 的老師/課程/分店查詢排行（細節見 rankingHandler）。
