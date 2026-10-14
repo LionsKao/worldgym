@@ -761,12 +761,11 @@ function isSearchValid(){
   return hasTeacherSelected() || document.querySelectorAll('input[name="branch"]:checked').length > 0;
 }
 function updateSubmitState(){
-  const branchCount = document.querySelectorAll('input[name="branch"]:checked').length;
-  const dayCount = document.querySelectorAll('input[name="day"]:checked').length;
-  // 加到最愛的解鎖條件比查詢按鈕寬：分店/老師/星期任一即可，維持原本邏輯不變。
-  const favoriteValid = hasTeacherSelected() || branchCount > 0 || dayCount > 0;
-  document.getElementById("scheduleSubmitBtn").classList.toggle("gray-btn", !isSearchValid());
-  document.getElementById("addFavoriteBtn").disabled = !favoriteValid;
+  // 查詢鈕與「加到最愛」用同一個條件：要有分店或老師。只選星期（或只選時間、教室、課程）查出的課程
+  // 會太多、超過結果數量上限，所以兩個都不解鎖——星期格的 change 事件因此也不需要呼叫這個函式。
+  const valid = isSearchValid();
+  document.getElementById("scheduleSubmitBtn").classList.toggle("gray-btn", !valid);
+  document.getElementById("addFavoriteBtn").disabled = !valid;
 }
 const pillWarnTooltip = document.createElement("div");
 pillWarnTooltip.id = "pillWarnTooltip";
