@@ -186,7 +186,7 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 - 本機（localhost）載入時 Cloudflare Web Analytics beacon 會出現 CORS 錯誤，是因為 localhost 不是它登記的網域，跟 CSP 無關，可忽略。
 
 ### 後台登入
-密碼是 `MANUAL_SCRAPE_TOKEN`；登入成功換發 7 天效期、簽章的 session token（存 `localStorage`，用 `X-Admin-Token` header 帶），只有 `/verifyAdminToken` 收原始密碼，其餘後台端點只認 session token。**登入失敗鎖定**：同一 IP 連續輸錯 5 次鎖 15 分鐘（KV key `admin-fail:<IP>`，TTL 到期自動解除），鎖定期間連正確密碼也會被拒（回 423、畫面顯示「嘗試次數過多，已暫時鎖定」）；要排查可用 `wrangler kv key get "admin-fail:<IP>" --namespace-id <QUERY_RATE_LIMIT 的 id> --remote` 看計數，不要為了「測試登入」刻意輸錯。session 簽章金鑰見下面的 `ADMIN_SESSION_SECRET`。
+密碼是 `MANUAL_SCRAPE_TOKEN`；登入成功換發 7 天效期、簽章的 session token（存 `localStorage`，用 `X-Admin-Token` header 帶），只有 `/verifyAdminToken` 收原始密碼，其餘後台端點只認 session token。**登入失敗鎖定**：同一 IP 連續輸錯 5 次鎖 15 分鐘（KV key `admin-fail:<IP>`，TTL 到期自動解除），鎖定期間連正確密碼也會被拒（回 423、畫面顯示「嘗試次數過多，已暫時鎖定」）；要排查可用 `wrangler kv key get "admin-fail:<IP>" --namespace-id <QUERY_RATE_LIMIT 的 id> --remote` 看計數，不要為了「測試登入」刻意輸錯。session 簽章金鑰見下面的 `ADMIN_SESSION_SECRET`。`admin.html` 的登入框（`#adminLoginOverlay`）與登入頁的返回鈕在 HTML 裡預設 `hidden`，只有 `admin.js` 的 `initAuth()` 判斷需要登入才顯示——已登入的人開後台要等 `/verifyAdminToken` 回應，預設顯示的話會先閃一下登入框再消失。
 
 ## Secrets
 
