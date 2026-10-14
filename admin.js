@@ -55,7 +55,10 @@ function showAdminPage(){
 }
 
 // 登入成功（輸入密碼或沿用還有效的 session）：存下新的 session token、顯示後台、載入四個面板。
+// adminEntered 讓還在等回應的 initAuth() 知道使用者已經用手動輸入密碼進來了，不要再用遲到的結果蓋掉。
+let adminEntered = false;
 function enterAdmin(sessionToken){
+  adminEntered = true;
   setStoredToken(sessionToken);
   showAdminPage();
   loadAdStats();
@@ -66,13 +69,21 @@ function enterAdmin(sessionToken){
 let loginErrorTimer = null;
 
 function showLoginOverlay(){
+  // 已經顯示了就不要再動：等待太久先亮出登入框之後，遲到的驗證失敗結果會再呼叫一次，
+  // 這時使用者可能已經在輸入密碼，不能把他打的字清掉。
+  if (!loginOverlay.classList.contains("hidden")) return;
   adminPage.classList.add("hidden");
   adminBackBtnWrap.classList.add("hidden");
+  // 登入框預設是 hidden，.modal-overlay 的 visibility 有 .2s 轉場，從 hidden 轉出來的起點仍算 hidden，
+  // 馬上 focus() 會失敗（密碼欄沒聚焦）。這裡先關掉轉場讓它立刻可見，聚焦完再還原，
+  // 之後登入成功時的淡出效果照舊。
+  loginOverlay.style.transition = "none";
   loginOverlay.classList.remove("hidden");
   adminLoginBackBtnWrap.classList.remove("hidden");
   passwordInput.value = "";
   hideLoginError();
   passwordInput.focus();
+  requestAnimationFrame(() => { loginOverlay.style.transition = ""; });
 }
 
 function logoutAndLeave(){
@@ -127,9 +138,16 @@ adminBackBtn.addEventListener("click", logoutAndLeave);
 adminBackBtn.addEventListener("mouseenter", () => adminBackTooltip.classList.add("visible"));
 adminBackBtn.addEventListener("mouseleave", () => adminBackTooltip.classList.remove("visible"));
 
+// 已登入的人開後台要等 /verifyAdminToken 回應才知道該顯示後台還是登入框。登入框在 admin.html 預設是 hidden
+// （不然已登入的人會先看到它閃一下再消失），但驗證拖太久（網路慢或卡住）時不能讓人面對一片空白、
+// 也沒辦法輸入密碼，所以超過這個時間還沒回應就先亮出登入框；之後驗證成功仍會自動換成後台。
+const LOGIN_REVEAL_AFTER_MS = 3000;
 (async function initAuth(){
   const stored = getStoredToken();
+  const revealTimer = stored ? setTimeout(showLoginOverlay, LOGIN_REVEAL_AFTER_MS) : null;
   const result = stored && await verifyToken(stored).catch(() => null);
+  clearTimeout(revealTimer);
+  if (adminEntered) return; // 等待期間使用者已經手動輸入密碼登入了，不要用這個遲到的結果蓋掉（失敗時還會清掉剛存的 token）
   if (result?.sessionToken){
     enterAdmin(result.sessionToken); // 換到新的 session token，滑動延長 7 天效期
   } else {
