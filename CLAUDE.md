@@ -138,7 +138,7 @@ worker/
 | `favorite_events` / `favorite_monthly` / `favorite_client_seen` | 「我的最愛」建立/使用打點，用匿名 clientId 去重估算人數；`favorite_client_seen` 即時維護全時間去重人數 |
 | `query_access_log` | `/issueToken`、`/queryClasses` 的存取紀錄，每月清 90 天前的 |
 
-事件明細表（`*_events`）只保留當月，上個月由每月 cron 壓縮進 `*_monthly` 後刪除明細；所有報表查詢是「彙總表 UNION ALL 明細表」。細節見 README「分析報表明細轉月度彙總」與 `worker/src/analytics.js`。
+事件明細表（`*_events`）只保留當月，上個月由每月 cron 壓縮進 `*_monthly` 後刪除明細；所有報表查詢是「彙總表 UNION ALL 明細表」。**這些事件表的索引只留實際被查詢計畫用到的**：它們每次使用者查詢、點最愛、看廣告都會寫入，而每個索引都讓每筆寫入多寫一份、每月壓縮刪明細時也要連索引一起刪；所有查詢都是依月份 `substr(createdAt,1,7)` 篩選或分組，所以只需要建在 `substr` 運算式上的索引（`worker/migrations/020` 已在正式庫砍掉 14 個沒人用的，資料庫約 28.5MB → 24.2MB，23 個索引剩 9 個）。新增或改動會碰這些表的查詢時，先用 `EXPLAIN QUERY PLAN`（本機套 `schema.sql` 與正式庫的計畫要一致）確認用到哪個索引，真的需要才加，不要憑感覺多建。細節見 README「分析報表明細轉月度彙總」與 `worker/src/analytics.js`。
 
 **時間戳一律用台灣時間（`+08:00`），不是 UTC**：`createdAt`/`updatedAt`/`scrapedAt`/`ads.startAt`/`ads.endAt` 都是位移 8 小時再貼 `+08:00` 後綴的 ISO 字串，才能跟其他時間戳直接用字串比較/排序。一律用 `worker/src/util.js` 的 `nowTaiwanIso()`（要往前/往後推用 `taiwanIso(offsetMs)`，要台灣年月日時分用 `taiwanClock()` 再讀 `getUTC*()`，用 `Date.UTC(...)` 湊出來的台灣牆上時間轉字串用 `taiwanIsoOf()`，台灣今天的日期用 `todayIsoTaipei()`，台灣這個月／往前幾個月的 `YYYY-MM` 用 `taiwanMonthKey(n)`；前端的台灣今天日期用 `common.js` 的 `todayIso()`，`currentMonthKey()` 也是它切出來的，前後台都不要自己再算一份），不要在各檔案自己寫 `Date.now() + 8 * 3600 * 1000`，也不要混用 `new Date().toISOString()`（那是 UTC）。
 
