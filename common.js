@@ -75,10 +75,15 @@ function enhanceCustomSelect(root){
 // --- 月份計算（折線圖的橫軸固定是「近 CHART_MONTHS 個月」，沒紀錄的月份補 0）---
 const CHART_MONTHS = 12;
 
-// 台灣現在是哪個月（YYYY-MM）。用 Asia/Taipei 而不是 UTC（toISOString）：台灣每月 1 號 00:00–08:00 UTC 還是上個月，
-// 用 UTC 的話圖表視窗會少顯示當月，也跟 Worker 用台灣時間算的月份對不起來。
+// 台灣今天的日期（YYYY-MM-DD）。用 Asia/Taipei 而不是使用者裝置的本地時區或 UTC（toISOString）：
+// 跟後端 worker/src/util.js 的 todayIsoTaipei() 對齊，不然裝置時區不是台灣時，「今天」在前後端會算出不同的星期幾；
+// 台灣每月 1 號 00:00–08:00 UTC 還是上個月，用 UTC 的話圖表視窗會少顯示當月。前後台都用這一個，不要各自再算一份。
+function todayIso(){
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei" }).format(new Date());
+}
+// 台灣現在是哪個月（YYYY-MM），跟 Worker 用台灣時間算的月份對得上。
 function currentMonthKey(){
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei" }).format(new Date()).slice(0, 7);
+  return todayIso().slice(0, 7);
 }
 
 function addMonths(monthStr, delta){

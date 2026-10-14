@@ -508,11 +508,7 @@ function trackTeacherEventOncePerSession(name, teacherName){
 // 下一次 search_schedule 事件的觸發來源；送出後會重置回 "manual"。
 let searchTriggerSource = "manual";
 
-// 用 Asia/Taipei 而不是使用者裝置的本地時區，跟後端 queryClasses.js 的 todayIsoTaipei() 對齊，
-// 不然裝置時區不是台灣時，「今天」在前後端會算出不同的星期幾。
-function todayIso(){
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei" }).format(new Date());
-}
+// 台灣今天的日期 todayIso() 在 common.js（前後台共用）。
 function addDaysIso(iso, days){
   const d = new Date(iso + "T00:00:00");
   d.setDate(d.getDate() + days);
@@ -604,6 +600,18 @@ function sortByClickCount(items, key, getValue = (x) => x) {
   const counts = getClickCounts(key);
   return [...items].sort((a, b) => (counts[getValue(b)] || 0) - (counts[getValue(a)] || 0));
 }
+// 把 container 底下的 .pill 依點擊次數由多到少重排（常用的排前面）：搬動既有節點，不重新產生 DOM。
+// 每個 pill 只讀一次它的 input 值（排序時不再重複 querySelector；老師有一千多個 pill），順序沒變就不搬。
+function reorderPillsByClicks(container, key){
+  const counts = getClickCounts(key);
+  const pills = [...container.querySelectorAll(".pill")];
+  const ranked = pills
+    .map(pill => [pill, counts[pill.querySelector("input").value] || 0])
+    .sort((a, b) => b[1] - a[1])
+    .map(([pill]) => pill);
+  if (ranked.every((pill, i) => pill === pills[i])) return;
+  ranked.forEach(pill => container.appendChild(pill));
+}
 
 // 分店 pill、1/3/5km 距離按鈕、全選按鈕都已經寫死在 index.html 裡（不是用 JS 動態產生），
 // 這裡只負責讀出寫死的 data-* 屬性、把事件綁上去，並套用使用者的分區展開狀態跟分店點擊次數排序。
@@ -688,12 +696,7 @@ function initBranchGrid(){
   });
 
   // 分店在各分區內再依使用者點擊次數重排（常用分店排前面），改成搬動既有節點，不用重新產生 DOM。
-  const branchClicks = getClickCounts("wg_branch_clicks");
-  grid.querySelectorAll(".zone-group").forEach(group => {
-    [...group.querySelectorAll(".pill")]
-      .sort((a, b) => (branchClicks[b.querySelector("input").value] || 0) - (branchClicks[a.querySelector("input").value] || 0))
-      .forEach(pill => group.appendChild(pill));
-  });
+  grid.querySelectorAll(".zone-group").forEach(group => reorderPillsByClicks(group, "wg_branch_clicks"));
 }
 
 document.querySelectorAll(".section-btn").forEach(btn => {
@@ -1451,11 +1454,7 @@ function renderTeacherGrid(){
 // （這裡曾經每次都呼叫 renderTeacherGrid() 整個重建，Cloudflare Web Analytics 抓到 #backBtn 的
 // INP 卡在 250ms 左右、#mainFormSheet 也跟著有 CLS，兩個問題都是同一個重建動作造成的）。
 function reorderTeacherGrid(){
-  const grid = document.getElementById("teacherGrid");
-  const clicks = getClickCounts("wg_teacher_clicks");
-  [...grid.querySelectorAll(".pill")]
-    .sort((a, b) => (clicks[b.querySelector("input").value] || 0) - (clicks[a.querySelector("input").value] || 0))
-    .forEach(pill => grid.appendChild(pill));
+  reorderPillsByClicks(document.getElementById("teacherGrid"), "wg_teacher_clicks");
 }
 function renderScheduleResults(rows, onlyTeacher){
   const area = document.getElementById("resultArea");

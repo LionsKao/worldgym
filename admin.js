@@ -269,7 +269,7 @@ adChartPrevBtn.addEventListener("click", () => navigateAdChart("prev"));
 adChartNextBtn.addEventListener("click", () => navigateAdChart("next"));
 
 function isAdActive(ad){
-  const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+  const today = todayIso();
   return !!ad.enabled && ad.startAt.slice(0, 10) <= today && today <= ad.endAt.slice(0, 10);
 }
 
