@@ -30,22 +30,28 @@ function corsHeaders(origin) {
   return headers;
 }
 
-function json(data, status, origin) {
-  return new Response(JSON.stringify(data), {
+// jsonText 收「已經是 JSON 的字串」（例如資料庫裡本來就存成 JSON 的欄位），不用先 parse 再 stringify 一輪。
+function jsonText(text, status, origin) {
+  return new Response(text, {
     status,
     headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
   });
+}
+function json(data, status, origin) {
+  return jsonText(JSON.stringify(data), status, origin);
 }
 
 // 給公開、不含個資的統計端點用：讓瀏覽器在 maxAge 秒內重複請求直接吃本機快取，不用再打到 Worker/D1。
 // 注意這只是瀏覽器端快取：API 走 workers.dev 網域，Cloudflare 邊緣不會替 Worker 回應做共用快取，
 // 所以不同使用者之間不會互相省到查詢。回應的 CORS 標頭會隨 Origin 變，必須加 Vary: Origin，
 // 不然瀏覽器可能把某個來源的快取回應拿給另一個來源用。
-function jsonCached(data, status, origin, maxAge) {
-  const res = json(data, status, origin);
+function publicCacheable(res, maxAge) {
   res.headers.set("Cache-Control", `public, max-age=${maxAge}`);
   res.headers.set("Vary", "Origin");
   return res;
+}
+function jsonCached(data, status, origin, maxAge) {
+  return publicCacheable(json(data, status, origin), maxAge);
 }
 const PUBLIC_STATS_CACHE_SECONDS = 300;
 
@@ -285,21 +291,17 @@ async function handleTrackAdEvents({ req, env, origin }) {
   if (valid.length === 0) {
     return json({ ok: true, written: 0 }, 200, origin);
   }
-  // 一次查出這批事件裡出現過的 adId 誰是合法的，取代逐筆各查一次「SELECT 1 FROM ads」。
-  const adIds = [...new Set(valid.map((e) => e.adId))];
-  const placeholders = adIds.map(() => "?").join(",");
-  const { results } = await env.DB.prepare(`SELECT id FROM ads WHERE id IN (${placeholders})`)
-    .bind(...adIds)
-    .all();
-  const knownIds = new Set(results.map((r) => r.id));
+  // 每筆事件一句「廣告存在才寫入」的 INSERT ... SELECT，整批用一次 db.batch 送出：
+  // 不用先 SELECT 一次查哪些 adId 合法、再來寫入（少一次來回），不存在的 adId 照樣被靜默丟掉（changes 是 0）。
   const createdAt = nowTaiwanIso();
-  const stmts = valid
-    .filter((e) => knownIds.has(e.adId))
-    .map((e) =>
-      env.DB.prepare("INSERT INTO ad_events (adId, type, createdAt) VALUES (?, ?, ?)").bind(e.adId, e.type, createdAt)
-    );
-  if (stmts.length > 0) await env.DB.batch(stmts);
-  return json({ ok: true, written: stmts.length }, 200, origin);
+  const results = await env.DB.batch(
+    valid.map((e) =>
+      env.DB.prepare("INSERT INTO ad_events (adId, type, createdAt) SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM ads WHERE id = ?)")
+        .bind(e.adId, e.type, createdAt, e.adId)
+    )
+  );
+  const written = results.reduce((n, r) => n + (r.meta?.changes || 0), 0);
+  return json({ ok: true, written }, 200, origin);
 }
 
 // 老師/課程/分店查詢次數打點：使用者一次查詢動作常常同時勾了多個老師/課程/分店，
@@ -674,9 +676,11 @@ const ROUTES = {
       if (!row) return json({ classNames: [], teacherNames: [] }, 200, origin);
       // 這份清單一天只在爬蟲跑完時更新兩次，但每次載入頁面都會讀，加短時間的瀏覽器快取。
       // 上面「還沒有資料」的空回應刻意不快取，免得把暫時狀態卡在使用者瀏覽器裡。
-      return jsonCached(
-        { classNames: JSON.parse(row.classNames), teacherNames: JSON.parse(row.teacherNames) },
-        200, origin, PUBLIC_STATS_CACHE_SECONDS
+      // 兩欄在資料庫裡本來就是 JSON 字串（爬蟲存進去的），直接拼進回應，不用先 JSON.parse 再 JSON.stringify
+      // （約 40KB，每次載入頁面的關鍵路徑上都要多做一輪）。
+      return publicCacheable(
+        jsonText(`{"classNames":${row.classNames},"teacherNames":${row.teacherNames}}`, 200, origin),
+        PUBLIC_STATS_CACHE_SECONDS
       );
     },
   },
