@@ -1519,10 +1519,9 @@ document.getElementById("resultArea").addEventListener("click", async (e) => {
   applyFilterState({ teacher: [teacherName] });
   trackTeacherEventOncePerSession("filter_by_teacher", teacherName);
   incrementClickCount("wg_teacher_clicks", teacherName);
-  saveSelection("wg_selected_day", ["day"]);
-  saveSelection("wg_selected_branch", ["branch"]);
-  saveSelection("wg_selected_course", ["course"]);
-  saveSelection("wg_selected_teacher", ["teacher"]);
+  // applyFilterState 會把「所有」篩選組重設成只剩這位老師，所以每一組都要存，不然沒存的組（時間、教室）
+  // 重新整理後會從舊的儲存值還原，跟畫面當時的篩選對不上。
+  FILTER_GROUPS.forEach(name => saveSelection(`wg_selected_${name}`, [name]));
   updateResetButtonState();
   searchTriggerSource = "teacher_link";
   if (!isSearchValid()) return;
