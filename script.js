@@ -21,9 +21,28 @@ function fireAndForgetPost(path, body){
   postJson(path, body).catch(() => {});
 }
 // 讀 localStorage（useSession=true 則是 sessionStorage）裡的 JSON：沒有、格式壞掉、被瀏覽器擋掉都回 fallback。
+// 讀寫 localStorage／sessionStorage 一律走下面這幾個函式：儲存空間滿了、或被瀏覽器擋住（無痕、關閉 cookie）時，
+// 讀寫甚至連取得 localStorage 本身都可能丟例外。這些只是「記住使用者的選擇」的便利功能，失敗了不能讓查詢、渲染跟著失敗
+// （以前寫入丟例外，會被 runSearchAndShowResults 的 catch 當成「網路連線異常」，成功的查詢結果也出不來）。
+// 寫入失敗只留一則 console 警告，回傳 false。
+function readStored(key, useSession = false){
+  try { return (useSession ? sessionStorage : localStorage).getItem(key); }
+  catch(e){ return null; }
+}
+function writeStored(key, value, useSession = false){
+  try { (useSession ? sessionStorage : localStorage).setItem(key, value); return true; }
+  catch(e){ console.warn("寫入儲存空間失敗", key, e); return false; }
+}
+function removeStored(key){
+  try { localStorage.removeItem(key); }
+  catch(e){ /* 取不到儲存空間就當沒有東西可清 */ }
+}
 function readStoredJson(key, fallback, useSession = false){
-  try { return JSON.parse((useSession ? sessionStorage : localStorage).getItem(key)) || fallback; }
+  try { return JSON.parse(readStored(key, useSession)) || fallback; }
   catch(e){ return fallback; }
+}
+function writeStoredJson(key, value, useSession = false){
+  return writeStored(key, JSON.stringify(value), useSession);
 }
 
 // 課表通知（Web Push）：VAPID public key，跟 worker/.dev.vars 的 VAPID_PUBLIC_KEY 是同一組 key pair。
@@ -32,7 +51,7 @@ const VAPID_PUBLIC_KEY = "BCcFfPhUxaUYFMtosUu21nd24j5El9YcuYNndb3Ll0_rjC-SwSnT4Y
 // 網址帶 ?pwa=1 等同貼 localStorage.setItem("wg_debug_force_pwa","1")，方便直接分享測試連結，不用開 Console。
 // 寫進 localStorage 才不會在查詢送出後被 buildShareUrl 換掉網址（只保留篩選參數）就失效。
 if (new URLSearchParams(location.search).get("pwa") === "1"){
-  localStorage.setItem("wg_debug_force_pwa", "1");
+  writeStored("wg_debug_force_pwa", "1");
 }
 
 // 從舊網域導過來的訪客(Cloudflare 301 redirect 帶 ?utm_source=wgcourse_old 或 ?utm_source=old_index)，
@@ -123,7 +142,7 @@ function makeSearchCountFilter(dedupeKey){
       map[value] = now;
       loggable.push(value);
     }
-    localStorage.setItem(dedupeKey, JSON.stringify(map));
+    writeStoredJson(dedupeKey, map);
     return loggable;
   };
 }
@@ -150,10 +169,10 @@ function logSearchEvent(resultCount){
 // 不會拿去對應任何個人資料，純粹統計用。
 const CLIENT_ID_KEY = "wg_client_id";
 function getClientId(){
-  let id = localStorage.getItem(CLIENT_ID_KEY);
+  let id = readStored(CLIENT_ID_KEY);
   if (!id){
     id = crypto.randomUUID();
-    localStorage.setItem(CLIENT_ID_KEY, id);
+    writeStored(CLIENT_ID_KEY, id);
   }
   return id;
 }
@@ -224,7 +243,7 @@ document.querySelector(".ad-banner")?.addEventListener("click", () => {
 // 鈴鐺只在「已安裝成 standalone PWA」才顯示，不要求通知權限已授權（未授權按下去會先跳說明 modal）。
 // 除錯用旁路：正式環境使用者不會知道這個 localStorage key，只是方便開發時在一般分頁看到鈴鐺。
 function isPWAInstalled(){
-  if (localStorage.getItem("wg_debug_force_pwa") === "1") return true;
+  if (readStored("wg_debug_force_pwa") === "1") return true;
   return isStandaloneDisplay();
 }
 
@@ -498,7 +517,7 @@ function trackEventOncePerSession(name, dedupValue, params){
   const tracked = new Set(readStoredJson(SESSION_TRACKED_EVENTS_KEY, [], true));
   if (tracked.has(key)) return;
   tracked.add(key);
-  sessionStorage.setItem(SESSION_TRACKED_EVENTS_KEY, JSON.stringify([...tracked]));
+  writeStoredJson(SESSION_TRACKED_EVENTS_KEY, [...tracked], true);
   trackEvent(name, params);
 }
 function trackTeacherEventOncePerSession(name, teacherName){
@@ -581,11 +600,7 @@ function getZoneState(zoneName, isTaipei) {
 function saveZoneState(zoneName, isExpanded) {
   const states = readStoredJson("wg_zone_states", {});
   states[zoneName] = isExpanded;
-  try {
-    localStorage.setItem("wg_zone_states", JSON.stringify(states));
-  } catch(e) {
-    console.warn("寫入 localStorage 失敗", e);
-  }
+  writeStoredJson("wg_zone_states", states);
 }
 
 function getClickCounts(key) {
@@ -594,7 +609,7 @@ function getClickCounts(key) {
 function incrementClickCount(key, value) {
   const counts = getClickCounts(key);
   counts[value] = (counts[value] || 0) + 1;
-  localStorage.setItem(key, JSON.stringify(counts));
+  writeStoredJson(key, counts);
 }
 function sortByClickCount(items, key, getValue = (x) => x) {
   const counts = getClickCounts(key);
@@ -877,7 +892,7 @@ function saveSelection(key, names){
   names.forEach(name => {
     state[name] = checkedValues(name);
   });
-  localStorage.setItem(key, JSON.stringify(state));
+  writeStoredJson(key, state);
 }
 function applyStateToInputs(state, names){
   names.forEach(name => {
@@ -963,7 +978,7 @@ document.getElementById("resetFiltersBtn").addEventListener("click", (e) => {
   FILTER_GROUPS.forEach(name => {
     document.querySelectorAll(`input[name="${name}"]`).forEach(input => { input.checked = false; });
   });
-  SELECTION_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));
+  SELECTION_STORAGE_KEYS.forEach(removeStored);
   document.querySelectorAll("#filterForm .section-search").forEach(input => {
     input.value = "";
     input.dispatchEvent(new Event("input"));
@@ -981,7 +996,7 @@ function getFavorites(){
   return readStoredJson(FAVORITES_KEY, []);
 }
 function saveFavorites(favs){
-  localStorage.setItem(FAVORITES_KEY, JSON.stringify(favs));
+  writeStoredJson(FAVORITES_KEY, favs);
 }
 function currentFilterState(){
   const state = {};
@@ -1050,7 +1065,7 @@ function renderFavorites(){
     btn.innerHTML = `<i class="fa-solid fa-${escapeHtml(fav.icon || "heart")}"></i>${escapeHtml(fav.label)}`;
     btn.addEventListener("click", () => {
       applyFilterState(fav.state);
-      SELECTION_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));
+      SELECTION_STORAGE_KEYS.forEach(removeStored);
       FILTER_GROUPS.forEach(name => saveSelection(`wg_selected_${name}`, [name]));
       updateResetButtonState();
       trackEventOncePerSession("apply_favorite", fav.label, { favorite_label: fav.label });
@@ -1730,7 +1745,7 @@ async function init(){
   restoreFilterGroups(urlState, ["time"]);
 
   if (urlState) applyStateToInputs(urlState, ["room"]);
-  else if (localStorage.getItem("wg_selected_room")) applySavedSelection("wg_selected_room", ["room"]);
+  else if (readStored("wg_selected_room")) applySavedSelection("wg_selected_room", ["room"]);
   else {
     const defaultRoomInput = document.querySelector('input[name="room"][value="團體教室"]');
     if (defaultRoomInput) defaultRoomInput.checked = true;
