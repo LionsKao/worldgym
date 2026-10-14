@@ -5,7 +5,8 @@
     "dev": "wrangler dev --remote",
     "deploy": "wrangler deploy",
     "tail": "wrangler tail",
-    "check:branches": "node --no-warnings scripts/check-branches.mjs"
+    "check:branches": "node --no-warnings scripts/check-branches.mjs",
+    "check:versions": "node --no-warnings scripts/check-versions.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.149.0"

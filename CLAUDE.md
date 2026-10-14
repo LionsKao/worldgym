@@ -69,7 +69,13 @@ cd worker && npm run check:branches -- --base=origin/main
 
 **本站只收「不用付費的團體課」，官網有、但沒收進 seed 的分店都是刻意的**（Express 店，有的另外只有 Studio X 付費課），不是漏掉。為了讓每月 2 號的分店掃描只通知「真正新出現」的網址，這些不收的網址記在 `worker/src/branches-excluded.js` 的 `EXCLUDED_BRANCHES`（slug → 理由；2026-10-13 逐一查證並經使用者確認：36 間 Express ＋ 1 個別名網址 `caotun`，它跟已收錄的 `nantou-caotun` 是官網同一間草屯店的兩個網址）。Express 不會有免費團課，所以不收的網址不需要定期重新檢查。收到 Teams「疑似新分店」通知時：有不用付費的團課 → 照上面流程加進 seed（`BRANCH_SLUG_ORDER`、`index.html` pill 一起，只能往後附加）；不收 → 加進 `EXCLUDED_BRANCHES` 並寫理由。同一個 slug 不能同時在 seed 與 `EXCLUDED_BRANCHES`（`check:branches` 會擋）。另有 `EXPECTED_MISSING_FROM_SITEMAP`：已收進 seed、但官網 sitemap 還沒有的預售分店（目前是桃園藝文 `taoyuan-yiwen`），掃描不把它當「疑似下架」；官網建了分店頁、有課表之後爬蟲會自動抓進來，那時可以順手刪掉這一項。已收進 seed 但官網分店頁還沒有任何課的（目前是苗栗竹南 `miaoli-zhunan`）不需要登記——它在 sitemap 裡，掃描本來就不會報。
 
-There is no test suite and no lint/build command in this repo（只有上面這支檢查腳本）。
+靜態資源版號檢查（**改了 CSS／JS／icon 之後、commit 或 push 之前一定要跑**，見「靜態資源快取」）：
+```bash
+cd worker && npm run check:versions -- --base=origin/main
+```
+CSS／JS／icon 快取 30 天，全靠 `?v=` 版號換新，版號是人工維護的。這支腳本只讀檔，檢查：每個引用本站資源的地方（三個 html、`manifest.json`、`sw.js` 的通知圖示、`script.js` 載入 Chart.js 的網址）都帶 `?v=` 且檔案存在、同一個檔案各處版號相同（例如 `style.css` 三頁要一樣）；**加上 `--base=<git ref>` 才會抓「檔案內容改了、版號沒加」**——這是最容易漏、一漏使用者最久一個月看到舊檔的錯誤。有錯誤 exit code 為 1。
+
+There is no test suite and no lint/build command in this repo（只有上面這兩支檢查腳本）。
 
 ### 部署注意
 `hosting/wrangler.jsonc` 是另一套 Workers Assets 設定，`name: "worldgym-web"`，曾經對應過一個叫 `worldgym-web.lions2100.workers.dev` 的 Worker，但那個 Worker 已刪除——它跟 `worldgym.pages.dev` 是互相獨立、不互相依賴的兩個部署目標，且沒有 `functions/_middleware.js` 的台灣 IP 限制。不要再用 `npx wrangler deploy` 部署到它。
@@ -109,6 +115,7 @@ worker/
   src/branches-seed.js              分店清單固定資料
   src/branches-excluded.js          月度掃描用：官網有、但刻意不收的分店（EXCLUDED_BRANCHES，附理由）＋已收進 seed、官網 sitemap 還沒有的預售分店（EXPECTED_MISSING_FROM_SITEMAP）
   scripts/check-branches.mjs        分店清單一致性檢查（npm run check:branches，見 Commands）
+  scripts/check-versions.mjs        靜態資源版號檢查（npm run check:versions，見 Commands 與「靜態資源快取」）
   schema.sql                        D1 完整 schema（重建資料庫用，會 DROP 所有表）
   migrations/                       針對既有正式資料庫的單張 table migration
 ```
@@ -182,6 +189,7 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 - `script.js`（只有 `index.html`）、`admin.js`（只有 `admin.html`）、`common.js`（兩頁都引用，都要排在自己的 script 之前，改了要兩個檔案裡的 `common.js?v=` 一起更新）。
 - `ga-init.js`、`css-async.js`、`vendor/chart.umd.min.js`（`admin.html`，以及 `script.js` 的 `loadChartJs()`）：目前 `?v=1`，改了這些檔案就把 1 往上加。
 - `icons/*`：`index.html`（`og:image`、`twitter:image`、`apple-touch-icon`、QR code）、`manifest.json`、`sw.js`（通知圖示）都帶 `?v=1`，換圖就一起加。
+- 改完跑 `cd worker && npm run check:versions -- --base=origin/main`，它會抓「引用沒帶版號、各處版號不一致、內容改了版號沒加」。
 - 例外：`sw.js` 不長快取（Service Worker 本身要能隨時更新）；`favicon.ico` 是瀏覽器自己隱含請求的，沒辦法帶版號（換 favicon 最久一個月才會更新）；HTML、`manifest.json` 沒設，每次都會向伺服器確認。Font Awesome 圖示直接吃 cdnjs 的完整套件，`fa-` class 可以照官方圖示庫直接用。
 
 ### 安全標頭與 CSP（`_headers` 的 `/*`）

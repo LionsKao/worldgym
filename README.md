@@ -48,6 +48,7 @@
     ├── schema.sql                       #   D1 完整 schema（重建資料庫用，會 DROP 所有表）
     ├── migrations/                      #   針對既有正式資料庫的單張 table migration
     ├── scripts/check-branches.mjs       #   分店清單一致性檢查（npm run check:branches）
+    ├── scripts/check-versions.mjs       #   靜態資源 ?v= 版號檢查（npm run check:versions）
     └── src/
         ├── index.js                     #   路由表 ROUTES（限流、後台驗證統一處理）、CORS、入口、cron scheduled()
         ├── queryClasses.js              #   課表查詢邏輯
@@ -216,6 +217,8 @@ Pages（`functions/_middleware.js`）與 Worker 都只放行台灣 IP（拿不�
 ## ⚡ 靜態資源快取
 
 CSS、JS、icon（`style.css`、`script.js`、`common.js`、`admin.js`、`ga-init.js`、`css-async.js`、`vendor/`、`icons/`、`favicon.ico`）一律走 `_headers` 快取 30 天，搭配引用處的 `?v=` 版號：**檔案內容改了，就要把引用它的地方（`index.html`／`admin.html`／`404.html`、`manifest.json`、`sw.js`）的版號加一**，否則使用者最久一個月看到舊的。`style.css` 三個頁面要用同一個版號；`common.js` 同時被兩個頁面引用，兩邊的版號要一起改。`sw.js` 不長快取（Service Worker 要能隨時更新），`favicon.ico` 是瀏覽器自己請求的、沒辦法帶版號。
+
+版號是人工維護的，改完 CSS／JS／icon 請跑檢查（只讀檔）：`cd worker && npm run check:versions -- --base=origin/main`，會抓「引用沒帶版號、同一個檔案各處版號不一致、檔案內容改了版號沒加」。
 
 圖示從 cdnjs 載入完整的 Font Awesome 套件，`<link>` 帶 `integrity`（SRI）。**升級版本時要同步更新 hash**，否則瀏覽器會因為內容與簽章對不上而整份擋掉、圖示全部消失：下載新版 `all.min.css` 後用 `openssl dgst -sha384 -binary all.min.css | openssl base64 -A` 算新的。
 
