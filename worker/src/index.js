@@ -536,6 +536,11 @@ const ROUTES = {
       if (type !== "impression" && type !== "click") {
         return json({ error: "invalid type" }, 400, origin);
       }
+      // ads.id 是字串；沒帶或型別不對的 adId 直接丟進 D1 的 bind 會讓它丟例外、變成 500，這裡先擋掉回 400
+      // （跟批次端點 /trackAdEvents 的檢查一致）。
+      if (typeof adId !== "string" || !adId) {
+        return json({ error: "invalid adId" }, 400, origin);
+      }
       const ad = await env.DB.prepare("SELECT 1 FROM ads WHERE id = ?").bind(adId).first();
       if (!ad) {
         return json({ error: "unknown adId" }, 400, origin);
