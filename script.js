@@ -725,6 +725,18 @@ document.querySelectorAll(".section-btn").forEach(btn => {
   });
 });
 
+// 每個 pill 的 label 小寫文字只算一次：老師有一千多個 pill，打字時每個按鍵（輸入法組字時更密集）都要比對一遍，
+// 以前每次都重新 querySelector("label")、讀 textContent、轉小寫。label 文字在 pill 建立後不會變，
+// pill 重新產生就是新節點，WeakMap 的快取跟著換、舊的自動回收。
+const pillLabelCache = new WeakMap();
+function pillLabelText(pill){
+  let text = pillLabelCache.get(pill);
+  if (text === undefined){
+    text = pill.querySelector("label").textContent.toLowerCase();
+    pillLabelCache.set(pill, text);
+  }
+  return text;
+}
 document.querySelectorAll(".section-search").forEach(input => {
   if (!input.dataset.searchFor) return;
   const clearBtn = input.closest(".search-wrap")?.querySelector(".search-clear");
@@ -733,8 +745,7 @@ document.querySelectorAll(".section-search").forEach(input => {
     const text = input.value.trim().toLowerCase();
     clearBtn?.classList.toggle("visible", input.value !== "");
     grid.querySelectorAll(".pill").forEach(pill => {
-      const label = pill.querySelector("label").textContent.toLowerCase();
-      pill.classList.toggle("hidden", text !== "" && !label.includes(text));
+      pill.classList.toggle("hidden", text !== "" && !pillLabelText(pill).includes(text));
     });
     const wrapId = input.dataset.collapsible;
     if (!wrapId) return;
