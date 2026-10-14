@@ -1,4 +1,4 @@
-import { taiwanClock } from "./util.js";
+import { taiwanMonthKey } from "./util.js";
 
 // 分析報表用的「明細 + 月度彙總」合併查詢，以及每月把舊明細滾動壓縮成彙總、刪除明細的排程邏輯。
 //
@@ -17,17 +17,6 @@ import { taiwanClock } from "./util.js";
 // 只留當月，上個月一結束就立刻彙總：寫入一律用伺服器收到請求當下的時間戳（nowTaiwanIso()），
 // 不是前端帶時間過來，不會有「上個月的動作，遲到才寫進資料庫」這種跨月寫入，不需要留緩衝月份。
 const RAW_RETENTION_MONTHS = 1;
-
-function monthKeyOf(date) {
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
-}
-
-// 台灣「現在」往前推 n 個月的月份字串（YYYY-MM）。
-function taiwanMonthOffset(n) {
-  const now = taiwanClock();
-  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - n, 1));
-  return monthKeyOf(d);
-}
 
 // --- 讀取端：有「名稱」維度的排行榜表共用（teacher/course/branch）---
 async function monthlyNameRanking(db, { rawTable, nameColumn, monthlyTable, monthKey, limit }) {
@@ -50,7 +39,7 @@ async function availableYears(db, { monthlyTable }) {
     `SELECT DISTINCT substr(month, 1, 4) AS year FROM ${monthlyTable}`
   ).all();
   const years = new Set(results.map((r) => r.year));
-  years.add(taiwanMonthOffset(0).slice(0, 4));
+  years.add(taiwanMonthKey().slice(0, 4));
   return [...years].sort().reverse();
 }
 
@@ -179,7 +168,7 @@ async function reminderStatsCombined(db) {
 // 不用人工介入。每個月份的「彙總 INSERT」+「明細 DELETE」包在同一個 db.batch() 裡原子執行，
 // 避免任何時間點的讀取查詢同時看到彙總跟明細都有這個月的資料而重複計數。
 async function rollupAnalyticsEvents(db) {
-  const cutoff = taiwanMonthOffset(RAW_RETENTION_MONTHS - 1); // 比這個月份舊的才處理
+  const cutoff = taiwanMonthKey(RAW_RETENTION_MONTHS - 1); // 比這個月份舊的才處理
   const summary = {};
 
   // 明細表裡所有比保留窗口舊的月份（YYYY-MM）。

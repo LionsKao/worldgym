@@ -6,7 +6,7 @@ import { monthlyNameRanking, availableYears, monthlySearchTrend, favoriteStatsCo
 import { scanForNewBranches } from "./branchScan.js";
 import BRANCHES from "./branches-seed.js";
 import { isRequestAllowed } from "./crawlers.js";
-import { nowTaiwanIso, taiwanClock, taiwanIso, postTeamsCard } from "./util.js";
+import { nowTaiwanIso, taiwanMonthKey, taiwanIso, postTeamsCard } from "./util.js";
 
 // 網站是跨網域被呼叫，所以要自己開白名單。
 // 之後如果掛了自訂網域，把新網域加進這個陣列即可。
@@ -20,8 +20,8 @@ const ALLOWED_ORIGINS = [
 // 回傳台灣「現在」的年/月，用來當作統計報表沒帶 year/month 參數時的預設值，
 // 避免用 UTC 現在時間判斷「這個月」在台灣午夜前後 8 小時內會跟資料庫實際存的月份對不起來。
 function currentTaiwanYearMonth() {
-  const d = taiwanClock();
-  return { year: String(d.getUTCFullYear()), month: String(d.getUTCMonth() + 1).padStart(2, "0") };
+  const [year, month] = taiwanMonthKey().split("-");
+  return { year, month };
 }
 
 function corsHeaders(origin) {
@@ -719,7 +719,10 @@ export default {
     const url = new URL(req.url);
 
     if (req.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: corsHeaders(origin) });
+      // Max-Age 讓瀏覽器把 preflight 結果快取一陣子（沒帶的話 Chrome/Firefox 只快取 5 秒），
+      // 不然每個跨網域 JSON POST（查詢、打點）都要先多打一次 OPTIONS。故意只設 10 分鐘：
+      // 之後如果改了 Allow-Headers／ALLOWED_ORIGINS，舊 preflight 最多撐 10 分鐘就會自己過期。
+      return new Response(null, { status: 204, headers: { ...corsHeaders(origin), "Access-Control-Max-Age": "600" } });
     }
 
     try {

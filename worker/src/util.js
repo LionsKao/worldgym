@@ -15,7 +15,12 @@ export function taiwanClock(offsetMs = 0) {
 // 這樣才能跟其他時間戳直接用字串比較/排序。不用 Intl.DateTimeFormat 是因為那個格式化起來反而更囉唆。
 // offsetMs 可正可負，例如 taiwanIso(-90 * 86400000) 是 90 天前的台灣時間。
 export function taiwanIso(offsetMs = 0) {
-  return taiwanClock(offsetMs).toISOString().replace("Z", "+08:00");
+  return taiwanIsoOf(taiwanClock(offsetMs));
+}
+// 把「台灣牆上時鐘」（Date 或毫秒數，讀 getUTC*() 就是台灣的年月日時分，例如 taiwanClock() 的結果，
+// 或是用 Date.UTC(年, 月, 日, 時, 分) 湊出來的上課時間）轉成 D1 用的台灣時間字串。
+export function taiwanIsoOf(wallClock) {
+  return new Date(wallClock).toISOString().replace("Z", "+08:00");
 }
 export function nowTaiwanIso() {
   return taiwanIso();
@@ -34,6 +39,14 @@ export function addDaysIso(iso, days) {
 
 export function pad2(n) {
   return String(n).padStart(2, "0");
+}
+
+// 台灣「現在」往前推 monthsAgo 個月的月份字串（YYYY-MM），0 就是這個月。
+// 報表沒帶 year/month 時的預設值、每月壓縮的切分點都用這個，不要各處自己算。
+export function taiwanMonthKey(monthsAgo = 0) {
+  const now = taiwanClock();
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - monthsAgo, 1));
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}`;
 }
 
 // Workers 的 Web Crypto 沒有 MD5，這裡只是要一組穩定、大致不重複的短字串接在 id 後面做區隔，
