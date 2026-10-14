@@ -18,6 +18,12 @@ import { taiwanMonthKey } from "./util.js";
 // 不是前端帶時間過來，不會有「上個月的動作，遲到才寫進資料庫」這種跨月寫入，不需要留緩衝月份。
 const RAW_RETENTION_MONTHS = 1;
 
+// 把「每個月一列」的查詢結果加總成累積次數。後台的各個統計面板同時要「每月」跟「累積」兩種數字，
+// 累積的就是每月加總，用這個算，不要再另外對事件表做一次全表掃描。
+function sumCounts(rows) {
+  return rows.reduce((total, row) => total + (row.cnt || 0), 0);
+}
+
 // --- 讀取端：有「名稱」維度的排行榜表共用（teacher/course/branch）---
 async function monthlyNameRanking(db, { rawTable, nameColumn, monthlyTable, monthKey, limit }) {
   const { results } = await db.prepare(`
@@ -64,7 +70,7 @@ async function monthlySearchTrend(db) {
 // 'add' 的每月人數在彙總當下就把「去重」算好凍結；全時間的去重人數改看 favorite_client_seen
 // （即時維護，不受這裡的彙總/刪除影響），才能讓「累積建立人數」這個總數字永遠準確。
 async function favoriteStatsCombined(db) {
-  const [{ results: adderRows }, { results: applyRows }, totalAdderRow, totalApplyRow] = await Promise.all([
+  const [{ results: adderRows }, { results: applyRows }, totalAdderRow] = await Promise.all([
     db.prepare(`
       SELECT month, SUM(cnt) AS cnt FROM (
         SELECT month, cnt FROM favorite_monthly WHERE type = 'add'
@@ -80,13 +86,6 @@ async function favoriteStatsCombined(db) {
       ) GROUP BY month
     `).all(),
     db.prepare("SELECT COUNT(*) AS cnt FROM favorite_client_seen").first(),
-    db.prepare(`
-      SELECT SUM(cnt) AS cnt FROM (
-        SELECT cnt FROM favorite_monthly WHERE type = 'apply'
-        UNION ALL
-        SELECT COUNT(*) AS cnt FROM favorite_events WHERE type = 'apply'
-      )
-    `).first(),
   ]);
   const monthlyAdders = {}, monthlyApplies = {};
   for (const row of adderRows) monthlyAdders[row.month] = row.cnt;
@@ -94,23 +93,18 @@ async function favoriteStatsCombined(db) {
   return {
     monthlyAdders, monthlyApplies,
     totalAdders: totalAdderRow?.cnt || 0,
-    totalApplies: totalApplyRow?.cnt || 0,
+    // 累積使用次數就是每個月的次數加總，不用再另外掃一次 favorite_events。
+    // （累積「人數」不能這樣算：每個月各自去重，跨月加總會把同一個人算好幾次，所以仍看 favorite_client_seen。）
+    totalApplies: sumCounts(applyRows),
   };
 }
 
 // --- 廣告成效（ad_events / ad_monthly）---
 async function adStatsCombined(db) {
-  const [{ results: ads }, { results: totals }, { results: monthly }] = await Promise.all([
+  const [{ results: ads }, { results: monthly }] = await Promise.all([
     db.prepare(
       "SELECT id, text, url, startAt, endAt, enabled, sortOrder, advertiser FROM ads ORDER BY sortOrder"
     ).all(),
-    db.prepare(`
-      SELECT adId, type, SUM(cnt) AS cnt FROM (
-        SELECT adId, type, cnt FROM ad_monthly
-        UNION ALL
-        SELECT adId, type, COUNT(*) AS cnt FROM ad_events GROUP BY adId, type
-      ) GROUP BY adId, type
-    `).all(),
     db.prepare(`
       SELECT adId, month, type, SUM(cnt) AS cnt FROM (
         SELECT adId, month, type, cnt FROM ad_monthly
@@ -119,16 +113,16 @@ async function adStatsCombined(db) {
       ) GROUP BY adId, month, type
     `).all(),
   ]);
+  // 每支廣告的累積曝光／點擊就是各月加總，不用再另外掃一次 ad_events 算「全時間」的總數。
   const totalsByAd = {};
-  for (const row of totals) {
-    const bucket = (totalsByAd[row.adId] ??= { impressions: 0, clicks: 0 });
-    bucket[row.type === "impression" ? "impressions" : "clicks"] = row.cnt;
-  }
   const monthlyByAd = {};
   for (const row of monthly) {
+    const field = row.type === "impression" ? "impressions" : "clicks";
     const bucket = (monthlyByAd[row.adId] ??= {});
     const entry = (bucket[row.month] ??= { impressions: 0, clicks: 0 });
-    entry[row.type === "impression" ? "impressions" : "clicks"] = row.cnt;
+    entry[field] = row.cnt;
+    const total = (totalsByAd[row.adId] ??= { impressions: 0, clicks: 0 });
+    total[field] += row.cnt;
   }
   for (const ad of ads) {
     ad.impressions = totalsByAd[ad.id]?.impressions || 0;
@@ -140,25 +134,16 @@ async function adStatsCombined(db) {
 
 // --- 提醒功能使用量(reminder_add_events / reminder_add_monthly)，沒有名稱維度，邏輯跟 search_events 一樣 ---
 async function reminderStatsCombined(db) {
-  const [{ results }, totalRow] = await Promise.all([
-    db.prepare(`
-      SELECT month, SUM(cnt) AS cnt FROM (
-        SELECT month, cnt FROM reminder_add_monthly
-        UNION ALL
-        SELECT substr(createdAt, 1, 7) AS month, COUNT(*) AS cnt FROM reminder_add_events GROUP BY month
-      ) GROUP BY month ORDER BY month DESC
-    `).all(),
-    db.prepare(`
-      SELECT SUM(cnt) AS cnt FROM (
-        SELECT cnt FROM reminder_add_monthly
-        UNION ALL
-        SELECT COUNT(*) AS cnt FROM reminder_add_events
-      )
-    `).first(),
-  ]);
+  const { results } = await db.prepare(`
+    SELECT month, SUM(cnt) AS cnt FROM (
+      SELECT month, cnt FROM reminder_add_monthly
+      UNION ALL
+      SELECT substr(createdAt, 1, 7) AS month, COUNT(*) AS cnt FROM reminder_add_events GROUP BY month
+    ) GROUP BY month ORDER BY month DESC
+  `).all();
   return {
     monthly: results.map((r) => ({ month: r.month, count: r.cnt })),
-    total: totalRow?.cnt || 0,
+    total: sumCounts(results),  // 累積登記次數就是各月加總，不用再另外掃一次 reminder_add_events
   };
 }
 
