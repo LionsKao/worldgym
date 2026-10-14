@@ -31,6 +31,8 @@ Windows PowerShell 5.1 不支援 `&&`，上面這種串起來的指令要分成�
 
 ### Deploy
 
+**日常部署＝push 到 `main` 就好。** 靜態站（Pages）與 Worker 都已設定 Cloudflare 自動部署（細節見下面兩段），push 完不需要再手動部署（`wrangler deploy`、`pages deploy` 只在緊急、要不經 Git 立刻上線時才用），也不需要事後輪詢 `wrangler deployments list`、等建置完成來確認部署狀態——除非使用者明確要求驗證線上行為。使用者說「push」或「push 並部署」時，只做 push 並回報 commit 範圍。
+
 **靜態站（Cloudflare Pages `worldgym`，https://worldgym.pages.dev）：push 到 `main` 就會自動部署。** 這個 Pages 專案連了 GitHub（`LionsKao/worldgym`），生產分支是 `main`、自動部署開著，Cloudflare 會從 Git 抓該 commit 的內容、在 repo 根目錄建置（沒有 build 指令，`functions/` 會一起打包）。所以：
 - 發布的是**已 push 的 commit**，不是你電腦上的工作目錄，不會夾帶未 commit 的檔案。
 - 沒 push 的 commit 在 Dashboard 按「Retry deployment」會失敗（`not our ref`），因為 Cloudflare 抓不到。
