@@ -6,11 +6,33 @@
   Referrer-Policy: strict-origin-when-cross-origin
   X-Content-Type-Options: nosniff
 
+# 靜態資源（CSS、JS、icon）一律快取 30 天（2592000 秒）。能這樣做的前提是：所有引用處都帶 ?v= 版號——
+# 檔案內容改了，就要把引用它的地方的版號加一，使用者才會去抓新的；沒加的話使用者最久一個月看到舊的。
+# 不加 immutable：這樣使用者按重新整理時，瀏覽器還是會向伺服器確認有沒有更新。
+# sw.js 刻意不在這裡（Service Worker 本身要能隨時更新）；favicon.ico 是瀏覽器自己隱含請求的，沒辦法帶版號。
 /style.css
-  Cache-Control: public, max-age=31536000, immutable
+  Cache-Control: public, max-age=2592000
+
+/script.js
+  Cache-Control: public, max-age=2592000
+
+/common.js
+  Cache-Control: public, max-age=2592000
+
+/admin.js
+  Cache-Control: public, max-age=2592000
+
+/ga-init.js
+  Cache-Control: public, max-age=2592000
+
+/css-async.js
+  Cache-Control: public, max-age=2592000
+
+/vendor/*
+  Cache-Control: public, max-age=2592000
 
 /icons/*
-  Cache-Control: public, max-age=604800
+  Cache-Control: public, max-age=2592000
 
 /favicon.ico
-  Cache-Control: public, max-age=604800
+  Cache-Control: public, max-age=2592000

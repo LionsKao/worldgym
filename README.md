@@ -35,7 +35,7 @@
 ├── vendor/chart.umd.min.js              # Chart.js（vendor 進來，不吃 CDN）
 ├── manifest.json / sw.js / icons/       # PWA 設定與 Service Worker（推播提醒用）
 ├── 404.html / robots.txt / sitemap.xml / llms.txt   # sitemap.xml 與 llms.txt 是動態版失敗時的備援靜態檔
-├── _headers                             # Pages 回應標頭：CSP 等安全標頭、style.css 與 icons 的長效快取
+├── _headers                             # Pages 回應標頭：CSP 等安全標頭、CSS／JS／icon 的 30 天快取
 ├── functions/                           # Cloudflare Pages Functions（跟靜態站一起部署）
 │   ├── _middleware.js                   #   只放行台灣 IP（爬蟲例外）、擋掉不屬於網站的檔案（worker/、*.md、點開頭的檔案）
 │   ├── index.js                         #   單一分店網址在伺服器端注入課表
@@ -215,7 +215,7 @@ Pages（`functions/_middleware.js`）與 Worker 都只放行台灣 IP（拿不�
 
 ## ⚡ 靜態資源快取
 
-`style.css` 與 `icons/` 走 `_headers` 的長效快取，搭配 `index.html`／`admin.html` 裡的 `?v=` 版號：**內容改了就要同步更新版號**，否則使用者吃到快取住的舊檔。`script.js`、`admin.js`、`common.js` 因為改動頻繁，故意不設長效快取，只靠 `?v=` 版號；`common.js` 同時被兩個頁面引用，改了要兩邊的版號一起改。
+CSS、JS、icon（`style.css`、`script.js`、`common.js`、`admin.js`、`ga-init.js`、`css-async.js`、`vendor/`、`icons/`、`favicon.ico`）一律走 `_headers` 快取 30 天，搭配引用處的 `?v=` 版號：**檔案內容改了，就要把引用它的地方（`index.html`／`admin.html`／`404.html`、`manifest.json`、`sw.js`）的版號加一**，否則使用者最久一個月看到舊的。`style.css` 三個頁面要用同一個版號；`common.js` 同時被兩個頁面引用，兩邊的版號要一起改。`sw.js` 不長快取（Service Worker 要能隨時更新），`favicon.ico` 是瀏覽器自己請求的、沒辦法帶版號。
 
 圖示從 cdnjs 載入完整的 Font Awesome 套件，`<link>` 帶 `integrity`（SRI）。**升級版本時要同步更新 hash**，否則瀏覽器會因為內容與簽章對不上而整份擋掉、圖示全部消失：下載新版 `all.min.css` 後用 `openssl dgst -sha384 -binary all.min.css | openssl base64 -A` 算新的。
 

@@ -95,7 +95,7 @@ functions/llms.txt.js               動態 /llms.txt（備援：根目錄靜態 
 functions/_lib/                     注入設定與 SITE_ORIGIN（ssrConfig.js）、實作（ssrBranch.js）、slug 網址（branchUrl.js）、
                                     分店查找表（branches.js）、D1 逾時與 Cache API 共用流程（util.js）、
                                     有課表的分店清單（scheduleBranches.js，sitemap 與 llms.txt 共用）、sitemap.js、llms.js
-_headers                             Pages 回應標頭：安全標頭與 CSP（見「安全標頭與 CSP」）、style.css/icons 長效快取
+_headers                             Pages 回應標頭：安全標頭與 CSP（見「安全標頭與 CSP」）、CSS／JS／icon 的 30 天快取（見「靜態資源快取」）
 hosting/                             只用於本機開發（dev.mjs 啟動 wrangler 靜態伺服器），不是正式部署目標
 worker/
   src/index.js                      路由表 ROUTES（限流、後台驗證統一處理）/ CORS / 入口 / cron scheduled()
@@ -177,7 +177,12 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 網站沒有帳號系統，「幾個人」的統計靠前端 `localStorage` 存的匿名 `wg_client_id`（`crypto.randomUUID()`），後端用 `COUNT(DISTINCT clientId)` 估算，不對應真實身分。
 
 ### 靜態資源快取
-`style.css`/`icons/` 走 `_headers` 長效快取，搭配 `index.html`/`admin.html` 裡的 `?v=` 版號機制——內容改了要同步更新版號，否則使用者吃到快取住的舊檔案。`script.js`、`admin.js`、`common.js` 目前故意不設長效快取（改動頻繁），只靠 `?v=` 版號控制；`common.js` 同時被 `index.html` 與 `admin.html` 引用（都要排在自己的 script 之前），改了要兩個檔案裡的 `common.js?v=` 一起更新。Font Awesome 圖示直接吃 cdnjs 的完整套件，`fa-` class 可以照官方圖示庫直接用。
+**CSS、JS、icon 一律走 `_headers` 快取 30 天（`max-age=2592000`，不加 `immutable`，所以按重新整理仍會向伺服器確認）**：`style.css`、`script.js`、`common.js`、`admin.js`、`ga-init.js`、`css-async.js`、`vendor/*`、`icons/*`、`favicon.ico`。這套做法的前提是**所有引用處都帶 `?v=` 版號**，而且**內容改了就一定要把引用它的地方的版號加一**，否則使用者最久一個月看到舊的——改 JS／CSS／icon 時別忘了：
+- `style.css`：`index.html`、`admin.html`、`404.html` 三頁**要用同一個版號**（目前 105；以前三頁各自為政變成 104／73／45，後台和 404 頁會吃到舊樣式）。
+- `script.js`（只有 `index.html`）、`admin.js`（只有 `admin.html`）、`common.js`（兩頁都引用，都要排在自己的 script 之前，改了要兩個檔案裡的 `common.js?v=` 一起更新）。
+- `ga-init.js`、`css-async.js`、`vendor/chart.umd.min.js`（`admin.html`，以及 `script.js` 的 `loadChartJs()`）：目前 `?v=1`，改了這些檔案就把 1 往上加。
+- `icons/*`：`index.html`（`og:image`、`twitter:image`、`apple-touch-icon`、QR code）、`manifest.json`、`sw.js`（通知圖示）都帶 `?v=1`，換圖就一起加。
+- 例外：`sw.js` 不長快取（Service Worker 本身要能隨時更新）；`favicon.ico` 是瀏覽器自己隱含請求的，沒辦法帶版號（換 favicon 最久一個月才會更新）；HTML、`manifest.json` 沒設，每次都會向伺服器確認。Font Awesome 圖示直接吃 cdnjs 的完整套件，`fa-` class 可以照官方圖示庫直接用。
 
 ### 安全標頭與 CSP（`_headers` 的 `/*`）
 所有頁面都帶 `Content-Security-Policy`、`X-Frame-Options: DENY`（後台不能被嵌入）、`Strict-Transport-Security`、`Permissions-Policy`（只開 `geolocation=(self)`，分店依距離篩選要用）等標頭。CSP 的重點：
