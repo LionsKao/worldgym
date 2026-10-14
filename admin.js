@@ -27,13 +27,16 @@ async function adminJson(path, options){
 // 登入流程驗證的是使用者剛輸入、還沒存起來的密碼，所以不能用 adminFetch（它讀的是已存的 token）。
 // 驗證成功會換到一張有效期限的 session token（見 worker 的 issueAdminSession），之後改存/送
 // 這張，不是原始密碼本身——降低密碼實際被送出網路的次數。
-// 回傳 { sessionToken } 表示成功、{ locked: true } 表示連續失敗次數過多被鎖定、null 表示單純密碼錯誤。
+// 回傳 { sessionToken } 表示成功、{ locked: true } 表示連續失敗次數過多被鎖定、
+// { invalid: true } 表示伺服器明確說這個密碼／session token 不對或已過期（403）、
+// null 表示其他失敗（伺服器暫時出錯、被流量限制、回應格式怪）。網路錯誤是直接丟例外。
 async function verifyToken(token){
   const res = await fetch(`${WORKER_BASE}/verifyAdminToken`, {
     method: "POST",
     headers: { [ADMIN_TOKEN_HEADER]: token },
   });
   if (res.status === 423) return { locked: true };
+  if (res.status === 401 || res.status === 403) return { invalid: true };
   if (!res.ok) return null;
   const data = await res.json().catch(() => null);
   return data?.sessionToken ? { sessionToken: data.sessionToken } : null;
@@ -151,7 +154,10 @@ const LOGIN_REVEAL_AFTER_MS = 3000;
   if (result?.sessionToken){
     enterAdmin(result.sessionToken); // 換到新的 session token，滑動延長 7 天效期
   } else {
-    clearStoredToken();
+    // 只有伺服器明確說這張 session 無效或過期（403）才清掉。被鎖定（423）、網路錯誤、逾時、伺服器暫時出錯時
+    // session 可能還有效，留著，之後重開頁面或鎖定解除就能自動登入，不用重新輸入密碼
+    // （鎖定期間連重新輸入密碼都會被擋，清掉就只能乾等 15 分鐘）。
+    if (!stored || result?.invalid) clearStoredToken();
     showLoginOverlay();
   }
 })();
