@@ -802,7 +802,8 @@ function showPillWarning(anchorEl, text, iconClass){
 function showHoverTooltip(anchorEl, text, wrap = true){
   const rect = anchorEl.getBoundingClientRect();
   pillWarnTooltip.classList.toggle("wrap", wrap);
-  pillWarnTooltip.innerHTML = text;
+  // text 含課程/老師名稱（來自爬官網的資料），一律當純文字放，不能用 innerHTML。
+  pillWarnTooltip.textContent = text;
   positionPillTooltip(rect);
   clearTimeout(pillWarnTimer);
   pillWarnTooltip.classList.add("visible");
