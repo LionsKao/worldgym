@@ -20,7 +20,7 @@
 - **推播提醒（PWA）**：加到主畫面後，結果列會出現鈴鐺，可登記單次通知，課前 30／60／90 分鐘自選。
 - **通知頁**：已登記的提醒清單、查詢量趨勢與老師／課程／分店查詢排行（公開）、寫信給作者（轉發到 Teams）。
 - **後台**（`/admin`）：廣告、最愛、提醒的使用量報表、IP 存取紀錄、手動重抓課表。
-- **對搜尋引擎與 AI 友善**：單一分店網址會在伺服器端注入該分店課表，並提供動態 sitemap 與 llms.txt（見下方「SEO 與爬蟲」）。
+- **對搜尋引擎與 AI 友善**：單一分店網址會在伺服器端注入該分店課表，並提供動態 sitemap 與 llms.txt（見下方「SEO／GEO（AI 搜尋）與爬蟲」）。
 - 前端另外埋了 GA4 事件（篩選、查詢、登記／取消提醒等），事件清單見 [`GA_EVENTS.md`](GA_EVENTS.md)。
 
 ## 🏗️ 架構
@@ -203,13 +203,15 @@ Pages（`functions/_middleware.js`）與 Worker 都只放行台灣 IP（拿不�
 - **新增任何外部來源（CDN、字型、分析服務、新的 API 網域）都要同步改 CSP**。改完用本機開發伺服器（會套用 `_headers`）載入頁面，看主控台有沒有 `violates the following Content Security Policy`。萬用字元 `*.example.com` **不包含** `example.com` 本身，要另外列。
 - 本機載入時 Cloudflare Web Analytics beacon 會出現 CORS 錯誤，是因為 localhost 不是它登記的網域，與 CSP 無關，可忽略。
 
-## 🔍 SEO 與爬蟲
+## 🔍 SEO／GEO（AI 搜尋）與爬蟲
 
-目的是讓不執行 JS 的爬蟲（多數 AI 爬蟲）也讀得到單一分店課表：
+目的是讓不執行 JS 的爬蟲（多數 AI 爬蟲）也讀得到單一分店課表，被搜尋引擎與 AI 搜尋正確引用（GEO，Generative Engine Optimization）：
 
 - **伺服器端注入**：`/?branch=<slug>&room=1`（單一分店＋團體教室）這種網址，Pages Function 會查 D1，把「本週固定班」寫進回傳的 HTML（放在視覺隱藏的區塊裡，使用者畫面不變），並改寫 `<title>`、description、canonical、og/twitter 與 JSON-LD。其餘網址原樣放行、不查 D1。結果用 Cache API 快取 30 分鐘；D1 逾時、查不到或出錯都退回原頁。回應標頭 `X-SSR-Status` 可用來排查（`hit`／`miss` 是有注入）。
 - **動態 sitemap**：`/sitemap.xml` 只列「近 7 天真的有團體固定班」的分店，列出來的網址一定查得到內容；任何失敗退回根目錄的靜態 `sitemap.xml`（備援，不必常更新）。
 - **動態 `/llms.txt`**：靜態 `llms.txt` 的內容加上分店課表索引，同樣有靜態備援。
+- **分店頁的 JSON-LD**：只輸出 WebSite 加一個 WebPage，**刻意不輸出** ExerciseGym／LocalBusiness／Event／Course 等類型，也不輸出地址、電話、座標、評分。原因有二：注入的課表區塊是視覺隱藏的，結構化資料必須與使用者看得到的內容相符；而且本站是非官方工具，不能替真實的健身房建立實體。
+- **不依 UA 回不同內容（no cloaking）**：爬蟲與一般使用者拿到的內容、JSON-LD、`llms.txt` 完全相同，UA 只用來決定放不放行（見「只開放台灣 IP」）。
 - 給爬蟲看的網址一律用 slug（可讀），短代碼只留給前端的分享網址與舊連結相容。
 
 細節與維護注意事項在 `CLAUDE.md` 的「伺服器端注入課表」。
