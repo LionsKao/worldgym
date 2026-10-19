@@ -465,6 +465,18 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
   opacity:0; transition:opacity .2s ease; pointer-events:none;
 }
 .reminder-cancel-overlay.visible{ opacity:1; }
+/* 登記通知的小視窗：課前 30/60/90 分鐘三選一（radio pill，做法同 .fav-icon-options）。 */
+.remind-lead-options{ display:flex; gap:8px; justify-content:center; margin-bottom:18px; }
+.remind-lead-options input{ position:absolute; opacity:0; width:0; height:0; }
+.remind-lead-options label{
+  display:flex; align-items:center; justify-content:center;
+  height:34px; padding:0 14px; border-radius:999px; border:1.5px solid var(--line);
+  background:var(--paper); color:var(--sub); cursor:pointer; font-size:13px; font-weight:800;
+  transition:border-color .2s ease, color .2s ease, background-color .2s ease;
+}
+.remind-lead-options label:hover{ border-style:dashed; border-color:var(--navy); color:var(--navy); background:var(--bg); }
+.remind-lead-options input:checked + label{ border-style:solid; border-color:var(--navy); color:var(--navy); background:var(--bg); }
+.remind-lead-options input:focus-visible + label{ outline:2px solid var(--navy); outline-offset:2px; }
 
 .access-log-table-wrap{ overflow-x:auto; }
 .access-log-table{ width:100%; border-collapse:collapse; font-size:12.5px; white-space:nowrap; }

@@ -148,6 +148,7 @@ worker/
 
 ### 推播提醒 (PWA)
 課表頁需先加到主畫面成為 PWA 才顯示鈴鐺按鈕（`script.js` 的 `isPWAInstalled()` 判斷 `display-mode: standalone`；本機測試可在網址加 `?pwa=1` 繞過）。登記提醒流程：前端 `sw.js` 註冊 Service Worker 拿 Push 訂閱 → `/registerReminder` 存 D1 → worker cron 每 5 分鐘掃到期提醒 → `reminders.js` 用 VAPID 金鑰簽署推播內容送出 → `sw.js` 的 `push` 事件顯示通知。
+課前幾分鐘由使用者在點鈴鐺跳出的小視窗選 30/60/90（前端 `script.js` 的 `REMIND_MINUTES_OPTIONS`、`index.html` 的 `remindLead` radio、後端 `reminders.js` 的 `REMIND_MINUTES_OPTIONS` 白名單三處要一致；`/registerReminder` 沒帶 `remindMinutes` 視為 30，帶了不在白名單回 400）。一堂課只有一個提醒時間：`buildReminderId` 不含分鐘數，重複登記是覆蓋；黃鈴鐺點一下直接取消，要改時間就取消後重登。`reminders.remindMinutes` 只給畫面顯示「課前 N 分鐘」用，**cron 發送只看 `remindAt`**。上次選的值存 localStorage `wg_remind_minutes`，只用來預選。
 
 ### 台灣 IP 限制與爬蟲例外
 Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭）都只放行台灣 IP（`cf.country` 沒值，如本機開發，一律放行）。已知搜尋引擎/AI 爬蟲（Googlebot、GPTBot、ClaudeBot、Claude-User 等，UA 清單 `CRAWLER_UA_PATTERN`）例外：

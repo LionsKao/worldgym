@@ -55,6 +55,7 @@ CREATE TABLE reminders (
   startTime TEXT NOT NULL,
   classAt TEXT NOT NULL,
   remindAt TEXT NOT NULL,
+  remindMinutes INTEGER NOT NULL DEFAULT 30,
   subscriptionEndpoint TEXT NOT NULL,
   pushSubscription TEXT NOT NULL,
   clickUrl TEXT NOT NULL DEFAULT '',

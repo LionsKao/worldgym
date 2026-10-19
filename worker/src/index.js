@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { queryClasses } from "./queryClasses.js";
 import { runScrape, cleanupStaleBranches } from "./scrape.js";
-import { registerReminder, isAllowedPushEndpoint, cancelReminder, listReminders, dispatchDueReminders } from "./reminders.js";
+import { REMIND_MINUTES_OPTIONS, registerReminder, isAllowedPushEndpoint, cancelReminder, listReminders, dispatchDueReminders } from "./reminders.js";
 import { monthlyNameRanking, availableYears, monthlySearchTrend, favoriteStatsCombined, adStatsCombined, reminderStatsCombined, rollupAnalyticsEvents } from "./analytics.js";
 import { scanForNewBranches } from "./branchScan.js";
 import BRANCHES from "./branches-seed.js";
@@ -491,10 +491,11 @@ function isValidClickUrl(clickUrl) {
   }
 }
 
-// 課表通知(單次,上課前 30 分鐘):登記一顆課的 Web Push 通知。
+// 課表通知(單次,上課前 30/60/90 分鐘由使用者選):登記一顆課的 Web Push 通知。
+// remindMinutes 選填，沒帶（舊前端）當 30；有帶就必須在白名單內，公開端點不收任意數字。
 async function handleRegisterReminder({ req, env, ctx, origin }) {
   const body = await readJson(req);
-  const { branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, pushSubscription, clickUrl } = body || {};
+  const { branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, pushSubscription, clickUrl, remindMinutes } = body || {};
   if (
     typeof branchSlug !== "string" || !branchSlug ||
     typeof branchName !== "string" || !branchName ||
@@ -505,12 +506,13 @@ async function handleRegisterReminder({ req, env, ctx, origin }) {
     typeof startTime !== "string" || !/^\d{4}$/.test(startTime) ||
     !pushSubscription || typeof pushSubscription.endpoint !== "string" || !pushSubscription.endpoint ||
     !isAllowedPushEndpoint(pushSubscription.endpoint) ||
-    (clickUrl !== undefined && !isValidClickUrl(clickUrl))
+    (clickUrl !== undefined && !isValidClickUrl(clickUrl)) ||
+    (remindMinutes !== undefined && !REMIND_MINUTES_OPTIONS.includes(remindMinutes))
   ) {
     return json({ error: "invalid reminder" }, 400, origin);
   }
   const result = await registerReminder(env.DB, {
-    branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, pushSubscription, clickUrl,
+    branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, pushSubscription, clickUrl, remindMinutes,
   }, ctx);
   return json(result, 200, origin);
 }

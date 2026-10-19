@@ -26,7 +26,7 @@
 
 | 事件名稱 | 觸發時機 | 參數 |
 | --- | --- | --- |
-| `register_reminder` | 成功登記某堂課的推播提醒 | `class_name`、`teacher_name` |
+| `register_reminder` | 成功登記某堂課的推播提醒 | `class_name`、`teacher_name`、`lead_minutes`（課前幾分鐘提醒：30/60/90）|
 | `cancel_reminder` | 取消提醒，來源分結果頁鈴鐺 / 提醒清單頁兩種 | `class_name`、`teacher_name`、`source`（`result_bell`/`reminder_list`）|
 | `notify_permission_prompt` | 因為瀏覽器推播權限還沒開，彈出權限說明彈窗 | 無 |
 | `notify_permission_blocked_retry` | 權限已被封鎖（`denied`）時，使用者仍點了「開啟通知」按鈕 | 無 |

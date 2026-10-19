@@ -1,8 +1,10 @@
 import { buildPushPayload } from "@block65/webcrypto-web-push";
 import { nowTaiwanIso, taiwanClock, taiwanIso, taiwanIsoOf, fnv1aHex } from "./util.js";
 
-// 課表通知:上課前這麼多分鐘推播一次,單次通知,不做每週訂閱式的長期追蹤。
-const REMIND_MINUTES_BEFORE = 30;
+// 課表通知:上課前推播一次,單次通知,不做每週訂閱式的長期追蹤。提前幾分鐘由使用者從這份白名單選,
+// 沒帶就用預設值。前端的選項（index.html 的 remindLead）要跟這份一致。
+const REMIND_MINUTES_OPTIONS = [30, 60, 90];
+const DEFAULT_REMIND_MINUTES = 30;
 // scheduled() 的 cron 間隔是 5 分鐘(見 wrangler.toml [triggers]),掃描時抓「即將在這個視窗內到期」的通知。
 const DISPATCH_WINDOW_MINUTES = 5;
 
@@ -16,22 +18,22 @@ function buildReminderId(subscriptionEndpoint, branchSlug, dayOfWeek, startTime,
 }
 
 // 找出「下一次符合 dayOfWeek/startTime 的上課時間」:今天符合但「課前提醒時間」已過就跳到下週同一天，
-// 不能只看上課時間本身有沒有過——否則會登記到一個 remindAt 已經是過去式的提醒（課前 30 分早就過了）。
-function computeNextOccurrence(dayOfWeek, startTime) {
+// 不能只看上課時間本身有沒有過——否則會登記到一個 remindAt 已經是過去式的提醒（課前 N 分早就過了）。
+function computeNextOccurrence(dayOfWeek, startTime, remindMinutes = DEFAULT_REMIND_MINUTES) {
   const now = taiwanClock();
   const nowWeekday = now.getUTCDay() || 7; // JS 的星期天是 0，這裡用 7
   const startHour = parseInt(startTime.slice(0, 2), 10) || 0;
   const startMinute = parseInt(startTime.slice(2, 4), 10) || 0;
 
   let deltaDays = (dayOfWeek - nowWeekday + 7) % 7;
-  const remindMinutesOfDay = startHour * 60 + startMinute - REMIND_MINUTES_BEFORE;
+  const remindMinutesOfDay = startHour * 60 + startMinute - remindMinutes;
   if (deltaDays === 0 && remindMinutesOfDay <= now.getUTCHours() * 60 + now.getUTCMinutes()) {
     deltaDays = 7;
   }
 
   // Date.UTC 會自己處理日期溢位（跨月、跨年）；classAt/remindAt 跟其他時間戳一樣用台灣時間字串，才能直接用字串比較。
   const classMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + deltaDays, startHour, startMinute);
-  return { classAt: taiwanIsoOf(classMs), remindAt: taiwanIsoOf(classMs - REMIND_MINUTES_BEFORE * 60000) };
+  return { classAt: taiwanIsoOf(classMs), remindAt: taiwanIsoOf(classMs - remindMinutes * 60000) };
 }
 
 // 提醒功能使用量打點：只算「登記提醒」被觸發幾次，不分辨是不是同一人、也不追蹤取消，
@@ -65,17 +67,19 @@ function isAllowedPushEndpoint(endpoint) {
 
 async function registerReminder(db, params, ctx) {
   const { branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, pushSubscription, clickUrl } = params;
+  const remindMinutes = params.remindMinutes ?? DEFAULT_REMIND_MINUTES;
   const subscriptionEndpoint = pushSubscription?.endpoint || "";
   if (!subscriptionEndpoint) throw new Error("missing push subscription endpoint");
+  if (!REMIND_MINUTES_OPTIONS.includes(remindMinutes)) throw new Error("invalid remindMinutes");
 
-  const { classAt, remindAt } = computeNextOccurrence(dayOfWeek, startTime);
+  const { classAt, remindAt } = computeNextOccurrence(dayOfWeek, startTime, remindMinutes);
   const id = buildReminderId(subscriptionEndpoint, branchSlug, dayOfWeek, startTime, className, teacherName);
 
   await db
     .prepare(
       `INSERT OR REPLACE INTO reminders
-        (id, branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, classAt, remindAt, subscriptionEndpoint, pushSubscription, clickUrl, sent, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`
+        (id, branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, classAt, remindAt, remindMinutes, subscriptionEndpoint, pushSubscription, clickUrl, sent, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`
     )
     .bind(
       id,
@@ -88,6 +92,7 @@ async function registerReminder(db, params, ctx) {
       startTime,
       classAt,
       remindAt,
+      remindMinutes,
       subscriptionEndpoint,
       JSON.stringify(pushSubscription),
       clickUrl || "",
@@ -96,7 +101,7 @@ async function registerReminder(db, params, ctx) {
     .run();
   trackReminderAdd(db, ctx);
 
-  return { id, classAt, remindAt };
+  return { id, classAt, remindAt, remindMinutes };
 }
 
 // id 是 FNV-1a 雜湊（見上方 buildReminderId 註解，本來就不是安全用途），不能單獨當刪除授權，
@@ -115,7 +120,7 @@ async function cancelReminder(db, params) {
 async function listReminders(db, subscriptionEndpoint) {
   const { results } = await db
     .prepare(
-      `SELECT id, branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, classAt, remindAt
+      `SELECT id, branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, classAt, remindAt, remindMinutes
        FROM reminders WHERE subscriptionEndpoint = ? AND sent = 0 ORDER BY classAt`
     )
     .bind(subscriptionEndpoint)
@@ -170,4 +175,4 @@ async function dispatchDueReminders(db, env) {
   return { dispatched, scanned: results.length };
 }
 
-export { computeNextOccurrence, isAllowedPushEndpoint, registerReminder, cancelReminder, listReminders, dispatchDueReminders };
+export { REMIND_MINUTES_OPTIONS, computeNextOccurrence, isAllowedPushEndpoint, registerReminder, cancelReminder, listReminders, dispatchDueReminders };

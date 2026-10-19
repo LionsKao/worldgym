@@ -297,21 +297,22 @@ function syncResultBellsToRegistered(){
       bell.classList.add("fa-bell");
       delete bell.dataset.reminderId;
     }
-    setResultRowNotifyLine(bell, existing && existing.remindAt);
+    setResultRowNotifyLine(bell, existing);
   });
 }
-// 查詢結果列底下顯示「會在 mm/dd 週幾 hh:mm 通知你」，跟通知清單頁那行文字共用同一個 formatReminderTime。
-function setResultRowNotifyLine(bell, remindAt){
+// 查詢結果列底下顯示「會在 mm/dd 週幾 hh:mm 通知你（課前 N 分鐘）」，跟通知清單頁那行文字共用同一個 reminderNotifyText。
+// reminder 是 registeredReminders 裡的紀錄，沒登記就傳 undefined（把那一行拿掉）。
+function setResultRowNotifyLine(bell, reminder){
   const content = bell.closest(".result-row")?.querySelector(".result-row-content");
   if (!content) return;
   let notifyLine = content.querySelector(".reminder-notify-time");
-  if (remindAt){
+  if (reminder?.remindAt){
     if (!notifyLine){
       notifyLine = document.createElement("div");
       notifyLine.className = "reminder-notify-time";
       content.appendChild(notifyLine);
     }
-    notifyLine.textContent = `會在 ${formatReminderTime(remindAt)} 通知你`;
+    notifyLine.textContent = reminderNotifyText(reminder);
   } else if (notifyLine){
     notifyLine.remove();
   }
@@ -326,9 +327,23 @@ function formatReminderTime(iso){
   return `${month}/${date} 週${weekday} ${hour}${minute}`;
 }
 
+function reminderNotifyText(reminder){
+  return `會在 ${formatReminderTime(reminder.remindAt)} 通知你（課前 ${reminder.remindMinutes || DEFAULT_REMIND_MINUTES} 分鐘）`;
+}
+
+// 課前提醒可選的分鐘數，要跟 worker/src/reminders.js 的 REMIND_MINUTES_OPTIONS（後端白名單）、
+// index.html 的 remindLead 三個 radio 一致。上次選的記在 localStorage，下次開視窗時預選。
+const REMIND_MINUTES_OPTIONS = [30, 60, 90];
+const DEFAULT_REMIND_MINUTES = 30;
+const REMIND_MINUTES_KEY = "wg_remind_minutes";
+function readRemindMinutes(){
+  const n = parseInt(readStored(REMIND_MINUTES_KEY), 10);
+  return REMIND_MINUTES_OPTIONS.includes(n) ? n : DEFAULT_REMIND_MINUTES;
+}
+
 const REMINDER_EMPTY_HTML = '<div class="empty-hint" id="reminderEmptyHint">沒有通知</div>';
 let pendingReminderBell = null;
-async function registerReminderForBell(bell){
+async function registerReminderForBell(bell, remindMinutes){
   bell.classList.add("busy");
   try{
     const sub = await ensurePushSubscription();
@@ -340,15 +355,16 @@ async function registerReminderForBell(bell){
       roomName: bell.dataset.roomName,
       dayOfWeek: parseInt(bell.dataset.dayOfWeek, 10),
       startTime: bell.dataset.startTime,
+      remindMinutes,
       pushSubscription: sub.toJSON(),
       clickUrl: location.href,
     };
     const res = await postJson("/registerReminder", body);
     if (!res.ok) throw new Error(`registerReminder failed: ${res.status}`);
     const data = await res.json();
-    registeredReminders.set(reminderKeyFromBell(bell), { ...body, id: data.id, classAt: data.classAt, remindAt: data.remindAt });
+    registeredReminders.set(reminderKeyFromBell(bell), { ...body, id: data.id, classAt: data.classAt, remindAt: data.remindAt, remindMinutes: data.remindMinutes });
     syncResultBellsToRegistered();
-    trackEvent("register_reminder", { class_name: bell.dataset.className, teacher_name: bell.dataset.teacherName });
+    trackEvent("register_reminder", { class_name: bell.dataset.className, teacher_name: bell.dataset.teacherName, lead_minutes: remindMinutes });
   } catch(e){
     console.error(e);
   } finally {
@@ -386,14 +402,7 @@ async function handleBellClick(bell){
     await cancelReminderForBell(bell);
     return;
   }
-  if (Notification.permission !== "granted"){
-    pendingReminderBell = bell;
-    notifyPermissionText.innerHTML = Notification.permission === "denied" ? NOTIFY_PERMISSION_TEXT_BLOCKED : NOTIFY_PERMISSION_TEXT_NORMAL;
-    document.getElementById("notifyPermissionModal").classList.remove("hidden");
-    trackEvent("notify_permission_prompt", {});
-    return;
-  }
-  await registerReminderForBell(bell);
+  openReminderModal(bell);
 }
 
 // 「通知」清單：畫出目前這個 push subscription 底下所有已登記的通知。沒授權/沒訂閱就顯示空清單。
@@ -435,7 +444,7 @@ async function renderReminderList(){
     if (r.remindAt){
       const notifyLine = document.createElement("div");
       notifyLine.className = "reminder-notify-time";
-      notifyLine.textContent = `會在 ${formatReminderTime(r.remindAt)} 通知你`;
+      notifyLine.textContent = reminderNotifyText(r);
       text.appendChild(notifyLine);
     }
     row.appendChild(text);
@@ -1149,11 +1158,22 @@ document.getElementById("serviceErrorOkBtn").addEventListener("click", () => {
   serviceErrorModal.classList.add("hidden");
 });
 
-// 課表通知：第一次按灰色鈴鐺、還沒授權通知時彈出的說明 modal。
+// 課表通知：按灰色鈴鐺彈出的 modal，選課前 30/60/90 分鐘；還沒授權通知時多一句權限說明
+// （權限被封鎖時只剩說明、不顯示選項，因為怎麼選都登記不了）。
 const notifyPermissionModal = document.getElementById("notifyPermissionModal");
 const notifyPermissionText = document.getElementById("notifyPermissionText");
-const NOTIFY_PERMISSION_TEXT_NORMAL = "開啟通知，課前 30 分鐘不怕錯過！<br>需要允許通知權限。";
+const NOTIFY_PERMISSION_TEXT_NORMAL = "需要允許通知權限。";
 const NOTIFY_PERMISSION_TEXT_BLOCKED = "通知權限已被封鎖，<br>請至裝置設定手動開啟通知權限。";
+function openReminderModal(bell){
+  pendingReminderBell = bell;
+  const permission = Notification.permission;
+  document.getElementById("remindLeadField").classList.toggle("hidden", permission === "denied");
+  document.getElementById(`remindLead-${readRemindMinutes()}`).checked = true;
+  notifyPermissionText.innerHTML = permission === "denied" ? NOTIFY_PERMISSION_TEXT_BLOCKED : NOTIFY_PERMISSION_TEXT_NORMAL;
+  notifyPermissionText.classList.toggle("hidden", permission === "granted");
+  notifyPermissionModal.classList.remove("hidden");
+  if (permission !== "granted") trackEvent("notify_permission_prompt", {});
+}
 function closeNotifyPermissionModal(){
   notifyPermissionModal.classList.add("hidden");
   pendingReminderBell = null;
@@ -1162,6 +1182,7 @@ document.getElementById("notifyPermissionCancelBtn").addEventListener("click", c
 document.getElementById("notifyPermissionCloseBtn").addEventListener("click", closeNotifyPermissionModal);
 document.getElementById("notifyPermissionConfirmBtn").addEventListener("click", async () => {
   const bell = pendingReminderBell;
+  const remindMinutes = parseInt(document.querySelector('input[name="remindLead"]:checked').value, 10);
   notifyPermissionModal.classList.add("hidden");
   pendingReminderBell = null;
   if (!bell) return;
@@ -1169,9 +1190,13 @@ document.getElementById("notifyPermissionConfirmBtn").addEventListener("click", 
     trackEvent("notify_permission_blocked_retry", {});
     return;
   }
-  const perm = await Notification.requestPermission();
-  trackEvent("notify_permission_result", { result: perm });
-  if (perm === "granted") await registerReminderForBell(bell);
+  if (Notification.permission !== "granted"){
+    const perm = await Notification.requestPermission();
+    trackEvent("notify_permission_result", { result: perm });
+    if (perm !== "granted") return;
+  }
+  writeStored(REMIND_MINUTES_KEY, String(remindMinutes));
+  await registerReminderForBell(bell, remindMinutes);
 });
 
 // 依目前位置篩選分店：第一次按 1km/3km/5km、還沒授權定位時彈出的說明 modal。
@@ -1527,7 +1552,7 @@ function renderScheduleResults(rows, onlyTeacher){
       bell.dataset.startTime = c.startTime;
       if (existing) bell.dataset.reminderId = existing.id;
       line.appendChild(bell);
-      setResultRowNotifyLine(bell, existing && existing.remindAt);
+      setResultRowNotifyLine(bell, existing);
     }
     area.appendChild(line);
   });
