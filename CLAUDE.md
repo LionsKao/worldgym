@@ -186,11 +186,13 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 
 **我的最愛的編輯**：最愛只存在 localStorage `wg_favorites`（`{label, icon, color, state}` 陣列），**沒有 id，用陣列位置辨識**。入口是長按晶片約 0.5 秒（`script.js` 的 `bindFavoriteLongPress`；桌機右鍵、鍵盤 Menu 鍵走 `contextmenu`），短按仍是套用並查詢，所以編輯不能綁在一般點擊上。編輯與新增共用 `#addFavoriteModal`，`favEdit` 是 `null` 就是新增模式，否則是編輯模式（`{target, chip, index, newIndex, total}`，儲存／刪除前用 `target` 的內容在最新的清單裡重新找，多個分頁同時開著時才不會改到別顆）；編輯只改名稱／圖示／顏色／順序，`state`（篩選條件）不動，要改條件就刪了重建。編輯視窗的垃圾桶按了就直接刪，**刻意沒有二次確認**（使用者決定）；資料先寫回 localStorage，被刪的晶片再跑 `.removing` 動畫（`style.css` 的 `fav-remove`，時間要跟 `script.js` 的 `FAV_REMOVE_ANIM_MS` 一致；使用者設了「減少動態效果」就跳過），動畫結束才重畫清單。編輯與刪除只送 GA 事件（`edit_favorite`、`delete_favorite`），**不打 `/trackFavorite`**（後端白名單只收 `add`／`apply`，`favorite_events` 只統計建立與使用）。長按沒有可見提示，靠空狀態文字與「第一次新增最愛後出現一次提示」（localStorage `wg_fav_edit_hint_seen`，看過提示、或真的開過編輯視窗就記下，不再提示）補強；**暫時的 `FAV_EDIT_NOTICE`：編輯功能剛上線時，給已經有最愛的舊使用者一顆接在最愛後面、彩虹底色會流動的「最愛可以編輯了！長按試試」pill，只在 2026-11-01 之前、且尚未記為看過時顯示；pill 完整出現在畫面上連續滿 2 秒才算看過（所以下次載入就不再出現），點一下則收合並立刻記為看過。2026-11-01 之後要把 `FAV_EDIT_NOTICE` 相關程式（搜尋這個字串）、`style.css` 的 `.fav-edit-notice`／`fav-rainbow`、`GA_EVENTS.md` 兩個 `fav_edit_notice_*` 事件、這段說明整個刪掉，並把版號加一**；`.fav-item` 的 `user-select:none`／`-webkit-touch-callout:none` 是防 iOS 長按選字，別拿掉。
 
+**清除記憶分兩顆按鈕**（設定列的「清除記憶」→ `#clearMemoryModal`，`script.js` 的 `FILTER_MEMORY_KEYS`）：「清除篩選記憶」清勾選條件（`wg_selected_*`）、常用排序（`wg_*_clicks`）、分店地區展開狀態（`wg_zone_states`）後重新整理；「清除我的最愛」只清 `wg_favorites` 並重畫最愛列（不重新整理）。兩顆都沒有二次確認（視窗本身就是確認）。**不再整個 `localStorage.clear()`**：`wg_client_id`（清掉會讓同一個人在最愛統計裡變成新使用者）、`wg_remind_minutes`、`wg_fav_edit_hint_seen`、`wg_debug_force_pwa` 都保留。新增「篩選記憶」類的 localStorage key 時要記得加進 `FILTER_MEMORY_KEYS`。GA 事件 `clear_memory` 帶 `memory_type`（`filters`／`favorites`）。
+
 網站沒有帳號系統，「幾個人」的統計靠前端 `localStorage` 存的匿名 `wg_client_id`（`crypto.randomUUID()`），後端用 `COUNT(DISTINCT clientId)` 估算，不對應真實身分。
 
 ### 靜態資源快取
 **CSS、JS、icon 一律走 `_headers` 快取 30 天（`max-age=2592000`，不加 `immutable`，所以按重新整理仍會向伺服器確認）**：`style.css`、`script.js`、`common.js`、`admin.js`、`ga-init.js`、`css-async.js`、`vendor/*`、`icons/*`、`favicon.ico`。這套做法的前提是**所有引用處都帶 `?v=` 版號**，而且**內容改了就一定要把引用它的地方的版號加一**，否則使用者最久一個月看到舊的——改 JS／CSS／icon 時別忘了：
-- `style.css`：`index.html`、`admin.html`、`404.html` 三頁**要用同一個版號**（目前 114；以前三頁各自為政變成 104／73／45，後台和 404 頁會吃到舊樣式）。
+- `style.css`：`index.html`、`admin.html`、`404.html` 三頁**要用同一個版號**（目前 115；以前三頁各自為政變成 104／73／45，後台和 404 頁會吃到舊樣式）。
 - `script.js`（只有 `index.html`）、`admin.js`（只有 `admin.html`）、`common.js`（兩頁都引用，都要排在自己的 script 之前，改了要兩個檔案裡的 `common.js?v=` 一起更新）。
 - `ga-init.js`、`css-async.js`、`vendor/chart.umd.min.js`（`admin.html`，以及 `script.js` 的 `loadChartJs()`）：目前 `?v=1`，改了這些檔案就把 1 往上加。
 - `icons/*`：`index.html`（`og:image`、`twitter:image`、`apple-touch-icon`、QR code）、`manifest.json`、`sw.js`（通知圖示）都帶 `?v=1`，換圖就一起加。

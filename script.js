@@ -1417,10 +1417,24 @@ document.getElementById("clearMemoryCancelBtn").addEventListener("click", () => 
 document.getElementById("clearMemoryCloseBtn").addEventListener("click", () => {
   clearMemoryModal.classList.add("hidden");
 });
-document.getElementById("clearMemoryConfirmBtn").addEventListener("click", () => {
-  trackEvent("clear_memory", {});
-  localStorage.clear();
-  location.reload();
+// 「篩選記憶」＝勾選條件、常用排序（點擊次數）、分店地區展開狀態；新增這類記憶的 key 要加進來。
+// 其餘（wg_client_id、提醒分鐘、各種旗標）不清：清掉 wg_client_id 會讓同一個人在最愛統計裡變成新使用者。
+const FILTER_MEMORY_KEYS = [
+  ...SELECTION_STORAGE_KEYS,
+  "wg_branch_clicks", "wg_course_clicks", "wg_teacher_clicks",
+  "wg_zone_states",
+];
+// 兩顆按鈕按了就清，沒有第二次確認（這個視窗本身就是確認）。
+document.getElementById("clearFiltersMemoryBtn").addEventListener("click", () => {
+  trackEvent("clear_memory", { memory_type: "filters" });
+  FILTER_MEMORY_KEYS.forEach(removeStored);
+  location.reload(); // 排序與展開狀態是載入時套用的，重新整理最簡單
+});
+document.getElementById("clearFavoritesBtn").addEventListener("click", () => {
+  trackEvent("clear_memory", { memory_type: "favorites" });
+  removeStored(FAVORITES_KEY);
+  clearMemoryModal.classList.add("hidden");
+  renderFavorites();
 });
 
 // 頁面載入時課程/老師清單抓取失敗（伺服器或資料庫異常）跳出的提示 modal。

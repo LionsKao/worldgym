@@ -60,5 +60,5 @@
 | --- | --- | --- |
 | `click_github_icon` | 點擊頁面上的 GitHub 連結圖示 | 無 |
 | `click_admin_icon` | 點擊頁面上的後台管理連結圖示 | 無 |
-| `clear_memory` | 按下「清除本機資料」確認鈕（清空 `localStorage` 並重新整理）| 無 |
+| `clear_memory` | 在「清除記憶」視窗按下「清除篩選記憶」（勾選條件、常用排序、地區展開狀態；會重新整理）或「清除我的最愛」 | `memory_type`（`filters`／`favorites`） |
 | `send_message` | 透過「留言給站長」功能送出訊息成功 | 無 |

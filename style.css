@@ -306,6 +306,8 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 }
 .modal-text{ margin:0 0 18px; font-size:14px; color:var(--ink); font-weight:700; }
 .modal-actions{ display:flex; gap:10px; justify-content:center; }
+.modal-actions-stack{ flex-direction:column; } /* 直向排列：按鈕撐滿寬度、高度回到 .modal-btn 的 38px，不吃 flex:1 */
+.modal-actions-stack .modal-btn{ flex:none; }
 .modal-btn{
   flex:1; height:38px; border-radius:999px; font-weight:800; font-size:13px;
   cursor:pointer; font-family:inherit; border:1.5px solid var(--line); background:var(--paper); color:var(--sub);
