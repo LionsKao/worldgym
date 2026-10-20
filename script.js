@@ -1068,7 +1068,68 @@ function favoriteLabel(state){
   }
   return randomFunnyFavoriteLabel();
 }
-const FAVORITE_EMPTY_HINT = "現在可以自訂最愛，選好篩選後按「加到最愛」。";
+const FAVORITE_EMPTY_HINT = "選好篩選後按「加到最愛」，長按最愛可編輯。";
+function applyFavorite(fav){
+  applyFilterState(fav.state);
+  SELECTION_STORAGE_KEYS.forEach(removeStored);
+  FILTER_GROUPS.forEach(name => saveSelection(`wg_selected_${name}`, [name]));
+  updateResetButtonState();
+  trackEventOncePerSession("apply_favorite", fav.label, { favorite_label: fav.label });
+  logFavoriteEvent("apply");
+  searchTriggerSource = "favorite";
+  document.getElementById("filterForm").requestSubmit(document.getElementById("scheduleSubmitBtn"));
+}
+// 長按最愛晶片（約 0.5 秒）開編輯視窗；短按照舊套用並查詢。手指移動超過一小段距離（在捲動）或提早放開就取消。
+// 桌機右鍵、鍵盤的 Menu 鍵／Shift+F10 會觸發 contextmenu，也開編輯視窗。
+const FAV_LONG_PRESS_MS = 500;
+const FAV_PRESSING_FEEDBACK_MS = 250; // 按住這麼久才出現縮小的回饋，輕點時不閃
+const FAV_LONG_PRESS_MOVE_PX = 10;
+function bindFavoriteLongPress(btn, index, fav){
+  let longPressed = false; // 這次按壓已經開了編輯視窗，放手時接著來的 click 不能再套用
+  let timer = null;
+  let feedbackTimer = null;
+  let startX = 0;
+  let startY = 0;
+  const cancel = () => {
+    clearTimeout(timer);
+    clearTimeout(feedbackTimer);
+    timer = null;
+    btn.classList.remove("pressing");
+  };
+  btn.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return; // 滑鼠右鍵走 contextmenu
+    // 第二根手指（雙指縮放等）不是長按：把進行中的取消掉就好。不這樣的話第二次 pointerdown 會蓋掉 timer 變數，
+    // 第一根手指排的計時器就再也清不掉，放手後編輯視窗還是會跳出來。
+    cancel();
+    if (!e.isPrimary) return;
+    longPressed = false;
+    startX = e.clientX;
+    startY = e.clientY;
+    feedbackTimer = setTimeout(() => btn.classList.add("pressing"), FAV_PRESSING_FEEDBACK_MS);
+    timer = setTimeout(() => {
+      timer = null;
+      longPressed = true;
+      btn.classList.remove("pressing");
+      openFavoriteEditor(index, fav, btn);
+    }, FAV_LONG_PRESS_MS);
+  });
+  btn.addEventListener("pointermove", (e) => {
+    if (timer && Math.hypot(e.clientX - startX, e.clientY - startY) > FAV_LONG_PRESS_MOVE_PX) cancel();
+  });
+  ["pointerup", "pointercancel", "pointerleave"].forEach(type => btn.addEventListener(type, cancel));
+  btn.addEventListener("contextmenu", (e) => {
+    e.preventDefault(); // 擋掉 Android／桌機的系統選單
+    cancel();
+    longPressed = true;
+    openFavoriteEditor(index, fav, btn);
+  });
+  // 鍵盤按 Enter／空白鍵觸發的 click 沒有 pointerdown，要自己把殘留的旗標清掉，不然會被吃掉一次。
+  btn.addEventListener("keydown", () => { longPressed = false; });
+  btn.addEventListener("click", () => {
+    if (longPressed){ longPressed = false; return; }
+    applyFavorite(fav);
+  });
+}
 function renderFavorites(){
   const grid = document.getElementById("favoriteGrid");
   grid.querySelectorAll(".fav-item, .empty-hint").forEach(el => el.remove());
@@ -1077,24 +1138,16 @@ function renderFavorites(){
     grid.insertAdjacentHTML("beforeend", `<span class="empty-hint fav-empty-hint">${FAVORITE_EMPTY_HINT}</span>`);
     return;
   }
-  favs.forEach(fav => {
+  favs.forEach((fav, index) => {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "fav-item";
     btn.style.background = fav.color || "#e8604c";
     btn.innerHTML = `<i class="fa-solid fa-${escapeHtml(fav.icon || "heart")}"></i>${escapeHtml(fav.label)}`;
-    btn.addEventListener("click", () => {
-      applyFilterState(fav.state);
-      SELECTION_STORAGE_KEYS.forEach(removeStored);
-      FILTER_GROUPS.forEach(name => saveSelection(`wg_selected_${name}`, [name]));
-      updateResetButtonState();
-      trackEventOncePerSession("apply_favorite", fav.label, { favorite_label: fav.label });
-      logFavoriteEvent("apply");
-      searchTriggerSource = "favorite";
-      document.getElementById("filterForm").requestSubmit(document.getElementById("scheduleSubmitBtn"));
-    });
+    bindFavoriteLongPress(btn, index, fav);
     grid.appendChild(btn);
   });
+  appendFavEditNotice(grid); // FAV_EDIT_NOTICE（暫時，2026-11-01 下線）
 }
 
 const addFavoriteModal = document.getElementById("addFavoriteModal");
@@ -1103,36 +1156,258 @@ const favNameClearBtn = document.getElementById("favNameClearBtn");
 function syncFavNameClearBtn(){
   favNameClearBtn.classList.toggle("visible", favNameInput.value !== "");
 }
-document.getElementById("addFavoriteBtn").addEventListener("click", () => {
-  favNameInput.value = favoriteLabel(currentFilterState());
+// 新增與編輯共用 #addFavoriteModal：favEdit 是 null 就是新增模式，否則是編輯模式，內容是
+// { target, chip, index, newIndex, total }：
+//   target   開窗當下那顆最愛的內容。最愛沒有 id，位置在多個分頁同時開著時會對不上（別的分頁刪了前面一顆，
+//            位置就整個前移），所以儲存／刪除前先用內容（sameFavorite）在最新的清單裡重新找，找不到就不動任何一顆；
+//   chip     被長按的那顆晶片（刪除動畫要收合的就是它）；
+//   index    開窗時 target 在清單裡的位置；newIndex 是視窗裡暫存的新順序，按儲存才生效，取消不動；total 是當時的總數。
+// 編輯專用的控制項（順序列、刪除鈕、標題的鉛筆）只在編輯模式顯示。
+let favEdit = null;
+const favModalSubmitBtn = document.getElementById("favModalSubmitBtn");
+function sameFavorite(a, b){
+  return !!a && a.label === b.label && a.icon === b.icon && a.color === b.color
+    && JSON.stringify(a.state) === JSON.stringify(b.state);
+}
+// 在目前的清單裡找 target：先看原本的位置，再找內容一樣的；找不到（被別的分頁改掉或刪掉）回 -1。
+function findFavoriteIndex(favs, target, hintIndex){
+  if (sameFavorite(favs[hintIndex], target)) return hintIndex;
+  return favs.findIndex(f => sameFavorite(f, target));
+}
+const favModalTag = document.getElementById("favModalTag");
+const favModalTagIcon = document.getElementById("favModalTagIcon");
+const favOrderRow = document.getElementById("favOrderRow");
+const favMoveEarlierBtn = document.getElementById("favMoveEarlierBtn");
+const favMoveLaterBtn = document.getElementById("favMoveLaterBtn");
+const favOrderText = document.getElementById("favOrderText");
+const favDeleteBtn = document.getElementById("favDeleteBtn");
+function configureFavoriteModal(){
+  const editing = favEdit !== null;
+  favModalTag.setAttribute("aria-label", editing ? "編輯最愛" : "新增最愛");
+  favModalTagIcon.classList.toggle("fa-pen", editing);
+  favModalTagIcon.classList.toggle("fa-plus", !editing);
+  favDeleteBtn.classList.toggle("hidden", !editing);
+  favOrderRow.classList.toggle("hidden", !editing || favEdit.total < 2);
+  if (editing) updateFavOrderControls();
+}
+function updateFavOrderControls(){
+  favOrderText.textContent = `第 ${favEdit.newIndex + 1} / ${favEdit.total}`;
+  favMoveEarlierBtn.disabled = favEdit.newIndex <= 0;
+  favMoveLaterBtn.disabled = favEdit.newIndex >= favEdit.total - 1;
+}
+function closeFavoriteModal(){
+  addFavoriteModal.classList.add("hidden");
+  favEdit = null;
+}
+// 預填圖示／顏色：值來自 localStorage，不一定在預設選項裡（舊資料、自己用 devtools 改過的自訂圖示／顏色）。
+// 對不到就把整組取消勾選：畫面上沒有選取，儲存時沿用原值（checkedFavoriteValue 的 fallback），
+// 不會被上一次勾選的選項偷偷蓋掉。
+function checkFavoriteRadio(name, value){
+  const inputs = [...document.querySelectorAll(`input[name="${name}"]`)];
+  const match = inputs.find(el => el.value === value);
+  inputs.forEach(el => { el.checked = el === match; });
+}
+function checkedFavoriteValue(name, fallback){
+  return checkedValues(name)[0] ?? fallback;
+}
+// 新增模式一定要有選取：上一次編輯自訂圖示／顏色的最愛會留下「整組沒選」，補回每組的第一個。
+function ensureFavoriteRadioDefaults(){
+  ["favIcon", "favColor"].forEach(name => {
+    if (checkedValues(name).length === 0) document.querySelector(`input[name="${name}"]`).checked = true;
+  });
+}
+// 編輯模式：名稱／圖示／顏色／順序都跟開窗時一樣就不能儲存（沒東西好存）；新增模式永遠可以。
+function favFormChanged(){
+  if (!favEdit) return true;
+  const { target } = favEdit;
+  return favNameInput.value.trim() !== target.label
+    || checkedFavoriteValue("favIcon", target.icon) !== target.icon
+    || checkedFavoriteValue("favColor", target.color) !== target.color
+    || favEdit.newIndex !== favEdit.index;
+}
+function syncFavSubmitState(){
+  favModalSubmitBtn.disabled = !favFormChanged();
+}
+// 名稱欄的狀態同時影響清除鈕與儲存鈕，開窗、輸入、骰子、清除都走這個。
+function syncFavNameField(){
   syncFavNameClearBtn();
+  syncFavSubmitState();
+}
+function openFavoriteEditor(index, fav, chip){
+  if (!addFavoriteModal.classList.contains("hidden")) return; // 長按與 contextmenu 可能先後觸發，已經開著就不重複開
+  const favs = getFavorites();
+  const resolved = findFavoriteIndex(favs, fav, index);
+  if (resolved === -1){ renderFavorites(); return; } // 晶片是舊的（別的分頁改過清單）：重畫成最新的，不開視窗
+  const target = favs[resolved];
+  favEdit = { target, chip, index: resolved, newIndex: resolved, total: favs.length };
+  checkFavoriteRadio("favIcon", target.icon);
+  checkFavoriteRadio("favColor", target.color);
+  favNameInput.value = target.label;
+  configureFavoriteModal();
+  syncFavNameField();
+  markFavEditHintSeen(); // 都會開編輯視窗了，已經知道這個功能，以後不用再提示
+  removeFavEditNotice(); // FAV_EDIT_NOTICE（暫時，2026-11-01 下線）
+  addFavoriteModal.classList.remove("hidden");
+}
+document.getElementById("addFavoriteBtn").addEventListener("click", () => {
+  favEdit = null;
+  configureFavoriteModal();
+  ensureFavoriteRadioDefaults();
+  favNameInput.value = favoriteLabel(currentFilterState());
+  syncFavNameField();
   addFavoriteModal.classList.remove("hidden");
 });
-favNameInput.addEventListener("input", syncFavNameClearBtn);
+// 順序往前／往後移一格；到頭尾時按鈕是 disabled（updateFavOrderControls），點不到，不用再擋。
+function moveFavEditOrder(delta){
+  favEdit.newIndex += delta;
+  updateFavOrderControls();
+  syncFavSubmitState();
+}
+favMoveEarlierBtn.addEventListener("click", () => moveFavEditOrder(-1));
+favMoveLaterBtn.addEventListener("click", () => moveFavEditOrder(1));
+addFavoriteModal.addEventListener("change", syncFavSubmitState); // 圖示／顏色 radio
+// 在最新的清單裡找出正在編輯的那一顆；找不到（開著視窗時被別的分頁改掉或刪掉）就關窗、重畫成最新的，回 -1，不動別顆。
+function resolveFavEditIndex(favs){
+  const current = findFavoriteIndex(favs, favEdit.target, favEdit.index);
+  if (current === -1){ closeFavoriteModal(); renderFavorites(); }
+  return current;
+}
+// 晶片收合消失：套 .removing 動畫（style.css 的 fav-remove），結束後呼叫 done（只呼叫一次）。
+// 資料都在動畫開始前就處理好了，動畫只是視覺；使用者設了「減少動態效果」就直接 done。
+const FAV_REMOVE_START_DELAY_MS = 180; // 刪除：等編輯視窗淡出（.2s）完，不然動畫被灰幕蓋住
+const FAV_COLLAPSE_FALLBACK_MS = 1000; // animationend 沒來（分頁在背景等）時的保險，只要比動畫長就好
+function collapseChip(chip, done){
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches){ done(); return; }
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    done();
+  };
+  chip.style.setProperty("--fav-w", `${chip.offsetWidth}px`); // 寬度收合動畫的起點，要先量好
+  chip.classList.add("removing");
+  chip.addEventListener("animationend", finish, { once: true });
+  setTimeout(finish, FAV_COLLAPSE_FALLBACK_MS);
+}
+// 按垃圾桶就直接刪，沒有二次確認（使用者決定）。
+favDeleteBtn.addEventListener("click", () => {
+  if (!favEdit) return;
+  const favs = getFavorites();
+  const current = resolveFavEditIndex(favs);
+  if (current === -1) return;
+  const [removed] = favs.splice(current, 1);
+  saveFavorites(favs);
+  trackEvent("delete_favorite", { favorite_label: removed.label });
+  const { chip } = favEdit;
+  closeFavoriteModal();
+  setTimeout(() => (chip.isConnected ? collapseChip(chip, renderFavorites) : renderFavorites()), FAV_REMOVE_START_DELAY_MS);
+});
+favNameInput.addEventListener("input", syncFavNameField);
 document.getElementById("favNameRandomBtn").addEventListener("click", () => {
   favNameInput.value = randomFunnyFavoriteLabel();
-  syncFavNameClearBtn();
+  syncFavNameField();
 });
 favNameClearBtn.addEventListener("click", () => {
   favNameInput.value = "";
-  syncFavNameClearBtn();
+  syncFavNameField();
   favNameInput.focus();
 });
-document.getElementById("favModalCloseBtn").addEventListener("click", () => {
-  addFavoriteModal.classList.add("hidden");
-});
-document.getElementById("favModalSubmitBtn").addEventListener("click", () => {
-  const icon = document.querySelector('input[name="favIcon"]:checked').value;
-  const color = document.querySelector('input[name="favColor"]:checked').value;
-  const name = document.getElementById("favNameInput").value.trim() || favoriteLabel(currentFilterState());
+document.getElementById("favModalCloseBtn").addEventListener("click", closeFavoriteModal);
+// 長按才開得了編輯視窗、沒有可見提示，所以第一次新增最愛後在新晶片上提醒一次（見下面 submit 處理的 showEditHint）。
+// 「已經知道長按可以編輯」的記號：看過提示、或真的開過編輯視窗，就不再提示（這個提示與下面暫時的提示 pill 共用）。
+const FAV_EDIT_HINT_KEY = "wg_fav_edit_hint_seen";
+function markFavEditHintSeen(){
+  writeStored(FAV_EDIT_HINT_KEY, "1");
+}
+favModalSubmitBtn.addEventListener("click", () => {
+  const typedName = favNameInput.value.trim();
   const favs = getFavorites();
-  favs.push({ label: name, icon, color, state: currentFilterState() });
+  if (!favEdit){
+    const icon = checkedValues("favIcon")[0]; // 新增模式的兩組 radio 一定有選取（ensureFavoriteRadioDefaults）
+    const color = checkedValues("favColor")[0];
+    const name = typedName || favoriteLabel(currentFilterState());
+    favs.push({ label: name, icon, color, state: currentFilterState() });
+    saveFavorites(favs);
+    trackEvent("add_favorite", { favorite_label: name });
+    logFavoriteEvent("add");
+    // 第一次新增最愛才提示長按可編輯：先記下再畫，這樣下面的「已經有最愛」提示 pill 就不會被建出來（同一個人不會看到兩種提示）。
+    const showEditHint = readStored(FAV_EDIT_HINT_KEY) !== "1";
+    if (showEditHint) markFavEditHintSeen();
+    renderFavorites();
+    closeFavoriteModal();
+    if (showEditHint) showPillWarning(document.getElementById("favoriteGrid").lastElementChild, "長按可編輯或刪除"); // 最後一個元素就是剛新增的那顆
+    return;
+  }
+  const current = resolveFavEditIndex(favs);
+  if (current === -1) return;
+  const old = favs[current];
+  const name = typedName || favoriteLabel(old.state || {});
+  const icon = checkedFavoriteValue("favIcon", old.icon); // 自訂圖示／顏色沒被改就沿用原值
+  const color = checkedFavoriteValue("favColor", old.color);
+  // 只改名稱／圖示／顏色，state（篩選條件）原封不動；先拿掉、再插到新順序的位置。
+  // 沒調順序就留在目前的位置（別的分頁在前面增減過的話，開窗時的位置已經不準，不能拿來插回去）。
+  const insertAt = favEdit.newIndex === favEdit.index ? current : favEdit.newIndex;
+  favs.splice(current, 1);
+  favs.splice(insertAt, 0, { ...old, label: name, icon, color });
   saveFavorites(favs);
-  trackEvent("add_favorite", { favorite_label: name });
-  logFavoriteEvent("add");
+  trackEvent("edit_favorite", { favorite_label: name });
   renderFavorites();
-  addFavoriteModal.classList.add("hidden");
+  closeFavoriteModal();
 });
+
+// FAV_EDIT_NOTICE（暫時，2026-11-01 下線）：編輯功能剛上線時，給「已經有最愛」的舊使用者的一次性提示 pill，
+// 長得像最愛晶片、接在所有最愛後面，用會流動的彩虹底色。只在 FAV_EDIT_NOTICE_END_DATE 之前顯示；
+// 「看過」的定義是 pill 完整出現在畫面上連續滿 FAV_EDIT_NOTICE_SEEN_MS（載入遮罩還在、分頁在背景、最愛列被藏起來
+// ——例如分享連結直接顯示查詢結果——都不算），滿了才寫記號，所以下一次載入就不再出現；點一下則收合並立刻記為看過。
+// 永久程式碼只在兩處碰到它：renderFavorites 呼叫 appendFavEditNotice、openFavoriteEditor 呼叫 removeFavEditNotice
+// （都標了 FAV_EDIT_NOTICE）。下線時整段刪掉（本段、那兩個呼叫、style.css 的 .fav-edit-notice 與 fav-rainbow、
+// GA_EVENTS.md 兩個事件、CLAUDE.md 的說明）。
+const FAV_EDIT_NOTICE_END_DATE = "2026-11-01"; // 這天起（台灣日期）不再顯示
+const FAV_EDIT_NOTICE_SEEN_MS = 2000;
+const FAV_EDIT_NOTICE_TICK_MS = 500;
+const FAV_EDIT_NOTICE_MAX_TICKS = 600; // 一直沒看到（例如停在查詢結果頁）時 5 分鐘後就不再偵測
+function favEditNoticeActive(){
+  return readStored(FAV_EDIT_HINT_KEY) !== "1" && todayIso() < FAV_EDIT_NOTICE_END_DATE; // 便宜的檢查放前面，todayIso() 要建 Intl 格式器
+}
+function removeFavEditNotice(){
+  document.querySelector("#favoriteGrid .fav-edit-notice")?.remove();
+}
+// 整顆 pill 都在畫面內：沒被藏起來、載入遮罩已經消失、分頁在前景。
+function isFavEditNoticeOnScreen(el){
+  if (document.hidden || document.getElementById("loadingOverlay")) return false;
+  const r = el.getBoundingClientRect();
+  return r.width > 0 && r.height > 0 && r.top >= 0 && r.left >= 0
+    && r.bottom <= window.innerHeight && r.right <= window.innerWidth;
+}
+function watchFavEditNoticeSeen(el){
+  let visibleMs = 0;
+  let ticks = 0;
+  const timer = setInterval(() => {
+    if (!el.isConnected || ++ticks > FAV_EDIT_NOTICE_MAX_TICKS){ clearInterval(timer); return; }
+    if (!isFavEditNoticeOnScreen(el)){ visibleMs = 0; return; } // 要連續滿 2 秒，中途離開畫面就重算
+    visibleMs += FAV_EDIT_NOTICE_TICK_MS;
+    if (visibleMs < FAV_EDIT_NOTICE_SEEN_MS) return;
+    clearInterval(timer);
+    markFavEditHintSeen();
+    trackEvent("fav_edit_notice_shown", {});
+  }, FAV_EDIT_NOTICE_TICK_MS);
+}
+function appendFavEditNotice(grid){
+  if (!favEditNoticeActive()) return;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "fav-item fav-edit-notice";
+  btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i>最愛可以編輯了！長按試試';
+  btn.addEventListener("click", () => {
+    markFavEditHintSeen();
+    trackEvent("fav_edit_notice_dismiss", {});
+    btn.disabled = true; // 收合動畫期間不要再被點
+    collapseChip(btn, () => btn.remove());
+  });
+  grid.appendChild(btn);
+  watchFavEditNoticeSeen(btn);
+}
+
 const clearMemoryModal = document.getElementById("clearMemoryModal");
 document.getElementById("clearMemoryBtn").addEventListener("click", () => {
   clearMemoryModal.classList.remove("hidden");

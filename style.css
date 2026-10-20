@@ -314,7 +314,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 .modal-btn:hover{ border-color:var(--sub); }
 .modal-btn:disabled{ background:#ccc; color:#999; border-color:#ccc; cursor:not-allowed; }
 .modal-btn-confirm{ background:var(--coral); color:#fff; border-color:var(--coral); }
-.modal-btn-confirm:hover{ background:#d8543f; border-color:#d8543f; }
+.modal-btn-confirm:hover:not(:disabled){ background:#d8543f; border-color:#d8543f; }
 
 .fav-modal-box{ position:relative; text-align:left; max-width:340px; }
 .modal-close-btn{
@@ -324,6 +324,21 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 }
 .fav-modal-box .modal-close-btn{ top:22px; }
 .fav-modal-field{ margin-bottom:16px; }
+/* 編輯最愛時才出現的控制項：順序（往前／往後移）與刪除。新增模式 JS 會把它們藏起來。 */
+.fav-order-row{ display:flex; align-items:center; justify-content:space-between; }
+.fav-order-row.hidden{ display:none; }
+.fav-order-label{ font-size:13px; color:var(--sub); }
+.fav-order-ctrl{ display:flex; align-items:center; gap:10px; }
+.fav-order-text{ min-width:56px; text-align:center; font-size:13px; }
+.fav-order-btn{
+  width:30px; height:30px; border-radius:50%; border:1.5px solid var(--line); background:var(--paper);
+  color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:13px;
+  transition:border-color .2s ease;
+}
+.fav-order-btn:hover:not(:disabled){ border-color:var(--sub); }
+.fav-order-btn:disabled{ opacity:.3; cursor:default; }
+.fav-delete-btn{ flex:0 0 46px; font-size:15px; color:#c0392b; } /* 邊框、hover 邊框、隱藏（.hidden）都沿用 .modal-btn */
+.fav-delete-btn:hover{ background:#fdf1ef; }
 .fav-name-row{ display:flex; gap:8px; }
 .fav-name-row .section-search{ flex:1; min-width:0; margin-bottom:0; }
 .fav-name-random-btn{
@@ -367,6 +382,29 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
   display:inline-flex; align-items:center; box-sizing:border-box; height:31px;
   padding:0 14px; border-radius:999px; border:none; cursor:pointer;
   font-size:12.5px; font-weight:800; color:#fff; font-family:inherit;
+  /* 長按會開編輯視窗：擋掉 iOS 長按的選字／預覽選單與雙擊縮放。 */
+  -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; touch-action:manipulation;
+  transition:transform .15s ease;
+}
+.fav-item.pressing{ transform:scale(.94); }
+/* FAV_EDIT_NOTICE（暫時，2026-11-01 下線）：給「已經有最愛」的使用者的一次性提示 pill，形狀沿用 .fav-item。
+   彩虹放在 ::before（兩個循環並排，寬度是 pill 的 600%），只用 transform 平移一個循環：transform 動畫在合成層跑，
+   不像動 background-position 每一影格都要重繪；isolation 加 z-index:-1 讓它墊在文字後面，overflow:hidden 沿用 pill 的圓角裁切。 */
+.fav-item.fav-edit-notice{ position:relative; overflow:hidden; isolation:isolate; text-shadow:0 1px 2px rgba(0,0,0,.45); }
+.fav-item.fav-edit-notice::before{
+  content:""; position:absolute; top:0; bottom:0; left:0; width:600%; z-index:-1;
+  background:linear-gradient(90deg,#e5484d,#e8741e,#d99a00,#2fa36b,#2f7de1,#7c5ce0,#e5484d) 0 0 / 50% 100% repeat-x;
+  animation:fav-rainbow 4s linear infinite;
+}
+@keyframes fav-rainbow{ from{ transform:translateX(0); } to{ transform:translateX(-50%); } }
+@media (prefers-reduced-motion:reduce){ .fav-item.fav-edit-notice::before{ animation:none; } }
+/* 刪除最愛：先微微放大，再縮小淡出並把寬度收合到 0（--fav-w 是 JS 量好的原寬；margin-right 的 -6px 抵掉
+   .pill-grid 的 gap，旁邊的晶片才會順順地補上來）。JS 只用 animationend 收尾，沒有對應的時間常數。 */
+.fav-item.removing{ overflow:hidden; white-space:nowrap; pointer-events:none; animation:fav-remove .3s ease forwards; }
+@keyframes fav-remove{
+  0%{ opacity:1; transform:scale(1); max-width:var(--fav-w); }
+  30%{ opacity:1; transform:scale(1.08); max-width:var(--fav-w); }
+  100%{ opacity:0; transform:scale(.4); max-width:0; padding-left:0; padding-right:0; margin-right:-6px; }
 }
 .fav-item i{ padding-right:6px; }
 

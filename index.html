@@ -77,7 +77,7 @@
 <link rel="preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha384-PPIZEGYM1v8zp5Py7UjFb79S58UeqCL9pYVnVPURKEqvioPROaVAJKKLzvH2rDnI" crossorigin="anonymous">
 <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha384-PPIZEGYM1v8zp5Py7UjFb79S58UeqCL9pYVnVPURKEqvioPROaVAJKKLzvH2rDnI" crossorigin="anonymous"></noscript>
 <script src="css-async.js?v=1"></script>
-<link rel="stylesheet" href="style.css?v=106">
+<link rel="stylesheet" href="style.css?v=112">
 <style>#loadingOverlay{position:fixed;top:0;left:0;width:100%;height:100%;background:#fff;z-index:9999;}</style>
 <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "8513ca23d1fc42f2af05b18ff29c709d"}'></script><!-- End Cloudflare Web Analytics -->
 </head>
@@ -548,7 +548,7 @@
 <div id="addFavoriteModal" class="modal-overlay hidden">
   <div class="modal-box fav-modal-box">
     <button type="button" class="modal-close-btn" id="favModalCloseBtn" aria-label="取消"><i class="fa-solid fa-xmark"></i></button>
-    <p class="modal-text" style="padding-right:24px"><span class="section-tag" role="img" aria-label="新增最愛" style="--accent:var(--coral)"><i class="fa-solid fa-heart"></i><i class="fa-solid fa-fw fa-plus"></i></span></p>
+    <p class="modal-text" style="padding-right:24px"><span class="section-tag" id="favModalTag" role="img" aria-label="新增最愛" style="--accent:var(--coral)"><i class="fa-solid fa-heart"></i><i class="fa-solid fa-fw fa-plus" id="favModalTagIcon"></i></span></p>
 
     <div class="fav-modal-field">
       <div class="fav-icon-options">
@@ -612,13 +612,23 @@
       </div>
     </div>
 
+    <div class="fav-modal-field fav-order-row hidden" id="favOrderRow">
+      <span class="fav-order-label">順序</span>
+      <span class="fav-order-ctrl">
+        <button type="button" class="fav-order-btn" id="favMoveEarlierBtn" aria-label="往前移"><i class="fa-solid fa-arrow-left"></i></button>
+        <span class="fav-order-text" id="favOrderText"></span>
+        <button type="button" class="fav-order-btn" id="favMoveLaterBtn" aria-label="往後移"><i class="fa-solid fa-arrow-right"></i></button>
+      </span>
+    </div>
+
     <div class="modal-actions">
+      <button type="button" class="modal-btn fav-delete-btn hidden" id="favDeleteBtn" aria-label="刪除"><i class="fa-solid fa-trash"></i></button>
       <button type="button" class="modal-btn modal-btn-confirm" id="favModalSubmitBtn" aria-label="送出"><i class="fa-solid fa-floppy-disk"></i></button>
     </div>
   </div>
 </div>
 
 <script src="common.js?v=4"></script>
-<script src="script.js?v=138"></script>
+<script src="script.js?v=146"></script>
 </body>
 </html>

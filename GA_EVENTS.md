@@ -21,6 +21,10 @@
 | --- | --- | --- |
 | `add_favorite` | 把目前篩選條件存成一筆最愛 | `favorite_label` 最愛名稱 |
 | `apply_favorite`（每個最愛每個 session 只送一次）| 點某個已存的最愛套用篩選 | `favorite_label` |
+| `edit_favorite` | 長按（桌機右鍵）最愛開編輯視窗，儲存名稱／圖示／顏色／順序的修改 | `favorite_label` 儲存後的名稱 |
+| `delete_favorite` | 在編輯視窗按垃圾桶刪除某個最愛 | `favorite_label` |
+| `fav_edit_notice_shown`（暫時，2026-11-01 下線）| 「最愛可以編輯了」提示 pill 完整出現在畫面上連續滿 2 秒，記為看過 | 無 |
+| `fav_edit_notice_dismiss`（暫時，2026-11-01 下線）| 點了提示 pill 把它收起來 | 無 |
 
 ## 課前推播提醒
 
