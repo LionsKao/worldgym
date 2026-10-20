@@ -182,13 +182,15 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 
 **公開打點端點要驗證內容，不能什麼字串都收**：`/trackSearchEvents` 的名稱會原封不動出現在首頁公開排行榜，所以分店名稱必須在 `branches-seed.js` 裡（跟前端分店 pill 文字一致）、老師/課程名稱必須在 `meta_filter_options`（前端選項的來源，isolate 內快取 5 分鐘），不在名單的值靜默丟掉；`/trackFavorite` 的 `clientId` 必須是 UUID 格式。新增會顯示在公開頁面上的打點時照這個原則做。
 
+**縮課日標記**：國定假日（含補假）當天，分店改用假日課表，開課時間全部落在整點或 30 分（平常平日是每堂隔 10 分鐘），官方資料沒有任何假日欄位。`script.js` 的 `REDUCED_SCHEDULE_DATES`（目前 `2026-10-26` 光復節補假）是**人工維護的日期清單**，結果列只有「日期在清單裡、而且開課時間是整點或 30 分」的課才會把「週一」這類星期兩個字變成紅色（`.result-reduced-weekday`，用 `--coral`、跟最愛預設的紅同一個；只改顏色，沒有圖示、日期或提示）；加上開課時間這個條件是因為同一天有些分店（實測 10/26 約 16 間）沒有縮課，不該被誤標。**每次有新的補假日期就要手動加進清單**；只列平日的假日，因為週末本來就是整點或 30 分的課表（實測週六日有 9 成分店也是），不能單靠開課時間判斷。資料庫只存今天起 8 天內的完整課表，第 8～14 天只有代課，所以假日在 8 天以外時，列出來的只有代課、紅字也看不到完整情況。
+
 **我的最愛的編輯**：最愛只存在 localStorage `wg_favorites`（`{label, icon, color, state}` 陣列），**沒有 id，用陣列位置辨識**。入口是長按晶片約 0.5 秒（`script.js` 的 `bindFavoriteLongPress`；桌機右鍵、鍵盤 Menu 鍵走 `contextmenu`），短按仍是套用並查詢，所以編輯不能綁在一般點擊上。編輯與新增共用 `#addFavoriteModal`，`favEdit` 是 `null` 就是新增模式，否則是編輯模式（`{target, chip, index, newIndex, total}`，儲存／刪除前用 `target` 的內容在最新的清單裡重新找，多個分頁同時開著時才不會改到別顆）；編輯只改名稱／圖示／顏色／順序，`state`（篩選條件）不動，要改條件就刪了重建。編輯視窗的垃圾桶按了就直接刪，**刻意沒有二次確認**（使用者決定）；資料先寫回 localStorage，被刪的晶片再跑 `.removing` 動畫（`style.css` 的 `fav-remove`，時間要跟 `script.js` 的 `FAV_REMOVE_ANIM_MS` 一致；使用者設了「減少動態效果」就跳過），動畫結束才重畫清單。編輯與刪除只送 GA 事件（`edit_favorite`、`delete_favorite`），**不打 `/trackFavorite`**（後端白名單只收 `add`／`apply`，`favorite_events` 只統計建立與使用）。長按沒有可見提示，靠空狀態文字與「第一次新增最愛後出現一次提示」（localStorage `wg_fav_edit_hint_seen`，看過提示、或真的開過編輯視窗就記下，不再提示）補強；**暫時的 `FAV_EDIT_NOTICE`：編輯功能剛上線時，給已經有最愛的舊使用者一顆接在最愛後面、彩虹底色會流動的「最愛可以編輯了！長按試試」pill，只在 2026-11-01 之前、且尚未記為看過時顯示；pill 完整出現在畫面上連續滿 2 秒才算看過（所以下次載入就不再出現），點一下則收合並立刻記為看過。2026-11-01 之後要把 `FAV_EDIT_NOTICE` 相關程式（搜尋這個字串）、`style.css` 的 `.fav-edit-notice`／`fav-rainbow`、`GA_EVENTS.md` 兩個 `fav_edit_notice_*` 事件、這段說明整個刪掉，並把版號加一**；`.fav-item` 的 `user-select:none`／`-webkit-touch-callout:none` 是防 iOS 長按選字，別拿掉。
 
 網站沒有帳號系統，「幾個人」的統計靠前端 `localStorage` 存的匿名 `wg_client_id`（`crypto.randomUUID()`），後端用 `COUNT(DISTINCT clientId)` 估算，不對應真實身分。
 
 ### 靜態資源快取
 **CSS、JS、icon 一律走 `_headers` 快取 30 天（`max-age=2592000`，不加 `immutable`，所以按重新整理仍會向伺服器確認）**：`style.css`、`script.js`、`common.js`、`admin.js`、`ga-init.js`、`css-async.js`、`vendor/*`、`icons/*`、`favicon.ico`。這套做法的前提是**所有引用處都帶 `?v=` 版號**，而且**內容改了就一定要把引用它的地方的版號加一**，否則使用者最久一個月看到舊的——改 JS／CSS／icon 時別忘了：
-- `style.css`：`index.html`、`admin.html`、`404.html` 三頁**要用同一個版號**（目前 112；以前三頁各自為政變成 104／73／45，後台和 404 頁會吃到舊樣式）。
+- `style.css`：`index.html`、`admin.html`、`404.html` 三頁**要用同一個版號**（目前 114；以前三頁各自為政變成 104／73／45，後台和 404 頁會吃到舊樣式）。
 - `script.js`（只有 `index.html`）、`admin.js`（只有 `admin.html`）、`common.js`（兩頁都引用，都要排在自己的 script 之前，改了要兩個檔案裡的 `common.js?v=` 一起更新）。
 - `ga-init.js`、`css-async.js`、`vendor/chart.umd.min.js`（`admin.html`，以及 `script.js` 的 `loadChartJs()`）：目前 `?v=1`，改了這些檔案就把 1 往上加。
 - `icons/*`：`index.html`（`og:image`、`twitter:image`、`apple-touch-icon`、QR code）、`manifest.json`、`sw.js`（通知圖示）都帶 `?v=1`，換圖就一起加。

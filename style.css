@@ -437,6 +437,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 .result-row-content{ min-width:0; }
 .result-row.flagged{ border-color:var(--line); background:var(--paper); }
 .result-flag-icon{ color:#f0b400; padding-right:6px; }
+.result-reduced-weekday{ color:var(--coral); } /* 縮課日的課：星期兩個字用最愛預設的那個紅（--coral），不是鮮紅 */
 .teacher-link{
   color:#c9922e; cursor:pointer;
 }

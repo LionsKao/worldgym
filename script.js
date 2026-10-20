@@ -1781,6 +1781,14 @@ function renderTeacherGrid(){
 function reorderTeacherGrid(){
   reorderPillsByClicks(document.getElementById("teacherGrid"), "wg_teacher_clicks");
 }
+// 縮課日：國定假日（含補假）當天，分店改用假日課表，開課時間全部落在整點或 30 分（平常的平日是每堂隔 10 分鐘，
+// 例如 08:40、09:50）。官方資料沒有任何標記，所以靠人工維護日期，再加上「整點或 30 分開始」的條件：
+// 同一天裡沒有縮課的分店（開課時間還是平常的樣子）才不會被誤標。只列平日的假日，週末本來就是這種課表。
+// 每次有新的補假就把日期加進來；過期的日期留著無害，不用刪。
+const REDUCED_SCHEDULE_DATES = new Set(["2026-10-26"]); // 光復節補假
+function isReducedScheduleClass(c){
+  return REDUCED_SCHEDULE_DATES.has(c.date) && /(00|30)$/.test(c.startTime.replace(":", ""));
+}
 function renderScheduleResults(rows, onlyTeacher){
   const area = document.getElementById("resultArea");
   lastResultRows = rows;
@@ -1802,7 +1810,17 @@ function renderScheduleResults(rows, onlyTeacher){
       content.appendChild(icon);
       content.appendChild(document.createTextNode(`${c.date.slice(5).replace("-", "/")} `));
     }
-    content.appendChild(document.createTextNode(`${c.branchName} 週${WEEKDAY_LABEL[c.dayOfWeek]} ${c.startTime.replace(":", "")} ${c.className} `));
+    content.appendChild(document.createTextNode(`${c.branchName} `));
+    const weekdayText = `週${WEEKDAY_LABEL[c.dayOfWeek]}`;
+    if (isReducedScheduleClass(c)){
+      const weekday = document.createElement("span");
+      weekday.className = "result-reduced-weekday"; // 縮課日的課：星期兩個字變紅
+      weekday.textContent = weekdayText;
+      content.appendChild(weekday);
+    } else {
+      content.appendChild(document.createTextNode(weekdayText));
+    }
+    content.appendChild(document.createTextNode(` ${c.startTime.replace(":", "")} ${c.className} `));
     if (c.teacherName === onlyTeacher){
       content.appendChild(document.createTextNode(c.teacherName));
     } else {
