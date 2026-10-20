@@ -1053,9 +1053,8 @@ const FUNNY_DEFAULT_FAVORITE_LABELS = [
   "ㄅ級分 💯",
   "高麗菜煮蛋那桌 🥬",
   "留友看 👥",
-  "月月鳥好棒棒 👍",
-  "北市正常上班上課 🌀",
   "咕嚕咕嚕 🌀",
+  "聽君一席話，如聽一席話 🧠",
 ];
 function randomFunnyFavoriteLabel(){
   return FUNNY_DEFAULT_FAVORITE_LABELS[Math.floor(Math.random() * FUNNY_DEFAULT_FAVORITE_LABELS.length)];
