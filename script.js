@@ -1781,13 +1781,14 @@ function renderTeacherGrid(){
 function reorderTeacherGrid(){
   reorderPillsByClicks(document.getElementById("teacherGrid"), "wg_teacher_clicks");
 }
-// 縮課日：國定假日（含補假）當天，分店改用假日課表，開課時間全部落在整點或 30 分（平常的平日是每堂隔 10 分鐘，
-// 例如 08:40、09:50）。官方資料沒有任何標記，所以靠人工維護日期，再加上「整點或 30 分開始」的條件：
-// 同一天裡沒有縮課的分店（開課時間還是平常的樣子）才不會被誤標。只列平日的假日，週末本來就是這種課表。
+// 縮課日：國定假日（含補假）當天，分店改用假日課表，開課時間大多落在整點或 30 分（平常的平日是每堂隔 10 分鐘，
+// 例如 08:40、09:50）。官方資料沒有任何標記，開課時間也不是可靠的條件（10/26 實測有 16 間分店、33 堂課
+// 在 :10／:20／:40／:50 開始，例如長春 09:40 的瑜伽球，但整天仍是假日課表），所以只靠人工維護的日期：
+// 那天所有分店的所有課都算縮課。只列平日的假日，週末本來就是這種課表。
 // 每次有新的補假就把日期加進來；過期的日期留著無害，不用刪。
 const REDUCED_SCHEDULE_DATES = new Set(["2026-10-26"]); // 光復節補假
 function isReducedScheduleClass(c){
-  return REDUCED_SCHEDULE_DATES.has(c.date) && /(00|30)$/.test(c.startTime.replace(":", ""));
+  return REDUCED_SCHEDULE_DATES.has(c.date);
 }
 function renderScheduleResults(rows, onlyTeacher){
   const area = document.getElementById("resultArea");
