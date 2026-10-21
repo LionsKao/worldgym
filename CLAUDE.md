@@ -192,7 +192,7 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 
 ### 靜態資源快取
 **CSS、JS、icon 一律走 `_headers` 快取 30 天（`max-age=2592000`，不加 `immutable`，所以按重新整理仍會向伺服器確認）**：`style.css`、`script.js`、`common.js`、`admin.js`、`ga-init.js`、`css-async.js`、`vendor/*`、`icons/*`、`favicon.ico`。這套做法的前提是**所有引用處都帶 `?v=` 版號**，而且**內容改了就一定要把引用它的地方的版號加一**，否則使用者最久一個月看到舊的——改 JS／CSS／icon 時別忘了：
-- `style.css`：`index.html`、`admin.html`、`404.html` 三頁**要用同一個版號**（目前 115；以前三頁各自為政變成 104／73／45，後台和 404 頁會吃到舊樣式）。
+- `style.css`：`index.html`、`admin.html`、`404.html` 三頁**要用同一個版號**（目前 116；以前三頁各自為政變成 104／73／45，後台和 404 頁會吃到舊樣式）。
 - `script.js`（只有 `index.html`）、`admin.js`（只有 `admin.html`）、`common.js`（兩頁都引用，都要排在自己的 script 之前，改了要兩個檔案裡的 `common.js?v=` 一起更新）。
 - `ga-init.js`、`css-async.js`、`vendor/chart.umd.min.js`（`admin.html`，以及 `script.js` 的 `loadChartJs()`）：目前 `?v=1`，改了這些檔案就把 1 往上加。
 - `icons/*`：`index.html`（`og:image`、`twitter:image`、`apple-touch-icon`、QR code）、`manifest.json`、`sw.js`（通知圖示）都帶 `?v=1`，換圖就一起加。

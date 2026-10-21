@@ -42,7 +42,7 @@ body{
 .stripe-bar .s5{ background:var(--coral); flex-grow:2; }
 
 .sheet{
-  background:var(--paper); padding:24px 22px 26px; margin-bottom:15px;
+  background:var(--paper); padding:24px 22px; margin-bottom:15px;
   border-radius:20px; box-shadow:0 8px 24px rgba(0,0,0,0.08);
 }
 
@@ -305,6 +305,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
   box-shadow:0 8px 24px rgba(0,0,0,0.2); max-width:320px; width:90%; text-align:center;
 }
 .modal-text{ margin:0 0 18px; font-size:14px; color:var(--ink); font-weight:700; }
+.modal-text-icons{ display:flex; align-items:center; justify-content:center; gap:6px; font-size:13px; font-weight:800; } /* 圖示標題：字級、粗細、圖示間距同 .section-tag，但沒有底色 */
 .modal-actions{ display:flex; gap:10px; justify-content:center; }
 .modal-actions-stack{ flex-direction:column; } /* 直向排列：按鈕撐滿寬度、高度回到 .modal-btn 的 38px，不吃 flex:1 */
 .modal-actions-stack .modal-btn{ flex:none; }
@@ -436,6 +437,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
   padding:8px 14px; border:1.5px solid var(--line); border-radius:14px; margin-bottom:8px;
   font-size:13px; font-weight:700; color:var(--ink); background:var(--paper);
 }
+.result-row:last-child{ margin-bottom:0; } /* 最後一列不留下方間距，免得跟外層 .sheet 的 padding 疊在一起 */
 .result-row-content{ min-width:0; }
 .result-row.flagged{ border-color:var(--line); background:var(--paper); }
 .result-flag-icon{ color:#f0b400; padding-right:6px; }
@@ -535,7 +537,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 
 @media (max-width:480px){
   body{ padding:20px 10px 100px; }
-  .sheet{ padding:18px 14px 20px; border-radius:16px; }
+  .sheet{ padding:18px 10px; border-radius:16px; }
   .hero h1{ font-size:24px; }
 }
 
