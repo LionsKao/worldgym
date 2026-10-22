@@ -13,7 +13,9 @@ import { CRAWLER_UA_PATTERN } from "../worker/src/crawlers.js";
 // Search Console 抓 sitemap 的 UA 不一定在上面的白名單內，海外抓取被 403 會顯示「無法讀取 Sitemap」；
 // llms.txt 是給各家 AI 讀的站點摘要，AI 的抓取 UA 五花八門、清單永遠追不完，擋了就沒有意義。
 // 這三個檔只放摘要與分店網址索引，都是任何訪客本來就能公開查到的資訊。
-const PUBLIC_CRAWLER_PATHS = new Set(["/robots.txt", "/sitemap.xml", "/llms.txt"]);
+// /sitemap-static.xml：暫時的對照用靜態 sitemap（內容是某一刻的動態 sitemap 快照），用來診斷 Search Console
+// 一直顯示「無法讀取 Sitemap」是不是動態 Function 造成的；問題釐清後連同根目錄的 sitemap-static.xml 一起刪掉。
+const PUBLIC_CRAWLER_PATHS = new Set(["/robots.txt", "/sitemap.xml", "/sitemap-static.xml", "/llms.txt"]);
 
 // 部署會把整個 repo 根目錄當成靜態資源發布（Pages 不吃 .assetsignore），這些不是網站的一部分、
 // 不該被公開讀取：後端原始碼與設定、專案文件、工具設定檔、點開頭的檔案（.gitignore、.claude/ …）。
