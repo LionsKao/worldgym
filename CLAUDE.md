@@ -131,7 +131,7 @@ worker/
 | `meta_filter_options` | 篩選用課程/老師名稱清單快取（爬蟲跑完才更新；也是 `/trackSearchEvents` 驗證老師/課程名稱的來源） |
 | `reminders` | 課前推播提醒登記與發送狀態 |
 | `reminder_add_events` / `reminder_add_monthly` | 提醒功能使用量（只記「登記」次數） |
-| `ads` | 首頁廣告內容與上下架時間（沒有輪播，每次載入隨機挑一則）。橫幅 `#adBanner` 在 `index.html` 預設 `hidden`、沒有預設文字與連結，有生效中的廣告（或舊網域提示）才由 `script.js` 的 `initAdBanner()` 填內容並顯示——不要把預設改回顯示，否則沒廣告時載入會先閃一下再消失 |
+| `ads` | 首頁廣告內容與上下架時間（沒有輪播，每次載入隨機挑一則）。橫幅 `#adBanner` 在 `index.html` 預設 `hidden`、沒有預設文字與連結，有生效中的廣告（或舊網域提示、臨時公告）才由 `script.js` 的 `initAdBanner()` 填內容並顯示——不要把預設改回顯示，否則沒廣告時載入會先閃一下再消失。**臨時公告**（例如颱風提醒）是 `script.js` 的 `SITE_NOTICE`（`text` 文字＋ `endDate` 不含當天的結束日），純文字、沒有連結、圖示是 `fa-bullhorn`，今天（台灣）早於 `endDate` 才顯示、過期自動消失；優先順序「公告 > 舊網域提示 > 廣告」，公告期間不打 `/ads`、不送廣告點擊統計。要發新公告就改這兩個欄位並把 `script.js` 版號加一，不需要 migration |
 | `ad_events` / `ad_monthly` | 廣告曝光/點擊打點與月度彙總 |
 | `teacher_search_events` / `course_search_events` / `branch_search_events`（各有 `*_monthly`） | 老師/課程/分店查詢次數打點與月度彙總 |
 | `search_events` / `search_monthly` | 整體查詢次數與結果數 |
@@ -192,7 +192,7 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 
 ### 靜態資源快取
 **CSS、JS、icon 一律走 `_headers` 快取 30 天（`max-age=2592000`，不加 `immutable`，所以按重新整理仍會向伺服器確認）**：`style.css`、`script.js`、`common.js`、`admin.js`、`ga-init.js`、`css-async.js`、`vendor/*`、`icons/*`、`favicon.ico`。這套做法的前提是**所有引用處都帶 `?v=` 版號**，而且**內容改了就一定要把引用它的地方的版號加一**，否則使用者最久一個月看到舊的——改 JS／CSS／icon 時別忘了：
-- `style.css`：`index.html`、`admin.html`、`404.html` 三頁**要用同一個版號**（目前 116；以前三頁各自為政變成 104／73／45，後台和 404 頁會吃到舊樣式）。
+- `style.css`：`index.html`、`admin.html`、`404.html` 三頁**要用同一個版號**（目前 117；以前三頁各自為政變成 104／73／45，後台和 404 頁會吃到舊樣式）。
 - `script.js`（只有 `index.html`）、`admin.js`（只有 `admin.html`）、`common.js`（兩頁都引用，都要排在自己的 script 之前，改了要兩個檔案裡的 `common.js?v=` 一起更新）。
 - `ga-init.js`、`css-async.js`、`vendor/chart.umd.min.js`（`admin.html`，以及 `script.js` 的 `loadChartJs()`）：目前 `?v=1`，改了這些檔案就把 1 往上加。
 - `icons/*`：`index.html`（`og:image`、`twitter:image`、`apple-touch-icon`、QR code）、`manifest.json`、`sw.js`（通知圖示）都帶 `?v=1`，換圖就一起加。

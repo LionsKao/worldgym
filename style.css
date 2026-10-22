@@ -49,6 +49,7 @@ body{
 .ad-banner{
   display:flex; align-items:center; gap:12px; text-decoration:none; cursor:pointer;
 }
+.ad-banner:not([href]){ cursor:default; } /* 公告、舊網域提示沒有連結，不要顯示手指游標 */
 .ad-banner-tag{ flex-shrink:0; cursor:default; }
 .ad-banner-text-wrap{
   display:flex; flex-direction:column; justify-content:center;

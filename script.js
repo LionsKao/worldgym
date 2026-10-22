@@ -76,6 +76,16 @@ if (cameFromOldDomain){
   setTimeout(cleanOldDomainUtmFromUrl, 20000);
 }
 
+// 臨時公告（例如颱風提醒）：沿用廣告 banner 的位置，純文字、沒有連結；今天（台灣）早於 endDate 才顯示，
+// 過期自動消失。優先於舊網域提示與廣告，公告期間不載入廣告、也不送廣告點擊統計。
+// 下次要發公告就改 text 與 endDate（endDate 是「不含當天」的結束日），script.js 版號加一。
+const SITE_NOTICE = {
+  text: "颱風來囉，10/23 的課程可能受到影響，出門前請先看看官網的公告，大家注意安全喔！",
+  endDate: "2026-10-24", // 顯示到 10/23 當天，10/24 零點起不顯示
+};
+const siteNoticeActive = () => todayIso() < SITE_NOTICE.endDate; // todayIso 來自 common.js
+const showSiteNotice = siteNoticeActive(); // 載入時定一次：頁面開著跨過結束日也不會變成「看得到公告卻被當廣告統計」
+
 // 廣告文案：內容改由 D1 的 ads table 提供（上下架時間 + enabled 開關），
 // 首頁載入時打 /ads 拿目前生效中的廣告，隨機挑一則顯示，同一個工作階段（頁面沒重整）
 // 就固定顯示那一則，不會再輪播切換。每則廣告各自帶自己的連結，換廣告時同步換外層 <a> 的 href。
@@ -209,6 +219,15 @@ function initAdBanner(){
   const banner = document.getElementById("adBanner");
   const el = document.getElementById("adBannerText");
   if (!banner || !el) return;
+  if (showSiteNotice){
+    el.textContent = SITE_NOTICE.text;
+    banner.removeAttribute("href");
+    const tag = banner.querySelector(".ad-banner-tag");
+    tag.setAttribute("aria-label", "公告");
+    tag.innerHTML = '<i class="fa-solid fa-fw fa-bullhorn"></i>';
+    banner.classList.remove("hidden");
+    return;
+  }
   if (cameFromOldDomain){
     el.textContent = "📌 網址換囉！記得把新網址加進書籤，加完這行就會消失";
     banner.removeAttribute("href");
@@ -225,7 +244,7 @@ function initAdBanner(){
   banner.classList.remove("hidden");
   bufferAdImpression(AD_BANNERS[currentAdIndex].id);
 }
-if (cameFromOldDomain){
+if (showSiteNotice || cameFromOldDomain){
   initAdBanner();
 } else {
   fetch(`${WORKER_BASE}/ads`)
@@ -235,7 +254,7 @@ if (cameFromOldDomain){
     .finally(initAdBanner);
 }
 document.querySelector(".ad-banner")?.addEventListener("click", () => {
-  if (cameFromOldDomain) return;
+  if (showSiteNotice || cameFromOldDomain) return;
   trackEvent("click_ad_banner", { ad_text: document.getElementById("adBannerText")?.textContent });
   trackAdClick(AD_BANNERS[currentAdIndex]?.id);
 });
