@@ -93,7 +93,7 @@ export async function getFragment(context, branch) {
 // 不各自拼字串，避免日後兩邊不同步。
 function buildBranchMeta(branch) {
   return {
-    title: `World Gym ${branch.name} 分店（${branch.region}）團體課表｜課表查詢`,
+    title: `World Gym ${branch.name} 分店（${branch.region}）團體課表｜WG課表查詢`,
     ogTitle: `World Gym ${branch.name} 分店團體課表`,
     description: `World Gym ${branch.name} 分店（${branch.region}）團體教室每週課表：依星期列出上課時間、課程與老師，資料每日更新。`,
     // slug 版 canonical（見 branchUrl.js）；短代碼與 slug 兩種寫法的舊網址都會得到同一個 canonical。
@@ -105,8 +105,8 @@ function buildBranchMeta(branch) {
 const WEBSITE_NODE = {
   "@type": "WebSite",
   "@id": `${SITE_ORIGIN}/#website`,
-  name: "課表查詢",
-  alternateName: "WG課表查詢",
+  name: "WG課表查詢",
+  alternateName: "worldgym.pages.dev",
   url: `${SITE_ORIGIN}/`,
   description: "快速查詢 World Gym（WG）各分店課表、老師、時段。",
   inLanguage: "zh-TW",
