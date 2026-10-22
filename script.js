@@ -1290,22 +1290,32 @@ function resolveFavEditIndex(favs){
   if (current === -1){ closeFavoriteModal(); renderFavorites(); }
   return current;
 }
+// 使用者有沒有設「減少動態效果」：有的話，動畫要跳過、直接做最後的狀態。
+function prefersReducedMotion(){
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+// 等 el「自己」的 CSS 動畫結束就呼叫 done（只呼叫一次）：子元素的動畫結束事件會冒泡上來，那個不算；
+// animationend 沒來（分頁在背景等）時，fallbackMs 之後照樣呼叫，fallbackMs 只要比動畫長就好。
+// 兩條路誰先到誰收尾，另一條一併取消。
+function whenAnimationDone(el, fallbackMs, done){
+  const finish = () => {
+    clearTimeout(timer);
+    el.removeEventListener("animationend", onEnd);
+    done();
+  };
+  const onEnd = (e) => { if (e.target === el) finish(); };
+  const timer = setTimeout(finish, fallbackMs);
+  el.addEventListener("animationend", onEnd);
+}
 // 晶片收合消失：套 .removing 動畫（style.css 的 fav-remove），結束後呼叫 done（只呼叫一次）。
 // 資料都在動畫開始前就處理好了，動畫只是視覺；使用者設了「減少動態效果」就直接 done。
 const FAV_REMOVE_START_DELAY_MS = 180; // 刪除：等編輯視窗淡出（.2s）完，不然動畫被灰幕蓋住
-const FAV_COLLAPSE_FALLBACK_MS = 1000; // animationend 沒來（分頁在背景等）時的保險，只要比動畫長就好
+const FAV_COLLAPSE_FALLBACK_MS = 1000; // 比 fav-remove 的 .3 秒長就好
 function collapseChip(chip, done){
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches){ done(); return; }
-  let finished = false;
-  const finish = () => {
-    if (finished) return;
-    finished = true;
-    done();
-  };
+  if (prefersReducedMotion()){ done(); return; }
   chip.style.setProperty("--fav-w", `${chip.offsetWidth}px`); // 寬度收合動畫的起點，要先量好
   chip.classList.add("removing");
-  chip.addEventListener("animationend", finish, { once: true });
-  setTimeout(finish, FAV_COLLAPSE_FALLBACK_MS);
+  whenAnimationDone(chip, FAV_COLLAPSE_FALLBACK_MS, done);
 }
 // 按垃圾桶就直接刪，沒有二次確認（使用者決定）。
 favDeleteBtn.addEventListener("click", () => {
@@ -1665,6 +1675,7 @@ function renderActiveFilters(state){
     box.appendChild(tag);
   });
   if (!any) box.insertAdjacentHTML("beforeend", '<span class="active-filter-tag">未設定篩選條件，顯示全部</span>');
+  box.appendChild(createWindButton()); // 🌀 吹走課表，見 createWindButton；重新查詢會重畫出新的一顆
 }
 
 // 爬蟲排程每天 03:00/17:00（台灣時間）各跑一次，30 小時等於「今天兩次都沒跑成功」才會示警。
@@ -1824,8 +1835,98 @@ const REDUCED_SCHEDULE_DATES = new Set([
 function isReducedScheduleClass(c){
   return REDUCED_SCHEDULE_DATES.has(c.date);
 }
+// 🌀 按鈕（查詢結果上方篩選摘要列的最後一顆）：按下去，現在查詢出來的課表（不管哪一天）整批一起往右上方被風吹走，
+// 吹完原位留一行很慢漸入的小字，按鈕變成 🔄；再按一次，課程放回原位。純粹是畫面效果：資料沒變、不送統計、
+// 「複製結果」仍是原本查到的，重新查詢也會回來。以整列為單位，不拆成一個個字（結果最多 250 列）。
+const WIND_AWAY_FALLBACK_MS = 3000; // animationend 沒來時的保險計時，要比 CSS wind-blow 的 1.8 秒長
+const WIND_MAX_RISE_PX = 340; // --wind-y 最多往上飛這麼多；判斷哪些列「會被看到」時，畫面下緣要多算這一段
+// 飛行用的 CSS 變數（名稱、最小值、最大值、單位），每一列各自抽一組。大方向都是往右上方（x 正、y 負），
+// 但範圍抓得很寬（有的飛很遠、有的只飄一下，旋轉還可能反方向），看起來才像被風吹散。
+const WIND_VARS = [
+  ["--wind-x", 120, 620, "px"],
+  ["--wind-y", -WIND_MAX_RISE_PX, -40, "px"],
+  ["--wind-rotate", -30, 120, "deg"],
+  ["--wind-skew", -55, -5, "deg"],
+];
+let windAwayRun = 0;
+// 取消進行中的吹走效果：重畫結果、離開結果畫面（返回篩選頁、開通知頁）時呼叫，
+// 讓這個效果只存在於查詢結果畫面，不會跑到篩選頁，也不會留下暫時加在 body 上的樣式。
+function cancelWindAway(){
+  windAwayRun++;
+  document.body.classList.remove("wind-clip");
+}
+// 把結果區現有的課程列一起吹走 → 移除列、放一行小字，最後呼叫 onBlown(lines)（lines 是被移除的列，讓呼叫端存起來，
+// 之後 bringBackResults 放回去）。中途被 cancelWindAway() 取消（run 對不上）就什麼都不做、也不呼叫 onBlown。
+// 只有在畫面附近的列才做動畫（最多 250 列各自做模糊動畫太吃效能，畫面外的列看不到），其餘列留著、收尾時一起移除；
+// 設了「減少動態效果」就一列都不做動畫，直接收尾（這時 onBlown 會在這個函式回傳前就被呼叫，小字也不漸入，見 style.css）。
+function blowAwayResults(onBlown){
+  const area = document.getElementById("resultArea");
+  const lines = [...area.querySelectorAll(".result-row")];
+  const run = ++windAwayRun;
+  const finish = () => {
+    if (run !== windAwayRun) return;
+    document.body.classList.remove("wind-clip");
+    lines.forEach(line => line.remove());
+    area.insertAdjacentHTML("afterbegin", '<div class="wind-away-note">課程被颱風吹走了</div>');
+    onBlown(lines);
+  };
+  const moving = prefersReducedMotion() ? [] : lines.filter(line => {
+    const rect = line.getBoundingClientRect();
+    return rect.bottom > 0 && rect.top < window.innerHeight + WIND_MAX_RISE_PX;
+  });
+  if (moving.length === 0){ finish(); return; }
+  document.body.classList.add("wind-clip"); // 飛出頁面右側時不要冒出橫向捲軸
+  moving.forEach(line => {
+    WIND_VARS.forEach(([name, min, max, unit]) => {
+      line.style.setProperty(name, `${Math.round(min + Math.random() * (max - min))}${unit}`);
+    });
+    line.classList.add("wind-blowing");
+  });
+  whenAnimationDone(moving[0], WIND_AWAY_FALLBACK_MS, finish); // 飛的列同時開始、時間一樣，看第一列就夠
+}
+// 把被吹走的列依原本順序放回去、小字拿掉（飛行用的 --wind-* 變數留著無妨，下次吹走會重抽覆蓋）。
+function bringBackResults(lines){
+  const area = document.getElementById("resultArea");
+  area.querySelector(".wind-away-note")?.remove();
+  lines.forEach(line => {
+    line.classList.remove("wind-blowing");
+    area.appendChild(line);
+  });
+}
+// 篩選摘要列最後那顆 🌀／🔄 按鈕（renderActiveFilters 每次畫結果都做一顆新的）。
+function createWindButton(){
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "active-filter-tag wind-btn";
+  let blownLines = null; // 吹走後被移除的課程列，🔄 時放回去
+  // 吹走的動畫進行中按了沒反應；用 aria-disabled 而不是 disabled，按鈕才不會失去鍵盤焦點（disabled 會讓焦點掉到 body）。
+  let flying = false;
+  const sync = () => {
+    btn.textContent = blownLines ? "🔄" : "🌀";
+    btn.setAttribute("aria-label", blownLines ? "讓課表回來" : "把課表吹走");
+    btn.setAttribute("aria-disabled", String(flying));
+  };
+  btn.addEventListener("click", () => {
+    if (flying) return;
+    if (blownLines){
+      bringBackResults(blownLines);
+      blownLines = null;
+    } else {
+      flying = true;
+      blowAwayResults((lines) => {
+        blownLines = lines;
+        flying = false;
+        sync();
+      });
+    }
+    sync();
+  });
+  sync();
+  return btn;
+}
 function renderScheduleResults(rows, onlyTeacher){
   const area = document.getElementById("resultArea");
+  cancelWindAway(); // 重畫結果：上一批還沒吹完的效果作廢
   lastResultRows = rows;
   if (rows.length === 0){
     area.innerHTML = '<div class="empty-hint">沒有符合條件的課程，換個篩選條件試試看。</div>';
@@ -1931,6 +2032,7 @@ function fadeInView(el){
 }
 function showMailView(){
   trackEvent("open_reminder_list", {});
+  cancelWindAway();
   setHidden(["mainFormSheet", "settingsSheet", "favoriteSheet"], true);
   fadeInView(document.getElementById("reminderView"));
   fadeInView(document.getElementById("mailView"));
@@ -1942,6 +2044,7 @@ function showMailView(){
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 function showFilterView(){
+  cancelWindAway();
   setHidden(["resultView", "backBtnWrap", "reminderView", "mailView", "searchTrendSheet", "branchStatsSheet", "courseStatsSheet", "teacherStatsSheet", "mailDisclaimerSheet", "quickLinksSheet", "mailBackBtnWrap"], true);
   document.getElementById("mailContent").value = "";
   document.getElementById("mailContent").disabled = false;

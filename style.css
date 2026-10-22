@@ -439,6 +439,23 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
   font-size:13px; font-weight:700; color:var(--ink); background:var(--paper);
 }
 .result-row:last-child{ margin-bottom:0; } /* 最後一列不留下方間距，免得跟外層 .sheet 的 padding 疊在一起 */
+/* 🌀 吹走課表（script.js 的 blowAwayResults，行為說明在那裡）。--wind-x／-y／-rotate／-skew 由 JS 在加上
+   .wind-blowing 之前一定會設好；時間（1.8 秒）改了，script.js 的 WIND_AWAY_FALLBACK_MS 也要跟著檢查。
+   body.wind-clip 只在飛的時候暫時加上，避免飛出頁面右側冒出橫向捲軸。
+   .wind-btn 是篩選摘要列最後那顆 🌀／🔄 按鈕：底色、邊框、高度沿用 .active-filter-tag，只補按鈕要的游標與字型；
+   [aria-disabled="true"] 只在吹走的動畫進行中出現（用它而不是 :disabled，免得按鈕失去鍵盤焦點）。 */
+.active-filter-tag.wind-btn{ font-family:inherit; font-size:14px; line-height:1; cursor:pointer; }
+.active-filter-tag.wind-btn[aria-disabled="true"]{ opacity:.5; cursor:default; }
+.result-row.wind-blowing{ pointer-events:none; animation:wind-blow 1.8s ease-in forwards; }
+@keyframes wind-blow{
+  0%{ opacity:1; transform:translate(0,0) rotate(0deg) skewX(0deg); filter:blur(0); }
+  50%{ filter:blur(2px); }
+  100%{ opacity:0; transform:translate(var(--wind-x), var(--wind-y)) rotate(var(--wind-rotate)) skewX(var(--wind-skew)); filter:blur(20px); }
+}
+body.wind-clip{ overflow-x:hidden; }
+.wind-away-note{ padding:18px 0; text-align:center; font-size:13px; font-weight:700; color:var(--sub); animation:wind-note-in 3s ease-out; }
+@keyframes wind-note-in{ from{ opacity:0; } to{ opacity:1; } }
+@media (prefers-reduced-motion:reduce){ .wind-away-note{ animation:none; } }
 .result-row-content{ min-width:0; }
 .result-row.flagged{ border-color:var(--line); background:var(--paper); }
 .result-flag-icon{ color:#f0b400; padding-right:6px; }
