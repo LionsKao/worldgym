@@ -80,7 +80,7 @@ if (cameFromOldDomain){
 // 過期自動消失。優先於舊網域提示與廣告，公告期間不載入廣告、也不送廣告點擊統計。
 // 下次要發公告就改 text 與 endDate（endDate 是「不含當天」的結束日），script.js 版號加一。
 const SITE_NOTICE = {
-  text: "颱風來囉，10/23 的課程可能受到影響，出門前請先看看官網的公告，大家注意安全喔！",
+  text: "颱風來囉，10/23 的課程可能受到影響，出門前請先看看官網的公告，注意安全！",
   endDate: "2026-10-24", // 顯示到 10/23 當天，10/24 零點起不顯示
 };
 const siteNoticeActive = () => todayIso() < SITE_NOTICE.endDate; // todayIso 來自 common.js
