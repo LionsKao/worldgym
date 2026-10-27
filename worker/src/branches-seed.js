@@ -112,4 +112,5 @@ export default [
   { slug: "taoyuan-yiwen", name: "藝文", region: "桃園" },
   { slug: "miaoli-zhongzheng", name: "苗栗中正", region: "苗栗" },
   { slug: "changhua-xihu", name: "溪湖", region: "彰化" },
+  { slug: "taoyuan-bade", name: "八德", region: "桃園" },
 ];

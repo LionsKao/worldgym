@@ -69,4 +69,5 @@ export const EXCLUDED_BRANCHES = {
 // 它們出現在 sitemap 之後這裡的項目就沒作用了，可以順手刪掉。
 export const EXPECTED_MISSING_FROM_SITEMAP = {
   "taoyuan-yiwen": "桃園藝文：預售中、還沒蓋好，官網尚未建立分店頁，開始營業後才會有課表（2026-10-13 由網站擁有者確認）",
+  "taoyuan-bade": "桃園八德：2026-10-25 開始預售，官網 sitemap 尚未建立分店頁，開幕後才會有課表（2026-10-27 由網站擁有者確認）",
 };
