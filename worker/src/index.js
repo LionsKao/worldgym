@@ -775,7 +775,7 @@ export default {
 
   async scheduled(event, env, ctx) {
     // 每天台灣時間 03:00、17:00（UTC 19:00、09:00）各自動重抓一次全部分店，見 wrangler.toml 的 cron 設定。
-    // 這支爬蟲對每間分店（目前 110 間）逐一發出 subrequest，「單次執行」就用掉一百多個，
+    // 這支爬蟲對每間分店（目前 111 間）逐一發出 subrequest，「單次執行」就用掉一百多個，
     // 需要 Workers Paid 方案（單次執行 subrequest 上限 1000）才跑得完；免費方案單次執行上限只有 50，會在跑到一半時失敗。
     if (event.cron === "0 19 * * *" || event.cron === "0 9 * * *") {
       ctx.waitUntil(runScrape(env.DB));

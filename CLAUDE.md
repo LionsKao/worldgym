@@ -120,7 +120,7 @@ worker/
   migrations/                       針對既有正式資料庫的單張 table migration
 ```
 
-前端呼叫 `worker` 的 API（`/queryClasses` 等），API 讀寫 D1（`worldgym-schedule`）。`worker/wrangler.toml` 的 `[triggers]` 有五個 cron：`*/5 * * * *` 每 5 分鐘掃描課前推播是否到期；`0 19 * * *`、`0 9 * * *`（台灣時間 03:00/17:00）各自動重抓一次全部分店（需要 Workers Paid，單次執行 subrequest 上限拉到 1000 才跑得完 110 間分店）；`0 20 1 * *`（每月 1 號 04:00）做兩件互不相關的事：把當月以前（實務上是剛結束的上個月）的報表明細壓縮成月度彙總並刪掉明細，以及另外清掉 `query_access_log` 90 天前的紀錄（90 天只針對這張表）；`0 21 2 * *`（每月 2 號 05:00）跑分店清單掃描。也可以透過 `admin.html` 手動觸發重抓。
+前端呼叫 `worker` 的 API（`/queryClasses` 等），API 讀寫 D1（`worldgym-schedule`）。`worker/wrangler.toml` 的 `[triggers]` 有五個 cron：`*/5 * * * *` 每 5 分鐘掃描課前推播是否到期；`0 19 * * *`、`0 9 * * *`（台灣時間 03:00/17:00）各自動重抓一次全部分店（需要 Workers Paid，單次執行 subrequest 上限拉到 1000 才跑得完 111 間分店）；`0 20 1 * *`（每月 1 號 04:00）做兩件互不相關的事：把當月以前（實務上是剛結束的上個月）的報表明細壓縮成月度彙總並刪掉明細，以及另外清掉 `query_access_log` 90 天前的紀錄（90 天只針對這張表）；`0 21 2 * *`（每月 2 號 05:00）跑分店清單掃描。也可以透過 `admin.html` 手動觸發重抓。
 
 ### D1 資料表（完整定義見 worker/schema.sql）
 

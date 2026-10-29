@@ -14,7 +14,7 @@ database_id = "ca30eeae-ed11-4952-a2e1-c8c251dada71"
 binding = "QUERY_RATE_LIMIT"
 id = "27ad85dc0a2f411fbe0bd4f31451fad3"
 
-# 爬蟲一輪要對每間分店（目前 110 間）各發一個 subrequest，超過 Workers 免費方案「每次執行 50 個 subrequest」的上限，
+# 爬蟲一輪要對每間分店（目前 111 間）各發一個 subrequest，超過 Workers 免費方案「每次執行 50 個 subrequest」的上限，
 # 需要 Workers Paid（「每次執行」上限 1000）才跑得完；不是官網擋 Worker。
 # "*/5 * * * *" 每 5 分鐘掃描課表通知（reminders）有沒有到期；
 # "0 19 * * *" / "0 9 * * *" 是每天台灣時間 03:00 / 17:00（UTC+8，換算 UTC 19:00 / 09:00）

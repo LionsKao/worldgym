@@ -8,7 +8,7 @@ const SUBSTITUTE_DAYS_AHEAD = 14;
 // course+teacher 兩個 IN 子句（30*2=60）加上 day(7)+room(2)+日期範圍(4) = 73，還有餘裕。
 const IN_LIMIT = 30;
 // branch 選很多間時不會下推進 SQL（見下方 queryClasses 裡的說明），這裡只是防濫用的天花板，
-// 目前總共 110 間分店，不會真的卡到使用者。
+// 目前總共 111 間分店，不會真的卡到使用者。
 const BRANCH_LIMIT = 150;
 const ROOM_VALUES = new Set(["團體教室", "飛輪教室"]);
 // 前端（script.js 的 RESULT_COUNT_WARN_LIMIT=250）只要 displayedCount 超過 250 筆就整包不渲染，
