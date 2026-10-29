@@ -815,11 +815,10 @@ function isSearchValid(){
   return hasTeacherSelected() || document.querySelectorAll('input[name="branch"]:checked').length > 0;
 }
 function updateSubmitState(){
-  // 查詢鈕與「加到最愛」用同一個條件：要有分店或老師。只選星期（或只選時間、教室、課程）查出的課程
-  // 會太多、超過結果數量上限，所以兩個都不解鎖——星期格的 change 事件因此也不需要呼叫這個函式。
+  // 只選星期（或只選時間、教室、課程）查出的課程會太多、超過結果數量上限，所以不解鎖查詢鈕——
+  // 星期格的 change 事件因此也不需要呼叫這個函式。「加到最愛」在查詢結果頁底下，進得了結果頁就一定通過這個條件，不用另外擋。
   const valid = isSearchValid();
   document.getElementById("scheduleSubmitBtn").classList.toggle("gray-btn", !valid);
-  document.getElementById("addFavoriteBtn").disabled = !valid;
 }
 const pillWarnTooltip = document.createElement("div");
 pillWarnTooltip.id = "pillWarnTooltip";
@@ -1062,6 +1061,23 @@ function expandZoneForBranchInput(input){
   if (!group || !toggle || !toggle.classList.contains("zone-toggle")) return;
   if (!toggle.classList.contains("expanded")) toggle.click();
 }
+// 這組篩選是不是已經在最愛裡：每組值排序後再比（同一組篩選，勾選的 DOM 順序會因老師排序而不同）。
+// 只比篩選內容，不管名稱／圖示／顏色。
+function filterStateKey(state){
+  return FILTER_GROUPS.map(name => [...(state?.[name] || [])].sort().join("\u0000")).join("|");
+}
+function isCurrentStateFavorite(){
+  const key = filterStateKey(currentFilterState());
+  return getFavorites().some(fav => filterStateKey(fav.state) === key);
+}
+// 結果頁的愛心：這組篩選已經是最愛就變灰（aria-disabled 而不是 disabled，這樣按下去還能出提示說明為什麼不能加）。
+// 顯示結果頁、新增／編輯／刪除最愛之後都要更新。
+function updateFavoriteHeart(){
+  const btn = document.getElementById("addFavoriteBtn");
+  const already = isCurrentStateFavorite();
+  btn.classList.toggle("gray-btn", already);
+  btn.setAttribute("aria-disabled", already ? "true" : "false");
+}
 const FUNNY_DEFAULT_FAVORITE_LABELS = [
   "興奮到模糊 🤩",
   "已購買小孩愛吃 😋",
@@ -1086,7 +1102,7 @@ function favoriteLabel(state){
   }
   return randomFunnyFavoriteLabel();
 }
-const FAVORITE_EMPTY_HINT = "選好篩選後按「加到最愛」，長按最愛可編輯。";
+const FAVORITE_EMPTY_HINT = '查詢後按結果頁下方的 <i class="fa-solid fa-heart"></i> 加入最愛，長按最愛可編輯。';
 function applyFavorite(fav){
   applyFilterState(fav.state);
   SELECTION_STORAGE_KEYS.forEach(removeStored);
@@ -1149,6 +1165,7 @@ function bindFavoriteLongPress(btn, index, fav){
   });
 }
 function renderFavorites(){
+  updateFavoriteHeart();
   const grid = document.getElementById("favoriteGrid");
   grid.querySelectorAll(".fav-item, .empty-hint").forEach(el => el.remove());
   const favs = getFavorites();
@@ -1267,7 +1284,11 @@ function openFavoriteEditor(index, fav, chip){
   removeFavEditNotice(); // FAV_EDIT_NOTICE（暫時，2026-11-01 下線）
   addFavoriteModal.classList.remove("hidden");
 }
-document.getElementById("addFavoriteBtn").addEventListener("click", () => {
+document.getElementById("addFavoriteBtn").addEventListener("click", (e) => {
+  if (isCurrentStateFavorite()){
+    showPillWarning(e.currentTarget, "這組篩選已經是最愛了", "fa-solid fa-heart");
+    return;
+  }
   favEdit = null;
   configureFavoriteModal();
   ensureFavoriteRadioDefaults();
@@ -1447,7 +1468,7 @@ document.getElementById("clearMemoryCloseBtn").addEventListener("click", () => {
   clearMemoryModal.classList.add("hidden");
 });
 // 「篩選記憶」＝勾選條件、常用排序（點擊次數）、分店地區展開狀態；新增這類記憶的 key 要加進來。
-// 其餘（wg_client_id、提醒分鐘、各種旗標）不清：清掉 wg_client_id 會讓同一個人在最愛統計裡變成新使用者。
+// 其餘（wg_client_id、提醒分鐘、wg_theme 主題偏好、各種旗標）不清：清掉 wg_client_id 會讓同一個人在最愛統計裡變成新使用者。
 const FILTER_MEMORY_KEYS = [
   ...SELECTION_STORAGE_KEYS,
   "wg_branch_clicks", "wg_course_clicks", "wg_teacher_clicks",
@@ -1465,6 +1486,40 @@ document.getElementById("clearFavoritesBtn").addEventListener("click", () => {
   clearMemoryModal.classList.add("hidden");
   renderFavorites();
 });
+
+// 淺色／深色切換（頁尾的按鈕）：預設淺色、不跟隨系統設定；選深色才在 localStorage 留下 wg_theme=dark，換回淺色就清掉。
+// 開頁時由 theme-init.js 在 <head> 先把 data-theme 貼到 <html>（趕在第一次繪製前，才不會先閃白），這裡只負責按鈕與切換。
+const THEME_STORAGE_KEY = "wg_theme";
+const themeToggleBtn = document.getElementById("themeToggleBtn");
+function isDarkTheme(){
+  return document.documentElement.getAttribute("data-theme") === "dark";
+}
+function renderThemeToggle(){
+  const dark = isDarkTheme();
+  themeToggleBtn.innerHTML = dark
+    ? '<i class="fa-solid fa-fw fa-sun"></i>淺色模式'
+    : '<i class="fa-solid fa-fw fa-moon"></i>深色模式';
+  themeToggleBtn.setAttribute("aria-label", dark ? "切換為淺色模式" : "切換為深色模式");
+}
+let themeSwitchTimer = null;
+themeToggleBtn.addEventListener("click", () => {
+  const next = isDarkTheme() ? "light" : "dark";
+  // 先加 theme-switching（style.css：全站顏色淡入淡出），過場跑完再拿掉，平常的 hover／選取不受影響。
+  document.documentElement.classList.add("theme-switching");
+  clearTimeout(themeSwitchTimer);
+  themeSwitchTimer = setTimeout(() => document.documentElement.classList.remove("theme-switching"), 400);
+  if (next === "dark"){
+    document.documentElement.setAttribute("data-theme", "dark");
+    writeStored(THEME_STORAGE_KEY, "dark");
+  } else {
+    document.documentElement.removeAttribute("data-theme");
+    removeStored(THEME_STORAGE_KEY);
+  }
+  renderThemeToggle();
+  retintCharts();
+  trackEvent("toggle_theme", { theme: next });
+});
+renderThemeToggle();
 
 // 頁面載入時課程/老師清單抓取失敗（伺服器或資料庫異常）跳出的提示 modal。
 const serviceErrorModal = document.getElementById("serviceErrorModal");
@@ -1924,8 +1979,10 @@ document.getElementById("resultArea").addEventListener("click", async (e) => {
 });
 
 function showResultView(){
-  setHidden(["filterForm", "settingsSheet", "favoriteSheet", "mailDisclaimerSheet", "quickLinksSheet"], true);
+  setHidden(["filterForm", "favoriteSheet", "mailDisclaimerSheet", "quickLinksSheet"], true);
   fadeInView(document.getElementById("resultView"));
+  setCopyMenuOpen(false); // 上一次離開時選單可能還開著
+  updateFavoriteHeart();
   setHidden(["backBtnWrap"], false);
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
@@ -1941,7 +1998,7 @@ function fadeInView(el){
 }
 function showMailView(){
   trackEvent("open_reminder_list", {});
-  setHidden(["mainFormSheet", "settingsSheet", "favoriteSheet"], true);
+  setHidden(["mainFormSheet", "favoriteSheet"], true);
   fadeInView(document.getElementById("reminderView"));
   fadeInView(document.getElementById("mailView"));
   setHidden(["searchTrendSheet", "branchStatsSheet", "courseStatsSheet", "teacherStatsSheet", "mailDisclaimerSheet", "quickLinksSheet", "mailBackBtnWrap"], false);
@@ -1961,12 +2018,12 @@ function showFilterView(){
   // 排序結果會改變換行位置、進而改變 grid 高度；一定要趁 mainFormSheet 還是 display:none
   // 時排完，翻牌後才不會又造成一次 Cloudflare Web Analytics 抓到的 #mainFormSheet CLS。
   reorderTeacherGrid();
-  // settingsSheet/favoriteSheet 在 DOM 順序上排在 mainFormSheet 前面，
+  // favoriteSheet 在 DOM 順序上排在 mainFormSheet 前面，
   // 要先讓它們恢復顯示、版面高度定案，mainFormSheet 才不會在自己淡入之後又被
   // 前面冒出來的 favoriteSheet 推擠位置，造成 Cloudflare Web Analytics 抓到的
   // #mainFormSheet CLS（mainFormSheet 本身沒有淡入效果，CSS 只對 filterForm 那層
   // 做 opacity 動畫，所以這裡直接切 hidden 就好，不用呼叫 fadeInView 多強制一次 reflow）。
-  setHidden(["settingsSheet", "favoriteSheet", "mainFormSheet"], false);
+  setHidden(["favoriteSheet", "mainFormSheet"], false);
   fadeInView(document.getElementById("filterForm"));
   history.replaceState(null, "", location.pathname);
 }
@@ -2097,14 +2154,35 @@ function formatResultLine(row){
   const prefix = row.flagged ? `⚠ ${row.c.date.slice(5).replace("-", "/")} ` : "";
   return prefix + formatResultBody(row);
 }
+// 結果頁底部右邊的複製鈕：點開往上長出「複製文字」「複製連結」兩顆純圖示按鈕（style.css 的 .copy-menu）。
+// 點選單以外的地方、按 Esc、選了其中一個都會收起來；提示掛在主鈕上，因為選項收起後就看不到了。
+const copyMenu = document.getElementById("copyMenu");
+const copyMenuBtn = document.getElementById("copyMenuBtn");
+function setCopyMenuOpen(open){
+  if (copyMenu.classList.contains("open") === open) return;
+  copyMenu.classList.toggle("open", open);
+  copyMenuBtn.setAttribute("aria-expanded", String(open));
+  copyMenuBtn.setAttribute("aria-label", open ? "收起" : "複製或分享");
+  copyMenuBtn.querySelector("i").className = open ? "fa-solid fa-xmark" : "fa-solid fa-share-nodes";
+  if (open) trackEvent("open_copy_menu", {});
+}
+copyMenuBtn.addEventListener("click", () => setCopyMenuOpen(!copyMenu.classList.contains("open")));
+document.addEventListener("click", (e) => {
+  if (!copyMenu.contains(e.target)) setCopyMenuOpen(false);
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") setCopyMenuOpen(false);
+});
 document.getElementById("copyResultsBtn").addEventListener("click", () => {
   const text = lastResultRows.map(formatResultLine).join("\n");
   trackEvent("copy_results", { result_count: lastResultRows.length });
-  copyTextWithToast(text, document.getElementById("copyResultsBtn"), "已複製課程文字到剪貼簿");
+  setCopyMenuOpen(false);
+  copyTextWithToast(text, copyMenuBtn, "已複製課程文字到剪貼簿");
 });
 document.getElementById("shareUrlBtn").addEventListener("click", () => {
   trackEvent("share_url", {});
-  copyTextWithToast(location.href, document.getElementById("shareUrlBtn"), "已複製網址到剪貼簿");
+  setCopyMenuOpen(false);
+  copyTextWithToast(location.href, copyMenuBtn, "已複製網址到剪貼簿");
 });
 
 async function init(){
@@ -2247,8 +2325,8 @@ function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint
           tooltip: { ...CHART_TOOLTIP_STYLE },
         },
         scales: {
-          x: { beginAtZero: true, grid: { color: THEME_LINE }, ticks: { color: THEME_SUB, font: { size: 10 }, precision: 0 } },
-          y: { grid: { display: false }, ticks: { color: THEME_INK, font: { size: 12, weight: "600" } } },
+          x: { beginAtZero: true, grid: { color: () => chartTheme().line }, ticks: { color: () => chartTheme().sub, font: { size: 10 }, precision: 0 } },
+          y: { grid: { display: false }, ticks: { color: () => chartTheme().ink, font: { size: 12, weight: "600" } } },
         },
       },
     });

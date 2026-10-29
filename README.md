@@ -15,8 +15,9 @@
 ## ✨ 功能
 
 - **查課表**：依星期（含「今天」「明天」快捷）、時段（06–11 / 12–17 / 18–23）、分店（111 間，依縣市分區可展開收合、可搜尋、可整個縣市或分區全選，也能依目前位置篩選 1／3／5 公里內的分店）、教室（團體／飛輪）、課程、老師組合查詢。結果同頁顯示；固定班一週只列一筆，8～14 天後的代課逐筆列出並標警示；超過 250 筆會提示縮小條件；國定假日改用假日課表（縮課）的課，星期兩個字標成紅色（日期清單人工維護，見 `script.js` 的 `REDUCED_SCHEDULE_DATES`）。點結果裡的老師名字可直接用該老師重新查詢。
-- **記住你的選擇**：上次勾選的條件存在瀏覽器（`localStorage`），「清除記憶」可分別清除篩選記憶與我的最愛；「我的最愛」可自訂名稱、圖示與顏色，一鍵套用並查詢；長按（桌機右鍵）最愛可編輯、刪除、調整順序。
-- **分享**：複製結果文字、複製分享網址（篩選條件編碼在網址裡，分店用短代碼）。
+- **記住你的選擇**：上次勾選的條件存在瀏覽器（`localStorage`），「清除記憶」可分別清除篩選記憶與我的最愛；「我的最愛」在查詢結果頁底下按愛心加入，可自訂名稱、圖示與顏色，一鍵套用並查詢；長按（桌機右鍵）最愛可編輯、刪除、調整順序。
+- **深色模式**：通知頁最下面可切換淺色／深色，預設淺色（不跟隨系統設定），選擇只記在瀏覽器。
+- **分享**：結果頁右下角的複製鈕點開，可複製結果文字或分享網址（篩選條件編碼在網址裡，分店用短代碼）。
 - **推播提醒（PWA）**：加到主畫面後，結果列會出現鈴鐺，可登記單次通知，課前 30／60／90 分鐘自選。
 - **通知頁**：已登記的提醒清單、查詢量趨勢與老師／課程／分店查詢排行（公開）、寫信給作者（轉發到 Teams）。
 - **後台**（`/admin`）：廣告、最愛、提醒的使用量報表、IP 存取紀錄、手動重抓課表。
@@ -30,6 +31,7 @@
 ├── index.html / script.js / style.css   # 前台：課表查詢頁、首頁廣告橫幅、首頁公開排行報表
 ├── common.js                            # 前後台共用：HTML 跳脫、fetchJson、自製下拉選單、月份計算、折線圖工廠、下拉重新整理
 ├── ga-init.js                           # GA4 初始化（只有 index.html 載入，必須同步載入；因 CSP 不允許 inline script 而獨立成檔）
+├── theme-init.js                        # 淺色／深色主題初始化（只有 index.html 載入，必須同步載入、趕在第一次繪製前套用；同樣為了 CSP）
 ├── css-async.js                         # 非阻塞載入 Font Awesome CSS（同樣是為了 CSP；index.html、admin.html 都載入）
 ├── admin.html / admin.js                # 後台：登入、報表（Chart.js）、手動重抓與清除孤兒資料
 ├── vendor/chart.umd.min.js              # Chart.js（vendor 進來，不吃 CDN）
@@ -199,7 +201,7 @@ Pages（`functions/_middleware.js`）與 Worker 都只放行台灣 IP（拿不�
 
 所有頁面帶 `Content-Security-Policy`、`X-Frame-Options: DENY`（後台不能被嵌入）、`Strict-Transport-Security`、`Permissions-Policy`（只開 `geolocation=(self)`）等標頭，設定在 [`_headers`](_headers)。重點：
 
-- `script-src` **不含 `'unsafe-inline'`**：頁面裡不能寫 inline `<script>` 或 `onclick=`／`onload=` 之類的 inline 事件處理（會被擋，而且是靜默失效），要用外部檔，這也是 `ga-init.js`、`css-async.js` 獨立成檔的原因。
+- `script-src` **不含 `'unsafe-inline'`**：頁面裡不能寫 inline `<script>` 或 `onclick=`／`onload=` 之類的 inline 事件處理（會被擋，而且是靜默失效），要用外部檔，這也是 `ga-init.js`、`theme-init.js`、`css-async.js` 獨立成檔的原因。
 - **新增任何外部來源（CDN、字型、分析服務、新的 API 網域）都要同步改 CSP**。改完用本機開發伺服器（會套用 `_headers`）載入頁面，看主控台有沒有 `violates the following Content Security Policy`。萬用字元 `*.example.com` **不包含** `example.com` 本身，要另外列。
 - 本機載入時 Cloudflare Web Analytics beacon 會出現 CORS 錯誤，是因為 localhost 不是它登記的網域，與 CSP 無關，可忽略。
 
@@ -218,7 +220,7 @@ Pages（`functions/_middleware.js`）與 Worker 都只放行台灣 IP（拿不�
 
 ## ⚡ 靜態資源快取
 
-CSS、JS、icon（`style.css`、`script.js`、`common.js`、`admin.js`、`ga-init.js`、`css-async.js`、`vendor/`、`icons/`、`favicon.ico`）一律走 `_headers` 快取 30 天，搭配引用處的 `?v=` 版號：**檔案內容改了，就要把引用它的地方（`index.html`／`admin.html`／`403.html`／`404.html`、`manifest.json`、`sw.js`）的版號加一**，否則使用者最久一個月看到舊的。`style.css` 四個頁面要用同一個版號；`common.js` 同時被兩個頁面引用，兩邊的版號要一起改。`sw.js` 不長快取（Service Worker 要能隨時更新），`favicon.ico` 是瀏覽器自己請求的、沒辦法帶版號。
+CSS、JS、icon（`style.css`、`script.js`、`common.js`、`admin.js`、`ga-init.js`、`theme-init.js`、`css-async.js`、`vendor/`、`icons/`、`favicon.ico`）一律走 `_headers` 快取 30 天，搭配引用處的 `?v=` 版號：**檔案內容改了，就要把引用它的地方（`index.html`／`admin.html`／`403.html`／`404.html`、`manifest.json`、`sw.js`）的版號加一**，否則使用者最久一個月看到舊的。`style.css` 四個頁面要用同一個版號；`common.js` 同時被兩個頁面引用，兩邊的版號要一起改。`sw.js` 不長快取（Service Worker 要能隨時更新），`favicon.ico` 是瀏覽器自己請求的、沒辦法帶版號。
 
 版號是人工維護的，改完 CSS／JS／icon 請跑檢查（只讀檔）：`cd worker && npm run check:versions -- --base=origin/main`，會抓「引用沒帶版號、同一個檔案各處版號不一致、檔案內容改了版號沒加」。
 

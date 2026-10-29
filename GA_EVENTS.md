@@ -49,6 +49,7 @@
 
 | 事件名稱 | 觸發時機 | 參數 |
 | --- | --- | --- |
+| `open_copy_menu` | 結果頁底部右邊的複製鈕點開，展開「複製文字」「複製連結」兩顆按鈕（跟 `copy_results`／`share_url` 比，可以看有多少人展開了卻沒選）| 無 |
 | `copy_results` | 複製查詢結果文字到剪貼簿 | `result_count` 複製的課程筆數 |
 | `share_url` | 複製目前篩選條件的分享網址 | 無 |
 | `copy_site_url` | 複製網站首頁網址（帶 `utm_source=website_link`）| 無 |
@@ -61,4 +62,5 @@
 | `click_github_icon` | 點擊頁面上的 GitHub 連結圖示 | 無 |
 | `click_admin_icon` | 點擊頁面上的後台管理連結圖示 | 無 |
 | `clear_memory` | 在「清除記憶」視窗按下「清除篩選記憶」（勾選條件、常用排序、地區展開狀態；會重新整理）或「清除我的最愛」 | `memory_type`（`filters`／`favorites`） |
+| `toggle_theme` | 頁尾按「深色模式」／「淺色模式」切換主題 | `theme`（`dark`／`light`，切換後的主題） |
 | `send_message` | 透過「留言給站長」功能送出訊息成功 | 無 |

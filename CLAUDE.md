@@ -86,8 +86,9 @@ There is no test suite and no lint/build command in this repo（只有上面這�
 
 ```
 index.html / script.js / style.css   前端：課表查詢頁 + 首頁廣告橫幅 + 首頁公開排行報表
-common.js                            前台與後台共用的前端工具：escapeHtml、readJsonOrThrow/fetchJson、isStandaloneDisplay、自製下拉選單、台灣今天日期 todayIso 與月份計算、折線圖工廠 createLineChart、下拉重新整理
+common.js                            前台與後台共用的前端工具：escapeHtml、readJsonOrThrow/fetchJson、isStandaloneDisplay、自製下拉選單、台灣今天日期 todayIso 與月份計算、折線圖工廠 createLineChart、圖表主題色 chartTheme／retintCharts、下拉重新整理
 ga-init.js                           GA4 初始化（只有 index.html 載入，必須同步載入；因 CSP 不允許 inline script 而獨立成檔）
+theme-init.js                        淺色／深色主題初始化（只有 index.html 載入，必須在 <head> 同步載入、趕在第一次繪製前貼 data-theme；同樣因 CSP 獨立成檔，見「深色模式」）
 css-async.js                         非阻塞載入 Font Awesome CSS（同樣因 CSP；index.html、admin.html 都載入）
 manifest.json / sw.js / icons/       PWA + Service Worker（推播提醒用）
 admin.html / admin.js                後台：登入、報表（Chart.js）、手動重抓與清除孤兒資料
@@ -187,22 +188,36 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 
 **我的最愛的編輯**：最愛只存在 localStorage `wg_favorites`（`{label, icon, color, state}` 陣列），**沒有 id，用陣列位置辨識**。入口是長按晶片約 0.5 秒（`script.js` 的 `bindFavoriteLongPress`；桌機右鍵、鍵盤 Menu 鍵走 `contextmenu`），短按仍是套用並查詢，所以編輯不能綁在一般點擊上。編輯與新增共用 `#addFavoriteModal`，`favEdit` 是 `null` 就是新增模式，否則是編輯模式（`{target, chip, index, newIndex, total}`，儲存／刪除前用 `target` 的內容在最新的清單裡重新找，多個分頁同時開著時才不會改到別顆）；編輯只改名稱／圖示／顏色／順序，`state`（篩選條件）不動，要改條件就刪了重建。編輯視窗的垃圾桶按了就直接刪，**刻意沒有二次確認**（使用者決定）；資料先寫回 localStorage，被刪的晶片再跑 `.removing` 動畫（`style.css` 的 `fav-remove`，時間要跟 `script.js` 的 `FAV_REMOVE_ANIM_MS` 一致；使用者設了「減少動態效果」就跳過），動畫結束才重畫清單。編輯與刪除只送 GA 事件（`edit_favorite`、`delete_favorite`），**不打 `/trackFavorite`**（後端白名單只收 `add`／`apply`，`favorite_events` 只統計建立與使用）。長按沒有可見提示，靠空狀態文字與「第一次新增最愛後出現一次提示」（localStorage `wg_fav_edit_hint_seen`，看過提示、或真的開過編輯視窗就記下，不再提示）補強；**暫時的 `FAV_EDIT_NOTICE`：編輯功能剛上線時，給已經有最愛的舊使用者一顆接在最愛後面、彩虹底色會流動的「最愛可以編輯了！長按試試」pill，只在 2026-11-01 之前、且尚未記為看過時顯示；pill 完整出現在畫面上連續滿 2 秒才算看過（所以下次載入就不再出現），點一下則收合並立刻記為看過。2026-11-01 之後要把 `FAV_EDIT_NOTICE` 相關程式（搜尋這個字串）、`style.css` 的 `.fav-edit-notice`／`fav-rainbow`、`GA_EVENTS.md` 兩個 `fav_edit_notice_*` 事件、這段說明整個刪掉，並把版號加一**；`.fav-item` 的 `user-select:none`／`-webkit-touch-callout:none` 是防 iOS 長按選字，別拿掉。
 
-**清除記憶分兩顆按鈕**（設定列的「清除記憶」→ `#clearMemoryModal`，`script.js` 的 `FILTER_MEMORY_KEYS`）：「清除篩選記憶」清勾選條件（`wg_selected_*`）、常用排序（`wg_*_clicks`）、分店地區展開狀態（`wg_zone_states`）後重新整理；「清除我的最愛」只清 `wg_favorites` 並重畫最愛列（不重新整理）。兩顆都沒有二次確認（視窗本身就是確認）。**不再整個 `localStorage.clear()`**：`wg_client_id`（清掉會讓同一個人在最愛統計裡變成新使用者）、`wg_remind_minutes`、`wg_fav_edit_hint_seen`、`wg_debug_force_pwa` 都保留。新增「篩選記憶」類的 localStorage key 時要記得加進 `FILTER_MEMORY_KEYS`。GA 事件 `clear_memory` 帶 `memory_type`（`filters`／`favorites`）。
+**結果頁底部按鈕列**（使用者 2026-10-29 決定；以前「加到最愛」在篩選頁最下面的設定卡，現在那張卡整個移除）：由左到右是粉色愛心 `#addFavoriteBtn`、返回、綠色複製鈕 `#copyMenuBtn`。
+- **愛心**開 `#addFavoriteModal`（新增模式，邏輯沒變）。這組篩選已經在最愛裡就變灰（`.gray-btn`＋`aria-disabled`，**不是 `disabled`**，才按得下去），按下去只顯示提示「這組篩選已經是最愛了」、不開視窗。比對用 `filterStateKey()`（每組值排序後比，因為老師排序會改 DOM 順序），只比篩選內容、不管名稱／圖示／顏色；`updateFavoriteHeart()` 在 `showResultView()` 與 `renderFavorites()`（任何新增、編輯、刪除之後）呼叫。沒有重複檢查的舊行為已被取代。
+- **複製鈕**（綠色、收起時是分享節點圖示 `fa-share-nodes`，展開時變灰色的 ×）點開往上長出兩顆**純圖示**按鈕（使用者決定不要文字）：1（靠近手指）`#copyResultsBtn` 複製文字、`fa-copy` 圖示；2 `#shareUrlBtn` 複製連結、`fa-link` 圖示（它就是以前的藍色分享鈕）。排序依 GA 數字：複製文字比複製連結常用（2026-10-01～10-28：147 次對 39 次）。選項是絕對定位、收起時 `visibility:hidden`；點外面、按 Esc、選了其中一個都會收起，提示掛在主鈕 `#copyMenuBtn` 上。`setCopyMenuOpen()` 在 `showResultView()` 會先收起。GA 事件 `copy_results`、`share_url` 名稱不變（維持跟舊數字可比），另加 `open_copy_menu`。
+- 能存最愛的前提是進得了結果頁：超過 250 筆（只提示縮小條件、不進結果頁）的組合存不了，這是刻意的行為改變。
+- 空狀態提示 `FAVORITE_EMPTY_HINT` 已改成指向結果頁的愛心；已經有最愛的舊使用者看不到這句，沒另外做一次性提示。
+
+**清除記憶分兩顆按鈕**（通知頁最下面 `#quickLinksSheet` 的「清除記憶」，排在主題切換鈕後面、官網連結前面；2026-10-29 從設定列搬過來，設定卡整張已移除→ `#clearMemoryModal`，`script.js` 的 `FILTER_MEMORY_KEYS`）：「清除篩選記憶」清勾選條件（`wg_selected_*`）、常用排序（`wg_*_clicks`）、分店地區展開狀態（`wg_zone_states`）後重新整理；「清除我的最愛」只清 `wg_favorites` 並重畫最愛列（不重新整理）。兩顆都沒有二次確認（視窗本身就是確認）。**不再整個 `localStorage.clear()`**：`wg_client_id`（清掉會讓同一個人在最愛統計裡變成新使用者）、`wg_remind_minutes`、`wg_theme`（主題偏好）、`wg_fav_edit_hint_seen`、`wg_debug_force_pwa` 都保留。新增「篩選記憶」類的 localStorage key 時要記得加進 `FILTER_MEMORY_KEYS`。GA 事件 `clear_memory` 帶 `memory_type`（`filters`／`favorites`）。
+
+**深色模式**（使用者 2026-10-29 決定）：預設淺色、**不跟隨系統設定**。通知頁最下面（`#quickLinksSheet`）有切換鈕 `#themeToggleBtn`，目前是淺色就顯示「深色模式」（月亮）、目前是深色就顯示「淺色模式」（太陽），位置在「清除記憶」前面。選了深色才在 localStorage 留下 `wg_theme=dark`，換回淺色就清掉 key；它是偏好、不是篩選記憶，清除記憶不會動它。運作方式：
+- `theme-init.js`（`index.html` 的 `<head>` 同步載入）開頁時讀 `wg_theme`，在 `<html>` 貼 `data-theme="dark"`，趕在第一次繪製前，才不會先閃白（CSP 不允許 inline script，所以是獨立檔）。切換由 `script.js` 的 `themeToggleBtn` 處理，送 GA 事件 `toggle_theme`（帶 `theme`）。
+- `style.css` 最後面的 `html[data-theme="dark"]` 區塊翻轉 CSS 變數、並覆寫寫死的顏色。`--navy` 同時當「底色」與「文字／邊框色」，所以另開 `--navy-ink`（淺色同 navy、深色變亮）給文字與邊框用；`--chart-tip` 是圖表提示框底色。**新增寫死的顏色（hex、rgba）時要回頭看深色長怎樣**；近黑色的底色（最愛可選 `#2b2b2b`）要有外框才看得見。
+- 圖表（Chart.js）畫在 canvas、吃不到 CSS：顏色由 `common.js` 的 `chartTheme()` 讀 CSS 變數（有快取），option 用函式（scriptable）傳；切換時 `retintCharts()` 清快取並讓所有圖表重畫，不用重建。**新增圖表時顏色不要寫死 hex**，用 `() => chartTheme().xxx`。
+- `#loadingOverlay` 的 inline `<style>` 是 `var(--paper,#fff)`，不能寫回白色，否則深色載入時整頁會先白一下。
+- 只有 `index.html` 載入 `theme-init.js`；`admin.html`、`403.html`、`404.html` 一律淺色（沒檢查過它們在深色下的樣子；403 對海外 IP 也載不到這支腳本）。
+- 切換有 0.3 秒的顏色淡入淡出：`script.js` 在 `<html>` 暫時加 `theme-switching`（約 0.4 秒後移除），`style.css` 最後用 `!important` 的 transition 讓全站一起過場；不常駐（免得干擾平常的 hover 與條紋動畫），`prefers-reduced-motion` 時不做。圖表是 canvas，換色是瞬間的，不跟著淡入淡出。
 
 網站沒有帳號系統，「幾個人」的統計靠前端 `localStorage` 存的匿名 `wg_client_id`（`crypto.randomUUID()`），後端用 `COUNT(DISTINCT clientId)` 估算，不對應真實身分。
 
 ### 靜態資源快取
-**CSS、JS、icon 一律走 `_headers` 快取 30 天（`max-age=2592000`，不加 `immutable`，所以按重新整理仍會向伺服器確認）**：`style.css`、`script.js`、`common.js`、`admin.js`、`ga-init.js`、`css-async.js`、`vendor/*`、`icons/*`、`favicon.ico`。這套做法的前提是**所有引用處都帶 `?v=` 版號**，而且**內容改了就一定要把引用它的地方的版號加一**，否則使用者最久一個月看到舊的——改 JS／CSS／icon 時別忘了：
-- `style.css`：`index.html`、`admin.html`、`403.html`、`404.html` 四頁**要用同一個版號**（目前 119；以前三頁各自為政變成 104／73／45，後台和 404 頁會吃到舊樣式）。
+**CSS、JS、icon 一律走 `_headers` 快取 30 天（`max-age=2592000`，不加 `immutable`，所以按重新整理仍會向伺服器確認）**：`style.css`、`script.js`、`common.js`、`admin.js`、`ga-init.js`、`theme-init.js`、`css-async.js`、`vendor/*`、`icons/*`、`favicon.ico`。這套做法的前提是**所有引用處都帶 `?v=` 版號**，而且**內容改了就一定要把引用它的地方的版號加一**，否則使用者最久一個月看到舊的——改 JS／CSS／icon 時別忘了：
+- `style.css`：`index.html`、`admin.html`、`403.html`、`404.html` 四頁**要用同一個版號**（目前 124；以前三頁各自為政變成 104／73／45，後台和 404 頁會吃到舊樣式）。
 - `script.js`（只有 `index.html`）、`admin.js`（只有 `admin.html`）、`common.js`（兩頁都引用，都要排在自己的 script 之前，改了要兩個檔案裡的 `common.js?v=` 一起更新）。
-- `ga-init.js`、`css-async.js`、`vendor/chart.umd.min.js`（`admin.html`，以及 `script.js` 的 `loadChartJs()`）：目前 `?v=1`，改了這些檔案就把 1 往上加。
+- `ga-init.js`、`theme-init.js`、`css-async.js`、`vendor/chart.umd.min.js`（`admin.html`，以及 `script.js` 的 `loadChartJs()`）：目前 `?v=1`，改了這些檔案就把 1 往上加。
 - `icons/*`：`index.html`（`og:image`、`twitter:image`、`apple-touch-icon`、QR code）、`manifest.json`、`sw.js`（通知圖示）都帶 `?v=1`，換圖就一起加。
 - 改完跑 `cd worker && npm run check:versions -- --base=origin/main`，它會抓「引用沒帶版號、各處版號不一致、內容改了版號沒加」。
 - 例外：`sw.js` 不長快取（Service Worker 本身要能隨時更新）；`favicon.ico` 是瀏覽器自己隱含請求的，沒辦法帶版號（換 favicon 最久一個月才會更新）；HTML、`manifest.json` 沒設，每次都會向伺服器確認。Font Awesome 圖示直接吃 cdnjs 的完整套件，`fa-` class 可以照官方圖示庫直接用。
 
 ### 安全標頭與 CSP（`_headers` 的 `/*`）
 所有頁面都帶 `Content-Security-Policy`、`X-Frame-Options: DENY`（後台不能被嵌入）、`Strict-Transport-Security`、`Permissions-Policy`（只開 `geolocation=(self)`，分店依距離篩選要用）等標頭。CSP 的重點：
-- **`script-src` 不含 `'unsafe-inline'`**：頁面裡不能再寫 inline `<script>` 或 `onclick=`/`onload=` 這類 inline 事件處理（會被擋、而且是靜默失效）。需要時放成外部檔（現有 `ga-init.js` 是 GA4 初始化，只有 `index.html` 載入，且必須同步載入；`css-async.js` 非阻塞載入 Font Awesome CSS，`index.html`/`admin.html` 都載入）。`type="application/ld+json"` 不是可執行腳本，不受影響。
+- **`script-src` 不含 `'unsafe-inline'`**：頁面裡不能再寫 inline `<script>` 或 `onclick=`/`onload=` 這類 inline 事件處理（會被擋、而且是靜默失效）。需要時放成外部檔（現有 `ga-init.js` 是 GA4 初始化，只有 `index.html` 載入，且必須同步載入；`theme-init.js` 是主題初始化，同樣只有 `index.html` 載入、必須同步載入；`css-async.js` 非阻塞載入 Font Awesome CSS，`index.html`/`admin.html` 都載入）。`type="application/ld+json"` 不是可執行腳本，不受影響。
 - `style-src` 保留 `'unsafe-inline'`（HTML 裡有大量 `style=` 屬性）。
 - **新增任何外部來源（CDN、字型、分析服務、新的 API 網域）都要同步改 CSP**，否則在正式站被擋、本機看不出差別以外的問題；改完用本機 hosting 開發伺服器（會套用 `_headers`）載入頁面，看主控台有沒有 `violates the following Content Security Policy`。萬用字元 `*.example.com` **不包含** `example.com` 本身，要另外列（GA4 的 `analytics.google.com` 就是這樣漏掉過）。
 - GA4 會打 `www.google.com.tw` 的受眾像素，所以 `img-src`/`connect-src` 有列這個在地化網域；站台只開放台灣 IP，不必列其他國家網域。

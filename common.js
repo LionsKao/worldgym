@@ -100,9 +100,23 @@ function buildMonthWindow(count, endMonth, valuesOf){
 }
 
 // --- Chart.js 共用設定：跟站內配色風格一致（字型各頁面自己設）---
-const THEME_INK = "#2b2b2b", THEME_SUB = "#7a7a7a", THEME_LINE = "#ececec";
+// Chart.js 畫在 canvas 上、吃不到 CSS，所以顏色從 style.css 的 CSS 變數讀（淺色／深色各自定義），
+// 而且寫成 scriptable option（傳函式，每次重繪才取值）：換主題時 retintCharts() 清掉快取、叫所有圖表重畫一次就好，不用重建。
+let chartThemeCache = null;
+function chartTheme(){
+  if (!chartThemeCache){
+    const css = getComputedStyle(document.documentElement);
+    const read = (name) => css.getPropertyValue(name).trim();
+    chartThemeCache = { ink: read("--ink"), sub: read("--sub"), line: read("--line"), tip: read("--chart-tip") };
+  }
+  return chartThemeCache;
+}
+function retintCharts(){
+  chartThemeCache = null;
+  if (window.Chart) Object.values(Chart.instances).forEach((chart) => chart.update("none"));
+}
 const CHART_TOOLTIP_STYLE = {
-  backgroundColor: THEME_INK, titleColor: "#fff", bodyColor: "#fff",
+  backgroundColor: () => chartTheme().tip, titleColor: "#fff", bodyColor: "#fff",
   titleFont: { size: 11, weight: "700" }, bodyFont: { size: 11 },
   padding: 8, cornerRadius: 8, displayColors: false,
 };
@@ -120,12 +134,12 @@ function createLineChart(canvas, { data, series, ariaLabel, aspectRatio }){
   canvas.setAttribute("role", "img");
   canvas.setAttribute("aria-label", ariaLabel);
   const axisIds = ["yA", "yB"];
-  const scales = { x: { grid: { display: false }, ticks: { color: THEME_SUB, font: { size: 9 } } } };
+  const scales = { x: { grid: { display: false }, ticks: { color: () => chartTheme().sub, font: { size: 9 } } } };
   series.forEach((s, i) => {
     scales[axisIds[i]] = {
       position: i === 0 ? "left" : "right", beginAtZero: true,
       ticks: { color: s.color, font: { size: 9 }, count: 5, precision: 0, callback: (v) => Math.round(v) },
-      grid: i === 0 ? { color: THEME_LINE } : { display: false },
+      grid: i === 0 ? { color: () => chartTheme().line } : { display: false },
     };
   });
   const chart = new Chart(canvas, {

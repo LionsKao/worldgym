@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="ga-init.js?v=1"></script>
+<script src="theme-init.js?v=1"></script>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 44'%3E%3Ctext x='22' y='19' text-anchor='middle' font-family='sans-serif' font-weight='900' font-size='16' fill='%23e8604c'%3E課表%3C/text%3E%3Ctext x='22' y='38' text-anchor='middle' font-family='sans-serif' font-weight='900' font-size='16' fill='%233a3a4a'%3E查詢%3C/text%3E%3C/svg%3E">
 <title>💪 WG課表查詢</title>
 <meta name="description" content="快速查詢 World Gym（WG）各分店課表、老師、時段。">
@@ -77,8 +78,8 @@
 <link rel="preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha384-PPIZEGYM1v8zp5Py7UjFb79S58UeqCL9pYVnVPURKEqvioPROaVAJKKLzvH2rDnI" crossorigin="anonymous">
 <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha384-PPIZEGYM1v8zp5Py7UjFb79S58UeqCL9pYVnVPURKEqvioPROaVAJKKLzvH2rDnI" crossorigin="anonymous"></noscript>
 <script src="css-async.js?v=1"></script>
-<link rel="stylesheet" href="style.css?v=119">
-<style>#loadingOverlay{position:fixed;top:0;left:0;width:100%;height:100%;background:#fff;z-index:9999;}</style>
+<link rel="stylesheet" href="style.css?v=124">
+<style>#loadingOverlay{position:fixed;top:0;left:0;width:100%;height:100%;background:var(--paper,#fff);z-index:9999;}</style>
 <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "8513ca23d1fc42f2af05b18ff29c709d"}'></script><!-- End Cloudflare Web Analytics -->
 </head>
 <body>
@@ -449,6 +450,8 @@
 
   <div class="sheet hidden" id="quickLinksSheet">
     <div class="mail-disclaimer">
+      <button type="button" class="section-tag" id="themeToggleBtn" aria-label="切換為深色模式" style="--accent:#6c5fc7"><i class="fa-solid fa-fw fa-moon"></i>深色模式</button>
+      <button type="button" class="section-tag" id="clearMemoryBtn" style="--accent:var(--navy)"><i class="fa-solid fa-fw fa-trash"></i>清除記憶</button>
       <a href="https://www.worldgymtaiwan.com" target="_blank" rel="noopener" class="section-tag" id="officialSiteLink" aria-label="前往 World Gym 官網" style="--accent:var(--coral)"><i class="fa-solid fa-fw fa-globe"></i>世界健身中心官方網站</a>
       <span class="tooltip-wrap" id="privacyBtnWrap">
         <span class="hint-tooltip wrap" id="privacyTooltip">本站使用 Google Analytics 僅進行匿名統計且不收集個人資料。最愛清單僅保存在你的裝置上。課表資料來自 World Gym 官網僅供參考。本站為非官方工具，正確課表請以世界健身中心官方網站為準。</span>
@@ -459,28 +462,21 @@
     </div>
   </div>
 
-  <div class="sheet" id="settingsSheet">
-    <div class="field-block" id="settingsBlock" style="--accent:var(--navy)">
-      <div class="pill-grid" id="settingsGrid">
-        <span class="section-tag" role="img" aria-label="設定"><i class="fa-solid fa-fw fa-gear"></i></span>
-        <span class="tooltip-wrap" id="addFavoriteBtnWrap">
-          <span class="hint-tooltip" id="addFavoriteTooltip"></span>
-          <button type="button" class="section-btn" id="addFavoriteBtn" disabled><i class="fa-solid fa-heart"></i>加到最愛</button>
-        </span>
-        <button type="button" class="section-btn" id="clearMemoryBtn"><i class="fa-solid fa-trash"></i>清除記憶</button>
-      </div>
-    </div>
-  </div>
-
   <footer class="site-about visually-hidden">
     <p>「課表查詢」是一個<strong>非官方</strong>的 World Gym（WG）團體課表查詢工具，可依分店、地區、時段、課程種類、教練快速篩選台灣各分店的團體課課表，並支援課前推播提醒、自訂常用篩選為「我的最愛」。課表資料每日自動從官網更新，本站與 World Gym 官方無隸屬關係。</p>
   </footer>
 </div>
 
 <div class="submit-btn-wrap back-btn-wrap hidden" id="backBtnWrap">
-  <button type="button" class="submit-btn teal-btn" id="copyResultsBtn" aria-label="複製課表結果"><i class="fa-solid fa-copy"></i></button>
+  <button type="button" class="submit-btn pink-btn" id="addFavoriteBtn" aria-label="加到最愛"><i class="fa-solid fa-heart"></i></button>
   <button type="button" class="submit-btn" id="backBtn" aria-label="返回篩選條件"><i class="fa-solid fa-arrow-left"></i></button>
-  <button type="button" class="submit-btn blue-btn" id="shareUrlBtn" aria-label="分享網址"><i class="fa-solid fa-share-nodes"></i></button>
+  <div class="copy-menu" id="copyMenu">
+    <div class="copy-menu-items" id="copyMenuItems">
+      <button type="button" class="submit-btn teal-btn copy-menu-item" id="copyResultsBtn" aria-label="複製課表文字"><i class="fa-solid fa-copy"></i></button>
+      <button type="button" class="submit-btn blue-btn copy-menu-item" id="shareUrlBtn" aria-label="複製連結"><i class="fa-solid fa-link"></i></button>
+    </div>
+    <button type="button" class="submit-btn teal-btn" id="copyMenuBtn" aria-label="複製或分享" aria-haspopup="true" aria-expanded="false" aria-controls="copyMenuItems"><i class="fa-solid fa-share-nodes"></i></button>
+  </div>
 </div>
 
 <div class="submit-btn-wrap back-btn-wrap hidden" id="mailBackBtnWrap">
@@ -630,7 +626,7 @@
   </div>
 </div>
 
-<script src="common.js?v=4"></script>
-<script src="script.js?v=159"></script>
+<script src="common.js?v=5"></script>
+<script src="script.js?v=163"></script>
 </body>
 </html>
