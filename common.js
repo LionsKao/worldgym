@@ -22,7 +22,7 @@ function isStandaloneDisplay(){
   return window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
 }
 
-// 自製下拉選單：外觀跟 .section-btn / .section-search 一致，但不用原生 <select>（原生下拉的箭頭位置/樣式沒辦法客製）。
+// 自製下拉選單：外觀跟 .section-search 一致，但不用原生 <select>（原生下拉的箭頭位置/樣式沒辦法客製）。
 // root 是 .custom-select 容器，內含 .custom-select-trigger 按鈕跟 .custom-select-menu 選項列表。
 // 用 root.value（getter/setter）+ root.addEventListener("change", ...) 模擬原生 select 的介面，
 // 呼叫端程式碼幾乎不用改。root.setOptions(options, selectedValue) 用來動態換選項（廣告清單、年份/月份清單都是動態抓的）。

@@ -71,16 +71,6 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
   height:31px; padding:0 16px; font-size:13px; font-weight:800; border-radius:999px;
   background:var(--accent); color:#fff;
 }
-.section-btn{
-  display:inline-flex; align-items:center; box-sizing:border-box; height:31px;
-  font-size:12.5px; padding:0 12px; border:1.5px solid var(--line);
-  border-radius:999px; background:var(--paper); color:var(--sub); cursor:pointer; font-weight:700;
-  font-family:inherit;
-}
-.section-btn:hover{ border-color:var(--accent); color:var(--accent); }
-.section-btn:disabled{ cursor:not-allowed; opacity:0.5; }
-.section-btn:disabled:hover{ border-color:var(--line); color:var(--sub); }
-.section-btn i{ padding-right:8px; font-size:13px; }
 .section-search{
   width:100%; font-size:13px; padding:9px 14px; margin-bottom:10px;
   border:1.5px solid var(--line); border-radius:999px; background:var(--paper);
@@ -149,7 +139,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 /* 圖表資料回來前只顯示「讀取中…」文字，載入後 Chart.js 撐開高度，先保留高度避免版面被推開造成 CLS。 */
 .branch-stats-wrap{ font-size:12.5px; overflow:hidden; text-align:center; min-height:200px; }
 
-/* 自製下拉選單：外觀跟 .section-btn 一致，但不用原生 <select>（原生下拉的箭頭位置/樣式沒辦法客製）。 */
+/* 自製下拉選單：外觀跟 .section-search 一致，但不用原生 <select>（原生下拉的箭頭位置/樣式沒辦法客製）。 */
 .custom-select{ position:relative; }
 .custom-select-trigger{
   display:flex; align-items:center; justify-content:space-between; gap:8px;
@@ -409,7 +399,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
   transition:transform .15s ease;
 }
 .fav-item.pressing{ transform:scale(.94); }
-/* FAV_EDIT_NOTICE（暫時，2026-11-01 下線）：給「已經有最愛」的使用者的一次性提示 pill，形狀沿用 .fav-item。
+/* FAV_EDIT_NOTICE：給還沒看過「長按可編輯」的使用者的一次性提示 pill，形狀沿用 .fav-item。
    彩虹放在 ::before（兩個循環並排，寬度是 pill 的 600%），只用 transform 平移一個循環：transform 動畫在合成層跑，
    不像動 background-position 每一影格都要重繪；isolation 加 z-index:-1 讓它墊在文字後面，overflow:hidden 沿用 pill 的圓角裁切。 */
 .fav-item.fav-edit-notice{ position:relative; overflow:hidden; isolation:isolate; text-shadow:0 1px 2px rgba(0,0,0,.45); }

@@ -742,17 +742,6 @@ function initBranchGrid(){
   grid.querySelectorAll(".zone-group").forEach(group => reorderPillsByClicks(group, "wg_branch_clicks"));
 }
 
-document.querySelectorAll(".section-btn").forEach(btn => {
-  btn.addEventListener("click", () => {
-    const group = btn.dataset.group;
-    const checked = btn.dataset.action === "all";
-    document.querySelectorAll(`input[name="${group}"]`).forEach(input => {
-      const pill = input.closest(".pill");
-      if (!pill || !pill.classList.contains("hidden")) input.checked = checked;
-    });
-  });
-});
-
 // 每個 pill 的 label 小寫文字只算一次：老師有一千多個 pill，打字時每個按鍵（輸入法組字時更密集）都要比對一遍，
 // 以前每次都重新 querySelector("label")、讀 textContent、轉小寫。label 文字在 pill 建立後不會變，
 // pill 重新產生就是新節點，WeakMap 的快取跟著換、舊的自動回收。
@@ -1182,7 +1171,7 @@ function renderFavorites(){
     bindFavoriteLongPress(btn, index, fav);
     grid.appendChild(btn);
   });
-  appendFavEditNotice(grid); // FAV_EDIT_NOTICE（暫時，2026-11-01 下線）
+  appendFavEditNotice(grid); // FAV_EDIT_NOTICE
 }
 
 const addFavoriteModal = document.getElementById("addFavoriteModal");
@@ -1281,7 +1270,7 @@ function openFavoriteEditor(index, fav, chip){
   configureFavoriteModal();
   syncFavNameField();
   markFavEditHintSeen(); // 都會開編輯視窗了，已經知道這個功能，以後不用再提示
-  removeFavEditNotice(); // FAV_EDIT_NOTICE（暫時，2026-11-01 下線）
+  removeFavEditNotice(); // FAV_EDIT_NOTICE
   addFavoriteModal.classList.remove("hidden");
 }
 document.getElementById("addFavoriteBtn").addEventListener("click", (e) => {
@@ -1362,8 +1351,8 @@ favNameClearBtn.addEventListener("click", () => {
   favNameInput.focus();
 });
 document.getElementById("favModalCloseBtn").addEventListener("click", closeFavoriteModal);
-// 長按才開得了編輯視窗、沒有可見提示，所以第一次新增最愛後在新晶片上提醒一次（見下面 submit 處理的 showEditHint）。
-// 「已經知道長按可以編輯」的記號：看過提示、或真的開過編輯視窗，就不再提示（這個提示與下面暫時的提示 pill 共用）。
+// 長按才開得了編輯視窗、沒有可見提示，所以靠下面的彩虹提示 pill（FAV_EDIT_NOTICE）提醒。
+// 「已經知道長按可以編輯」的記號：看過提示 pill、點掉它、或真的開過編輯視窗，就不再提示。
 const FAV_EDIT_HINT_KEY = "wg_fav_edit_hint_seen";
 function markFavEditHintSeen(){
   writeStored(FAV_EDIT_HINT_KEY, "1");
@@ -1379,12 +1368,9 @@ favModalSubmitBtn.addEventListener("click", () => {
     saveFavorites(favs);
     trackEvent("add_favorite", { favorite_label: name });
     logFavoriteEvent("add");
-    // 第一次新增最愛才提示長按可編輯：先記下再畫，這樣下面的「已經有最愛」提示 pill 就不會被建出來（同一個人不會看到兩種提示）。
-    const showEditHint = readStored(FAV_EDIT_HINT_KEY) !== "1";
-    if (showEditHint) markFavEditHintSeen();
+    // 還沒看過「長按可編輯」的人，renderFavorites 會接一顆提示 pill（FAV_EDIT_NOTICE）；最愛區塊此刻是隱藏的，回篩選頁才看得到。
     renderFavorites();
     closeFavoriteModal();
-    if (showEditHint) showPillWarning(document.getElementById("favoriteGrid").lastElementChild, "長按可編輯或刪除"); // 最後一個元素就是剛新增的那顆
     return;
   }
   const current = resolveFavEditIndex(favs);
@@ -1404,20 +1390,14 @@ favModalSubmitBtn.addEventListener("click", () => {
   closeFavoriteModal();
 });
 
-// FAV_EDIT_NOTICE（暫時，2026-11-01 下線）：編輯功能剛上線時，給「已經有最愛」的舊使用者的一次性提示 pill，
-// 長得像最愛晶片、接在所有最愛後面，用會流動的彩虹底色。只在 FAV_EDIT_NOTICE_END_DATE 之前顯示；
+// FAV_EDIT_NOTICE：給還沒看過「長按可編輯」的人的一次性提示 pill（第一次新增最愛的人、以及編輯功能上線前就有最愛的舊使用者），
+// 長得像最愛晶片、接在所有最愛後面，用會流動的彩虹底色。有最愛、而且還沒記為看過就會出現；
 // 「看過」的定義是 pill 完整出現在畫面上連續滿 FAV_EDIT_NOTICE_SEEN_MS（載入遮罩還在、分頁在背景、最愛列被藏起來
 // ——例如分享連結直接顯示查詢結果——都不算），滿了才寫記號，所以下一次載入就不再出現；點一下則收合並立刻記為看過。
-// 永久程式碼只在兩處碰到它：renderFavorites 呼叫 appendFavEditNotice、openFavoriteEditor 呼叫 removeFavEditNotice
-// （都標了 FAV_EDIT_NOTICE）。下線時整段刪掉（本段、那兩個呼叫、style.css 的 .fav-edit-notice 與 fav-rainbow、
-// GA_EVENTS.md 兩個事件、CLAUDE.md 的說明）。
-const FAV_EDIT_NOTICE_END_DATE = "2026-11-01"; // 這天起（台灣日期）不再顯示
+// 本來是 2026-11-01 就下線的暫時提示，2026-10-29 使用者決定改成永久、給第一次新增最愛的人用。
 const FAV_EDIT_NOTICE_SEEN_MS = 2000;
 const FAV_EDIT_NOTICE_TICK_MS = 500;
-const FAV_EDIT_NOTICE_MAX_TICKS = 600; // 一直沒看到（例如停在查詢結果頁）時 5 分鐘後就不再偵測
-function favEditNoticeActive(){
-  return readStored(FAV_EDIT_HINT_KEY) !== "1" && todayIso() < FAV_EDIT_NOTICE_END_DATE; // 便宜的檢查放前面，todayIso() 要建 Intl 格式器
-}
+const FAV_EDIT_NOTICE_MAX_TICKS = 600; // 一直沒看到（例如停在查詢結果頁）時 5 分鐘後就不再偵測；沒記為看過，下次載入頁面會重新偵測
 function removeFavEditNotice(){
   document.querySelector("#favoriteGrid .fav-edit-notice")?.remove();
 }
@@ -1442,11 +1422,11 @@ function watchFavEditNoticeSeen(el){
   }, FAV_EDIT_NOTICE_TICK_MS);
 }
 function appendFavEditNotice(grid){
-  if (!favEditNoticeActive()) return;
+  if (readStored(FAV_EDIT_HINT_KEY) === "1") return; // 已經知道長按可以編輯了
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "fav-item fav-edit-notice";
-  btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i>最愛可以編輯了！長按試試';
+  btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i>長按最愛可以編輯';
   btn.addEventListener("click", () => {
     markFavEditHintSeen();
     trackEvent("fav_edit_notice_dismiss", {});
