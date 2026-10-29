@@ -17,6 +17,33 @@ import { CRAWLER_UA_PATTERN } from "../worker/src/crawlers.js";
 // 一直顯示「無法讀取 Sitemap」是不是動態 Function 造成的；問題釐清後連同根目錄的 sitemap-static.xml 一起刪掉。
 const PUBLIC_CRAWLER_PATHS = new Set(["/robots.txt", "/sitemap.xml", "/sitemap-static.xml", "/llms.txt"]);
 
+// 海外 IP 被擋時回的 403 頁（根目錄 403.html，仿 404.html）要靠 style.css 才有樣式，所以 style.css 本身不能也被 403 擋掉；
+// 它是任何訪客都能直接下載的公開檔案，放行沒有風險。其餘資源（script.js、icons 等）照舊擋。
+const PUBLIC_ASSET_PATHS = new Set(["/style.css"]);
+
+// 海外被擋時：瀏覽器開頁面（GET + Accept 含 text/html）回帶樣式的 403 頁，其餘請求（腳本、API、爬蟲）維持純文字 Forbidden。
+// 403.html 取自 env.ASSETS（直接讀靜態資源，不會再進這個 middleware）；讀不到就退回純文字，不讓錯誤頁本身出錯。
+// Pages 會把 /403.html 轉址到 /403，所以直接要 /403。
+async function forbiddenResponse(context) {
+  const plain = () => new Response("Forbidden", { status: 403 });
+  const { request, env } = context;
+  if (request.method !== "GET" || !(request.headers.get("Accept") || "").includes("text/html") || !env.ASSETS) {
+    return plain();
+  }
+  try {
+    const page = await env.ASSETS.fetch(new Request(new URL("/403", request.url)));
+    if (!page.ok) return plain();
+    const headers = new Headers(page.headers);
+    headers.set("Content-Type", "text/html; charset=utf-8");
+    headers.set("Cache-Control", "no-store");
+    headers.set("X-Robots-Tag", "noindex");
+    headers.delete("ETag");
+    return new Response(page.body, { status: 403, headers });
+  } catch {
+    return plain();
+  }
+}
+
 // 部署會把整個 repo 根目錄當成靜態資源發布（Pages 不吃 .assetsignore），這些不是網站的一部分、
 // 不該被公開讀取：後端原始碼與設定、專案文件、工具設定檔、點開頭的檔案（.gitignore、.claude/ …）。
 // 一律回 404，跟「這個路徑不存在」看起來一樣；不看 UA 也不看 IP（爬蟲也不該抓到）。
@@ -42,14 +69,14 @@ export async function onRequest(context) {
   if (isBlockedPath(pathname)) {
     return new Response("Not Found", { status: 404 });
   }
-  if (PUBLIC_CRAWLER_PATHS.has(pathname)) {
+  if (PUBLIC_CRAWLER_PATHS.has(pathname) || PUBLIC_ASSET_PATHS.has(pathname)) {
     return context.next();
   }
   const country = context.request.cf?.country;
   if (country && country !== "TW") {
     const ua = context.request.headers.get("User-Agent") || "";
     if (!CRAWLER_UA_PATTERN.test(ua)) {
-      return new Response("Forbidden", { status: 403 });
+      return forbiddenResponse(context);
     }
   }
   return context.next();

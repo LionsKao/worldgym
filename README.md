@@ -34,7 +34,7 @@
 ├── admin.html / admin.js                # 後台：登入、報表（Chart.js）、手動重抓與清除孤兒資料
 ├── vendor/chart.umd.min.js              # Chart.js（vendor 進來，不吃 CDN）
 ├── manifest.json / sw.js / icons/       # PWA 設定與 Service Worker（推播提醒用）
-├── 404.html / robots.txt / sitemap.xml / llms.txt   # sitemap.xml 與 llms.txt 是動態版失敗時的備援靜態檔
+├── 403.html / 404.html / robots.txt / sitemap.xml / llms.txt   # sitemap.xml 與 llms.txt 是動態版失敗時的備援靜態檔
 ├── _headers                             # Pages 回應標頭：CSP 等安全標頭、CSS／JS／icon 的 30 天快取
 ├── functions/                           # Cloudflare Pages Functions（跟靜態站一起部署）
 │   ├── _middleware.js                   #   只放行台灣 IP（爬蟲例外）、擋掉不屬於網站的檔案（worker/、*.md、點開頭的檔案）
@@ -218,7 +218,7 @@ Pages（`functions/_middleware.js`）與 Worker 都只放行台灣 IP（拿不�
 
 ## ⚡ 靜態資源快取
 
-CSS、JS、icon（`style.css`、`script.js`、`common.js`、`admin.js`、`ga-init.js`、`css-async.js`、`vendor/`、`icons/`、`favicon.ico`）一律走 `_headers` 快取 30 天，搭配引用處的 `?v=` 版號：**檔案內容改了，就要把引用它的地方（`index.html`／`admin.html`／`404.html`、`manifest.json`、`sw.js`）的版號加一**，否則使用者最久一個月看到舊的。`style.css` 三個頁面要用同一個版號；`common.js` 同時被兩個頁面引用，兩邊的版號要一起改。`sw.js` 不長快取（Service Worker 要能隨時更新），`favicon.ico` 是瀏覽器自己請求的、沒辦法帶版號。
+CSS、JS、icon（`style.css`、`script.js`、`common.js`、`admin.js`、`ga-init.js`、`css-async.js`、`vendor/`、`icons/`、`favicon.ico`）一律走 `_headers` 快取 30 天，搭配引用處的 `?v=` 版號：**檔案內容改了，就要把引用它的地方（`index.html`／`admin.html`／`403.html`／`404.html`、`manifest.json`、`sw.js`）的版號加一**，否則使用者最久一個月看到舊的。`style.css` 四個頁面要用同一個版號；`common.js` 同時被兩個頁面引用，兩邊的版號要一起改。`sw.js` 不長快取（Service Worker 要能隨時更新），`favicon.ico` 是瀏覽器自己請求的、沒辦法帶版號。
 
 版號是人工維護的，改完 CSS／JS／icon 請跑檢查（只讀檔）：`cd worker && npm run check:versions -- --base=origin/main`，會抓「引用沒帶版號、同一個檔案各處版號不一致、檔案內容改了版號沒加」。
 

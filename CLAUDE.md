@@ -92,7 +92,7 @@ css-async.js                         非阻塞載入 Font Awesome CSS（同樣�
 manifest.json / sw.js / icons/       PWA + Service Worker（推播提醒用）
 admin.html / admin.js                後台：登入、報表（Chart.js）、手動重抓與清除孤兒資料
 vendor/chart.umd.min.js              Chart.js，vendor 進來不吃 CDN
-404.html / robots.txt / llms.txt / sitemap.xml   sitemap.xml 與 llms.txt 是動態版失敗時的備援靜態檔
+403.html / 404.html / robots.txt / llms.txt / sitemap.xml   sitemap.xml 與 llms.txt 是動態版失敗時的備援靜態檔；403.html 是海外 IP 被擋時回的頁面（見「台灣 IP 限制」）
 GA_EVENTS.md                         前端送出的 GA4 事件清單
 functions/_middleware.js             Cloudflare Pages Functions：只放行台灣 IP（爬蟲 UA 例外）、擋掉非網站檔案（worker/、*.md、點開頭檔案等）回 404
 functions/index.js                  Pages Function：單一分店網址在伺服器端注入課表（見下方「伺服器端注入課表」）
@@ -156,6 +156,7 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 - Worker：只放行唯讀的 `GET /filterOptions`、`GET /issueToken`、`POST /queryClasses`（含這三個路徑的 `OPTIONS` preflight），其餘端點（打點、後台、統計、推播登記、留言…）對海外爬蟲一律 403，避免爬蟲渲染頁面時污染統計。判斷邏輯在 `worker/src/crawlers.js` 的 `isRequestAllowed`，token 與每 IP 流量限制照舊，沒有為爬蟲另開後門。
 - **`CRAWLER_UA_PATTERN` 只有一份，在 `worker/src/crawlers.js`**，`functions/_middleware.js` 直接 import 它（`functions/` 本來就會 import `worker/src/` 的檔案，Pages 打包時一起包進去），要增減爬蟲只改那一處。
 - UA 只能用來決定「放不放行」，不可以依 UA 回傳不同內容（cloaking）。
+- **被擋時的回應（Pages）**：瀏覽器開頁面（GET 且 Accept 含 text/html）回帶樣式的 403 頁（根目錄 `403.html`，仿 `404.html`，由 `_middleware.js` 的 `forbiddenResponse()` 從 `env.ASSETS` 讀 `/403`——Pages 會把 `/403.html` 308 轉址到 `/403`，所以要請 `/403`；回應帶 `Cache-Control: no-store`、`X-Robots-Tag: noindex`），其餘請求（腳本、API、HEAD）仍是純文字 `Forbidden`，讀不到 `403.html` 也退回純文字。海外使用者的瀏覽器要靠 `style.css` 才有樣式，所以 `/style.css` 在 `PUBLIC_ASSET_PATHS` 裡不受 IP 限制（它本來就是公開檔案）；其他資源（script.js、icons）照舊擋。Worker API 的 403 還是純文字（給程式讀的，不需要頁面）。
 
 ### 伺服器端注入課表（SSR）
 目的：讓不執行 JS 的爬蟲（多數 AI 爬蟲）也讀得到單一分店課表。`functions/index.js` 只處理 `/`：網址正規化後剛好是「單一分店 + `room=1`」（`branch` 可寫短代碼或 slug；`utm_*`/`pwa`/`fbclid`/`gclid` 會忽略）且該分店在注入清單裡，才查 D1 並用 HTMLRewriter 改寫回傳的 `index.html`；其餘網址（無參數、多分店、有 day/time/course/teacher、不在注入清單）一律 `context.next()` 原樣放行，不查 D1，canonical 維持靜態 HTML 的 `/`。
@@ -192,7 +193,7 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 
 ### 靜態資源快取
 **CSS、JS、icon 一律走 `_headers` 快取 30 天（`max-age=2592000`，不加 `immutable`，所以按重新整理仍會向伺服器確認）**：`style.css`、`script.js`、`common.js`、`admin.js`、`ga-init.js`、`css-async.js`、`vendor/*`、`icons/*`、`favicon.ico`。這套做法的前提是**所有引用處都帶 `?v=` 版號**，而且**內容改了就一定要把引用它的地方的版號加一**，否則使用者最久一個月看到舊的——改 JS／CSS／icon 時別忘了：
-- `style.css`：`index.html`、`admin.html`、`404.html` 三頁**要用同一個版號**（目前 119；以前三頁各自為政變成 104／73／45，後台和 404 頁會吃到舊樣式）。
+- `style.css`：`index.html`、`admin.html`、`403.html`、`404.html` 四頁**要用同一個版號**（目前 119；以前三頁各自為政變成 104／73／45，後台和 404 頁會吃到舊樣式）。
 - `script.js`（只有 `index.html`）、`admin.js`（只有 `admin.html`）、`common.js`（兩頁都引用，都要排在自己的 script 之前，改了要兩個檔案裡的 `common.js?v=` 一起更新）。
 - `ga-init.js`、`css-async.js`、`vendor/chart.umd.min.js`（`admin.html`，以及 `script.js` 的 `loadChartJs()`）：目前 `?v=1`，改了這些檔案就把 1 往上加。
 - `icons/*`：`index.html`（`og:image`、`twitter:image`、`apple-touch-icon`、QR code）、`manifest.json`、`sw.js`（通知圖示）都帶 `?v=1`，換圖就一起加。

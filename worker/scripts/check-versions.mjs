@@ -2,7 +2,7 @@
 //
 // CSS、JS、icon 都走 _headers 快取 30 天，能這樣做的前提是「引用處都帶 ?v= 版號、檔案內容改了版號就要加一」。
 // 版號是人工維護的，以前就出現過三個頁面的 style.css 版號各自為政（104／73／45）。這支腳本只讀檔、不改任何東西，檢查：
-//   1. 每個引用本站 CSS／JS／icon 的地方（index.html、admin.html、404.html、manifest.json、sw.js、script.js 的 Chart.js 載入）
+//   1. 每個引用本站 CSS／JS／icon 的地方（index.html、admin.html、403.html、404.html、manifest.json、sw.js、script.js 的 Chart.js 載入）
 //      都帶 ?v=數字，而且檔案存在
 //   2. 同一個檔案在所有引用處用的版號相同（例如 style.css 三個頁面要一樣、common.js 兩個頁面要一樣）
 //   3. （選用）--base=<git ref>：內容跟 base 不一樣的檔案，版號一定要比 base 的大——抓「改了檔案忘了加版號」，
@@ -30,6 +30,7 @@ const EXEMPT = new Set(["favicon.ico"]);
 const SOURCES = [
   { file: "index.html", pick: (t) => [...t.matchAll(/\b(?:src|href|content)="([^"]*)"/g)].map((m) => m[1]) },
   { file: "admin.html", pick: (t) => [...t.matchAll(/\b(?:src|href|content)="([^"]*)"/g)].map((m) => m[1]) },
+  { file: "403.html", pick: (t) => [...t.matchAll(/\b(?:src|href|content)="([^"]*)"/g)].map((m) => m[1]) },
   { file: "404.html", pick: (t) => [...t.matchAll(/\b(?:src|href|content)="([^"]*)"/g)].map((m) => m[1]) },
   { file: "manifest.json", pick: (t) => [...t.matchAll(/"src"\s*:\s*"([^"]*)"/g)].map((m) => m[1]) },
   { file: "sw.js", pick: (t) => [...t.matchAll(/\b(?:icon|badge)\s*:\s*"([^"]*)"/g)].map((m) => m[1]) },
