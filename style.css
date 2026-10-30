@@ -425,21 +425,21 @@ html:not(.pride) .fav-color-pill.pride-only, html.pride .fav-color-pill.pride-re
 .fav-item.pressing{ transform:scale(.94); }
 /* 彩虹底色的最愛有四種：鮮豔的 .fav-rainbow（不會動）／.fav-rainbow-flow（流動，FAV_EDIT_NOTICE 提示 pill 也用它），
    奶油色系的 .fav-cream（不會動）／.fav-cream-flow（流動）。形狀都沿用 .fav-item。 */
-.fav-item:is(.fav-rainbow, .fav-rainbow-flow, .fav-cream, .fav-cream-flow){ text-shadow:0 1px 2px rgba(0,0,0,.45); }
+.fav-item.fav-rainbow, .fav-item.fav-rainbow-flow, .fav-item.fav-cream, .fav-item.fav-cream-flow{ text-shadow:0 1px 2px rgba(0,0,0,.45); }
 .fav-item.fav-rainbow{ background:linear-gradient(135deg,var(--rainbow-stops)); }
 .fav-item.fav-cream{ background:linear-gradient(135deg,var(--cream-rainbow-stops)); }
 .fav-item.fav-rainbow-flow{ --flow-cycle:var(--rainbow-cycle); }
 .fav-item.fav-cream-flow{ --flow-cycle:var(--cream-rainbow-cycle); }
 /* 流動的彩虹放在 ::before（45° 斜紋，水平每 90px 一個循環，寬度多留 90px 給平移用），只用 transform 平移一個循環：transform 動畫在合成層跑，
    不像動 background-position 每一影格都要重繪；isolation 加 z-index:-1 讓它墊在文字後面，overflow:hidden 沿用 pill 的圓角裁切。 */
-.fav-item:is(.fav-rainbow-flow, .fav-cream-flow){ position:relative; overflow:hidden; isolation:isolate; }
-.fav-item:is(.fav-rainbow-flow, .fav-cream-flow)::before{
+.fav-item.fav-rainbow-flow, .fav-item.fav-cream-flow{ position:relative; overflow:hidden; isolation:isolate; }
+.fav-item.fav-rainbow-flow::before, .fav-item.fav-cream-flow::before{
   content:""; position:absolute; top:0; bottom:0; left:0; width:calc(100% + 90px); z-index:-1;
   background:repeating-linear-gradient(135deg,var(--flow-cycle));
   animation:fav-rainbow 3s linear infinite;
 }
 @keyframes fav-rainbow{ from{ transform:translateX(0); } to{ transform:translateX(-90px); } }
-@media (prefers-reduced-motion:reduce){ .fav-item:is(.fav-rainbow-flow, .fav-cream-flow)::before, #favColor-rainbow-flow + label, #favColor-cream-flow + label{ animation:none; } }
+@media (prefers-reduced-motion:reduce){ .fav-item.fav-rainbow-flow::before, .fav-item.fav-cream-flow::before, #favColor-rainbow-flow + label, #favColor-cream-flow + label{ animation:none; } }
 /* 刪除最愛：先微微放大，再縮小淡出並把寬度收合到 0（--fav-w 是 JS 量好的原寬；margin-right 的 -6px 抵掉
    .pill-grid 的 gap，旁邊的晶片才會順順地補上來）。JS 只用 animationend 收尾，沒有對應的時間常數。 */
 .fav-item.removing{ overflow:hidden; white-space:nowrap; pointer-events:none; animation:fav-remove .3s ease forwards; }

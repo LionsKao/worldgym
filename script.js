@@ -1231,12 +1231,17 @@ function closeFavoriteModal(){
   addFavoriteModal.classList.add("hidden");
   favEdit = null;
 }
-// 預填圖示／顏色：值來自 localStorage，不一定在預設選項裡（舊資料、自己用 devtools 改過的自訂圖示／顏色）。
-// 對不到就把整組取消勾選：畫面上沒有選取，儲存時沿用原值（checkedFavoriteValue 的 fallback），
-// 不會被上一次勾選的選項偷偷蓋掉。
+// 預填圖示／顏色：值來自 localStorage，不一定在預設選項裡（舊資料、自己用 devtools 改過的自訂圖示／顏色），
+// 也可能是被藏起來的限時色票（彩蛋期間藏起來的深綠、棕、金、青，或過期後下架的彩虹）。
+// 對不到（藏起來的也算）就把整組取消勾選：畫面上沒有選取，儲存時沿用原值（checkedFavoriteValue 的 fallback），
+// 不會被上一次勾選的選項偷偷蓋掉；藏起來的色票也不會留著勾選、在新增模式被偷偷存下去。
+// 看得見用色票自己的 display 判斷（視窗還沒顯示，不能用 offsetParent）。
+function isFavoriteRadioShown(input){
+  return getComputedStyle(input.parentElement).display !== "none";
+}
 function checkFavoriteRadio(name, value){
   const inputs = [...document.querySelectorAll(`input[name="${name}"]`)];
-  const match = inputs.find(el => el.value === value);
+  const match = inputs.find(el => el.value === value && isFavoriteRadioShown(el));
   inputs.forEach(el => { el.checked = el === match; });
 }
 function checkedFavoriteValue(name, fallback){
@@ -2190,16 +2195,26 @@ function startPrideConfetti(){
   const ctx = canvas.getContext("2d");
   let width = 0;
   let height = 0;
+  let pixelRatio = 0;
   const resize = () => {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    width = window.innerWidth;
-    height = window.innerHeight;
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
+    const w = canvas.clientWidth; // 用 canvas 實際顯示的大小，不用 innerWidth／innerHeight：手機網址列伸縮時兩者會對不上，紙片會被拉歪
+    const h = canvas.clientHeight;
+    if (w === width && h === height && dpr === pixelRatio) return; // 重設 canvas.width／height 會重新配置並清空整張畫布，沒變就不要動
+    width = w;
+    height = h;
+    pixelRatio = dpr;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   };
   resize();
-  window.addEventListener("resize", resize);
+  // 手機捲動時網址列收合／展開會連續觸發 resize，等停下來再重設一次
+  let resizeTimer = 0;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(resize, 150);
+  });
   const rand = (min, max) => min + Math.random() * (max - min);
   // 一片紙片：x 是水平基準位置（再加上左右搖擺）、t 是已經飄了幾秒；
   // 高度乘上 cos(flip) 讓它邊轉邊翻面。anywhere=true 是一開始就散在整個畫面上方，不然會一起從頂端掉下來。
@@ -2288,7 +2303,7 @@ async function init(){
     }
     document.getElementById("loadingOverlay").classList.add("fade-out");
     setTimeout(() => document.getElementById("loadingOverlay").remove(), 200);
-    startPrideConfetti();
+    try { startPrideConfetti(); } catch(e){ console.error("彩蛋啟動失敗", e); } // 只是裝飾，出錯就算了
   }
 }
 init();
