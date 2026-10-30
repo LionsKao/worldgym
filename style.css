@@ -2,6 +2,14 @@
   --ink:#2b2b2b; --paper:#fff; --sub:#7a7a7a; --line:#ececec;
   --navy:#3a3a4a; --teal:#3fae8f; --cream:#f5e6a8; --orange:#f0a04b; --coral:#e8604c;
   --bg:#f7f5ef;
+  /* 彩虹最愛的顏色，兩份同一組色：--rainbow-stops 是不會動的（整條漸層拉滿整個晶片／色票）；
+     --rainbow-cycle 是流動的，位置寫死成一個循環 63.64px（沿 135° 漸層方向），水平看每 90px（63.64×√2）重複一次，
+     所以平移 90px 剛好接回原樣、可以無縫循環。改顏色兩份要一起改。 */
+  --rainbow-stops:#e5484d,#e8741e,#d99a00,#2fa36b,#2f7de1,#7c5ce0,#e5484d;
+  --rainbow-cycle:#e5484d 0,#e8741e 10.61px,#d99a00 21.21px,#2fa36b 31.82px,#2f7de1 42.43px,#7c5ce0 53.03px,#e5484d 63.64px;
+  /* 奶油色系的彩虹（最愛的奶油彩虹色票與晶片、彩蛋標題共用），一樣兩份：--cream-rainbow-stops 不會動、--cream-rainbow-cycle 流動；改色兩份要一起改。 */
+  --cream-rainbow-stops:#ef9a93,#f5b27a,#f1d36b,#9bd09d,#8bbbe9,#b496da;
+  --cream-rainbow-cycle:#ef9a93 0,#f5b27a 10.61px,#f1d36b 21.21px,#9bd09d 31.82px,#8bbbe9 42.43px,#b496da 53.03px,#ef9a93 63.64px;
   --navy-ink:#3a3a4a; --chart-tip:#2b2b2b; /* 深色主題下會換掉：navy 當「文字／邊框色」用的地方、圖表提示框底色 */
 }
 html{ overflow-y:scroll; }
@@ -31,6 +39,11 @@ body{
 }
 .hero h1 .c1{ color:var(--coral); }
 .hero h1 .c2{ color:var(--navy-ink); }
+/* 彩蛋（script.js 的 PRIDE_END_DATE，到 2026-11-02）：標題改成奶油色系的漸層彩虹；html.pride 由 script.js 載入時加上，過期就不加、回到原本的珊瑚＋深藍。
+   漸層畫在 h1 上、用 background-clip:text 裁成字形，所以兩個 span 的文字色要透明；字是淡色，加一點 drop-shadow 才不會糊在米色底上
+   （不能用 text-shadow：文字填色是透明的，陰影會從字裡透出來）。 */
+html.pride .hero h1{ background:linear-gradient(90deg,var(--cream-rainbow-stops)); -webkit-background-clip:text; background-clip:text; filter:drop-shadow(0 1px 0 rgba(0,0,0,.14)); }
+html.pride .hero h1 .c1, html.pride .hero h1 .c2{ color:transparent; }
 
 .stripe-bar{
   height:10px; border-radius:6px; overflow:hidden; display:flex; margin:0 auto 26px; max-width:420px;
@@ -390,6 +403,17 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 }
 .fav-color-options label:hover{ border-style:dashed; border-color:var(--ink); }
 .fav-color-options input:checked + label{ border-style:solid; border-color:var(--ink); transform:scale(1.1); }
+/* 四顆彩虹色票，都是 45° 斜紋：鮮豔（rainbow）與奶油色系（cream）各一顆不會動、一顆會流動（色票很小，直接動 background-position 就好，不用像晶片那樣拆 ::before）。
+   流動的圖塊是 270px 見方（= 3 個水平循環 90px），平移 90px 剛好接回原樣；background-origin 要設 border-box，不然 1.5px 的透明邊框會露出空白。 */
+#favColor-rainbow + label{ background:linear-gradient(135deg,var(--rainbow-stops)); }
+#favColor-rainbow-flow + label{ background:repeating-linear-gradient(135deg,var(--rainbow-cycle)) 0 0 / 270px 270px; animation:fav-rainbow-swatch 3s linear infinite; }
+#favColor-cream + label{ background:linear-gradient(135deg,var(--cream-rainbow-stops)); }
+#favColor-cream-flow + label{ background:repeating-linear-gradient(135deg,var(--cream-rainbow-cycle)) 0 0 / 270px 270px; animation:fav-rainbow-swatch 3s linear infinite; }
+#favColor-rainbow + label, #favColor-rainbow-flow + label, #favColor-cream + label, #favColor-cream-flow + label{ background-origin:border-box; }
+@keyframes fav-rainbow-swatch{ to{ background-position:90px 0; } }
+/* 這四顆彩虹色票是限時的（2026-11-02 止）：彩蛋期間（html.pride）取代最後四格的深綠、棕、金、青，過期換回來。
+   已經存成彩虹的最愛不受影響——晶片的 .fav-rainbow／.fav-cream 樣式是永久的，只有「選色視窗裡選得到」是限時的。 */
+html:not(.pride) .fav-color-pill.pride-only, html.pride .fav-color-pill.pride-replaced{ display:none; }
 .fav-item{
   display:inline-flex; align-items:center; box-sizing:border-box; height:31px;
   padding:0 14px; border-radius:999px; border:none; cursor:pointer;
@@ -399,17 +423,23 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
   transition:transform .15s ease;
 }
 .fav-item.pressing{ transform:scale(.94); }
-/* FAV_EDIT_NOTICE：給還沒看過「長按可編輯」的使用者的一次性提示 pill，形狀沿用 .fav-item。
-   彩虹放在 ::before（兩個循環並排，寬度是 pill 的 600%），只用 transform 平移一個循環：transform 動畫在合成層跑，
+/* 彩虹底色的最愛有四種：鮮豔的 .fav-rainbow（不會動）／.fav-rainbow-flow（流動，FAV_EDIT_NOTICE 提示 pill 也用它），
+   奶油色系的 .fav-cream（不會動）／.fav-cream-flow（流動）。形狀都沿用 .fav-item。 */
+.fav-item:is(.fav-rainbow, .fav-rainbow-flow, .fav-cream, .fav-cream-flow){ text-shadow:0 1px 2px rgba(0,0,0,.45); }
+.fav-item.fav-rainbow{ background:linear-gradient(135deg,var(--rainbow-stops)); }
+.fav-item.fav-cream{ background:linear-gradient(135deg,var(--cream-rainbow-stops)); }
+.fav-item.fav-rainbow-flow{ --flow-cycle:var(--rainbow-cycle); }
+.fav-item.fav-cream-flow{ --flow-cycle:var(--cream-rainbow-cycle); }
+/* 流動的彩虹放在 ::before（45° 斜紋，水平每 90px 一個循環，寬度多留 90px 給平移用），只用 transform 平移一個循環：transform 動畫在合成層跑，
    不像動 background-position 每一影格都要重繪；isolation 加 z-index:-1 讓它墊在文字後面，overflow:hidden 沿用 pill 的圓角裁切。 */
-.fav-item.fav-edit-notice{ position:relative; overflow:hidden; isolation:isolate; text-shadow:0 1px 2px rgba(0,0,0,.45); }
-.fav-item.fav-edit-notice::before{
-  content:""; position:absolute; top:0; bottom:0; left:0; width:600%; z-index:-1;
-  background:linear-gradient(90deg,#e5484d,#e8741e,#d99a00,#2fa36b,#2f7de1,#7c5ce0,#e5484d) 0 0 / 50% 100% repeat-x;
-  animation:fav-rainbow 4s linear infinite;
+.fav-item:is(.fav-rainbow-flow, .fav-cream-flow){ position:relative; overflow:hidden; isolation:isolate; }
+.fav-item:is(.fav-rainbow-flow, .fav-cream-flow)::before{
+  content:""; position:absolute; top:0; bottom:0; left:0; width:calc(100% + 90px); z-index:-1;
+  background:repeating-linear-gradient(135deg,var(--flow-cycle));
+  animation:fav-rainbow 3s linear infinite;
 }
-@keyframes fav-rainbow{ from{ transform:translateX(0); } to{ transform:translateX(-50%); } }
-@media (prefers-reduced-motion:reduce){ .fav-item.fav-edit-notice::before{ animation:none; } }
+@keyframes fav-rainbow{ from{ transform:translateX(0); } to{ transform:translateX(-90px); } }
+@media (prefers-reduced-motion:reduce){ .fav-item:is(.fav-rainbow-flow, .fav-cream-flow)::before, #favColor-rainbow-flow + label, #favColor-cream-flow + label{ animation:none; } }
 /* 刪除最愛：先微微放大，再縮小淡出並把寬度收合到 0（--fav-w 是 JS 量好的原寬；margin-right 的 -6px 抵掉
    .pill-grid 的 gap，旁邊的晶片才會順順地補上來）。JS 只用 animationend 收尾，沒有對應的時間常數。 */
 .fav-item.removing{ overflow:hidden; white-space:nowrap; pointer-events:none; animation:fav-remove .3s ease forwards; }
@@ -418,7 +448,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
   30%{ opacity:1; transform:scale(1.08); max-width:var(--fav-w); }
   100%{ opacity:0; transform:scale(.4); max-width:0; padding-left:0; padding-right:0; margin-right:-6px; }
 }
-.fav-item i{ padding-right:6px; }
+.fav-item i{ padding-right:6px; position:relative; top:2px; } /* 圖示的視覺中心比中文字高，往下推才對齊（1px 還是偏高，使用者 2026-10-29 要求再多推 1px） */
 
 .active-filters{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
 .active-filter-tag{
@@ -481,6 +511,8 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
   background:var(--paper);
   display:flex; align-items:center; justify-content:center; z-index:9999;
 }
+/* 彩蛋（script.js 的 startPrideConfetti，到 2026-11-02）：蓋在內容與底部按鈕列之上、彈窗（1000）之下，點擊穿透。 */
+.pride-confetti{ position:fixed; left:0; top:0; width:100%; height:100%; pointer-events:none; z-index:900; }
 #loadingOverlay .loading-box{ display:flex; flex-direction:column; align-items:center; gap:12px; }
 #loadingOverlay .blocks{ display:flex; gap:6px; }
 #loadingOverlay .blocks span{

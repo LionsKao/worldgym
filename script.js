@@ -1153,6 +1153,12 @@ function bindFavoriteLongPress(btn, index, fav){
     applyFavorite(fav);
   });
 }
+// 顏色選項裡的特殊值（index.html 的 favColor-rainbow／-rainbow-flow／-cream／-cream-flow）：不是色碼，晶片改用對應的 class 畫彩虹底色
+// （鮮豔或奶油色系，各有不會動與流動兩種）
+const FAV_RAINBOW_CLASSES = new Map([
+  ["rainbow", "fav-rainbow"], ["rainbow-flow", "fav-rainbow-flow"],
+  ["cream", "fav-cream"], ["cream-flow", "fav-cream-flow"],
+]);
 function renderFavorites(){
   updateFavoriteHeart();
   const grid = document.getElementById("favoriteGrid");
@@ -1166,7 +1172,9 @@ function renderFavorites(){
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "fav-item";
-    btn.style.background = fav.color || "#e8604c";
+    const rainbowClass = FAV_RAINBOW_CLASSES.get(fav.color);
+    if (rainbowClass) btn.classList.add(rainbowClass);
+    else btn.style.background = fav.color || "#e8604c";
     btn.innerHTML = `<i class="fa-solid fa-${escapeHtml(fav.icon || "heart")}"></i>${escapeHtml(fav.label)}`;
     bindFavoriteLongPress(btn, index, fav);
     grid.appendChild(btn);
@@ -1425,7 +1433,7 @@ function appendFavEditNotice(grid){
   if (readStored(FAV_EDIT_HINT_KEY) === "1") return; // 已經知道長按可以編輯了
   const btn = document.createElement("button");
   btn.type = "button";
-  btn.className = "fav-item fav-edit-notice";
+  btn.className = "fav-item fav-rainbow-flow fav-edit-notice";
   btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i>長按最愛可以編輯';
   btn.addEventListener("click", () => {
     markFavEditHintSeen();
@@ -2165,6 +2173,65 @@ document.getElementById("shareUrlBtn").addEventListener("click", () => {
   copyTextWithToast(location.href, copyMenuBtn, "已複製網址到剪貼簿");
 });
 
+// 彩蛋：2026-10-31 台灣同志遊行，標題改成奶油色系的漸層彩虹、畫面持續飄下奶油色系的彩虹紙片（使用者 2026-10-30 決定，只到 11/2）。
+// 結束日是「不含當天」：11/2 當天還有，11/3 零點起載入就不再出現、標題回到原本的樣子。
+// 紙片是純 canvas、點擊穿透（.pride-confetti），使用者設了「減少動態效果」就不飄（標題漸層是靜態的，照樣換）。
+// 過期之後這整段（含 style.css 的 .pride-confetti 與 html.pride）可以刪，沒刪也不會再執行。
+const PRIDE_END_DATE = "2026-11-03";
+const prideActive = todayIso() < PRIDE_END_DATE; // 載入時定一次
+if (prideActive) document.documentElement.classList.add("pride"); // 標題的漸層（style.css 的 html.pride）；載入遮罩還蓋著，看不到換樣子的瞬間
+const PRIDE_CONFETTI_COLORS = ["#f2a09a", "#f7b985", "#f6dc82", "#a8d8a8", "#9cc7ee", "#c3a8e0"]; // 奶油色系的紅橘黃綠藍紫
+function startPrideConfetti(){
+  if (!prideActive || prefersReducedMotion()) return;
+  const canvas = document.createElement("canvas");
+  canvas.className = "pride-confetti";
+  canvas.setAttribute("aria-hidden", "true");
+  document.body.appendChild(canvas);
+  const ctx = canvas.getContext("2d");
+  let width = 0;
+  let height = 0;
+  const resize = () => {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    width = window.innerWidth;
+    height = window.innerHeight;
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  };
+  resize();
+  window.addEventListener("resize", resize);
+  const rand = (min, max) => min + Math.random() * (max - min);
+  // 一片紙片：x 是水平基準位置（再加上左右搖擺）、t 是已經飄了幾秒；
+  // 高度乘上 cos(flip) 讓它邊轉邊翻面。anywhere=true 是一開始就散在整個畫面上方，不然會一起從頂端掉下來。
+  const spawn = (anywhere) => ({
+    x: rand(0, width), y: anywhere ? rand(-height, 0) : rand(-60, -10), speed: rand(45, 110),
+    sway: rand(10, 40), swayFreq: rand(0.6, 1.6), phase: rand(0, 6.28), t: 0,
+    angle: rand(0, 6.28), spin: rand(-2.5, 2.5), flip: rand(0, 6.28), flipSpeed: rand(3, 7),
+    w: rand(8, 11), h: rand(11, 17), color: PRIDE_CONFETTI_COLORS[Math.floor(Math.random() * PRIDE_CONFETTI_COLORS.length)],
+  });
+  const pieces = Array.from({ length: width < 600 ? 22 : 45 }, () => spawn(true));
+  let last = performance.now();
+  const frame = (now) => {
+    const dt = Math.min((now - last) / 1000, 0.05); // 分頁在背景時 rAF 會停，回來那一格不要讓紙片瞬間跳一大段
+    last = now;
+    ctx.clearRect(0, 0, width, height);
+    for (const p of pieces){
+      p.t += dt;
+      p.y += p.speed * dt;
+      if (p.y > height + 40) Object.assign(p, spawn(false));
+      ctx.save();
+      ctx.translate(p.x + Math.sin(p.t * p.swayFreq + p.phase) * p.sway, p.y);
+      ctx.rotate(p.angle + p.t * p.spin);
+      ctx.scale(1, Math.cos(p.flip + p.t * p.flipSpeed));
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      ctx.restore();
+    }
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+}
+
 async function init(){
   // 已登記的通知（已裝 PWA 且已授權通知才會真的打 API）只有「畫查詢結果的鈴鐺」要用，不必擋在最前面：
   // 這裡先讓它在背景跑，跟 /filterOptions、token 預熱同時進行，到要查詢結果、收掉載入遮罩之前才等它（見 finally）。
@@ -2221,6 +2288,7 @@ async function init(){
     }
     document.getElementById("loadingOverlay").classList.add("fade-out");
     setTimeout(() => document.getElementById("loadingOverlay").remove(), 200);
+    startPrideConfetti();
   }
 }
 init();
