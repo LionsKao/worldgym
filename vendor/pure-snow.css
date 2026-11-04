@@ -1,0 +1,27 @@
+/* 下雪特效（來自 jptip approval2 的 pure-snow.css，本站改過）：
+   - #snow 加 pointer-events:none 與 z-index:900（蓋過內容與底部按鈕列、在彈窗 1000 之下），點擊穿透。
+   - 淺色主題的底是米白色，純白雪花看不見，所以淺色用淡藍、深色主題才用白色。
+   - 拿掉每片雪花的 filter:drop-shadow：幾十片同時動，濾鏡很吃效能；改用 box-shadow。
+   - 拿掉用不到的 #body 規則。 */
+#snow {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 900;
+}
+.snowflake {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #bcd8f5;
+  box-shadow: 0 0 4px rgba(110, 150, 200, 0.6);
+}
+html[data-theme="dark"] .snowflake {
+  background: #fff;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.85);
+}

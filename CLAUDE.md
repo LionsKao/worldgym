@@ -207,11 +207,20 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 
 **彩蛋：同志遊行彩虹標題與紙片**（使用者 2026-10-30 決定，只到 2026-11-02）：標題「課表查詢」改成奶油色系的漸層彩虹——`script.js` 載入時在 `<html>` 加 `pride`，`style.css` 的 `html.pride .hero h1` 用 `background-clip:text` 畫漸層（`filter:drop-shadow` 補淡色字的對比；字的填色是透明的，不能用 `text-shadow`），過期就不加、回到原本的珊瑚＋深藍。紙片部分：`script.js` 的 `startPrideConfetti()` 在 `init()` 收掉載入遮罩後啟動，用 canvas 持續飄下約 45 片（手機約 22 片）奶油色系的彩虹粗短紙片（`PRIDE_CONFETTI_COLORS`；使用者不要長條與波浪彩帶、不要鮮豔色，也不要太多）。`PRIDE_END_DATE` 是不含當天的結束日（`2026-11-03`），用台灣日期判斷、過期自動不再出現；使用者開了「減少動態效果」也不飄；`.pride-confetti` 點擊穿透、z-index 900（蓋過底部按鈕列、在彈窗之下）。**過期後這整段（`script.js` 的 `PRIDE_*`／`prideActive`／`startPrideConfetti`、`init()` 裡的呼叫、`style.css` 的 `.pride-confetti` 與 `html.pride`；最愛選色視窗的限時色票見「我的最愛的編輯」那段）可以刪**，沒刪也不會再執行；明年要用就改結束日。
 
+**彩蛋：聖誕節**（使用者 2026-11-04 決定，**兩段日期不同**）：**下雪 2026-12-01 ~ 12-31**（`script.js` 的 `SNOW_START_DATE`／`SNOW_END_DATE`，`2027-01-01` 不含當天）；**其餘聖誕彩蛋 2026-12-21 ~ 12-26**（`XMAS_START_DATE`／`XMAS_END_DATE`，`2026-12-27` 不含當天）。都用台灣日期判斷、過期自動不再出現；網址加 `?xmas=1` 可在期間外預覽全部（含下雪），加 `?snow=1` 只預覽下雪。聖誕彩蛋期間載入時在 `<html>` 加 `xmas`（載入遮罩還蓋著，看不到換樣子的瞬間）。下面五項裡「下雪」跟隨下雪的日期，其餘四項跟隨聖誕彩蛋的日期：
+- **下雪**：`startSnow()` 在 `init()` 收掉載入遮罩後（跟紙片彩蛋同一處）啟動，**只在期間內才動態載入** `vendor/pure-snow.js`／`vendor/pure-snow.css`（使用者提供的 jptip 專案的 pure-snow，本站改過，改了什麼寫在兩個檔案的檔頭註解：不自動執行、不監聽 resize、雪花不要太淡太小、淺色主題用淡藍色雪花〔白色在米白底看不見〕、不用 drop-shadow 濾鏡）。數量用 `#snow` 的 `data-count` 控制：桌機 `SNOW_COUNT_DESKTOP`（60）、手機 `SNOW_COUNT_MOBILE`（30），雪花實際片數是 count − 1；開了「減少動態效果」就不下；`#snow` 點擊穿透、z-index 900。檔案放在 `vendor/`，沿用 `/vendor/*` 的 30 天快取，所以**改了內容要把 `script.js` 裡的 `?v=` 加一**（`check:versions` 已涵蓋 `link.href`）。
+- **查詢鈕**（`#scheduleSubmitBtn`）的放大鏡換成樹（`fa-tree`，免費版有）：圖示 class 集中在 `SUBMIT_IDLE_ICON_CLASS`，查詢中的轉圈圈結束後也回到它，不要直接寫死放大鏡。
+- **分頁標題**的 💪 換成 🎄（只留一個 emoji；分店頁標題沒有 💪，就在前面補 🎄）。靜態 HTML 的 `<title>` 不變，爬蟲看到的不受影響。
+- **標題「課表查詢」**改紅綠相間的 45° 斜紋（只有紅綠兩色、每條寬 14px，使用者先試 10px 後要求更粗，不要漸層）：`style.css` 的 `html.xmas .hero h1`，做法同同志遊行的標題。
+- **最愛的顏色多一顆限時色票「紅綠斜紋」**（`xmas-stripe`，晶片加 `.fav-xmas-stripe`，不會動、45° 糖果斜紋，顏色是 `--xmas-stripe`）：只在期間內放在**第一格**，並把最後一格的青色 `#207f8a` 藏起來（維持 14 顆；使用者 2026-11-04 要求放第一個）（`index.html` 的 `.xmas-only`／`.xmas-replaced`，`html.xmas` 切換，沒有 JS），期間後換回青色。使用者看過四顆（漸層、斜紋、流動斜紋、金色）後決定只留這一顆。規則同彩虹色票：**已存成紅綠斜紋的最愛不受影響**，晶片樣式與 `FAV_RAINBOW_CLASSES` 永久保留，過期後只是選色視窗選不到（編輯時整組不勾、儲存沿用原值）。
+
+過期後可以刪的：`startSnow`／`SNOW_*`／`XMAS_*`／`xmasActive`、`vendor/pure-snow.*`、`html.xmas` 標題規則、`.xmas-only`／`.xmas-replaced` 與 `#favColor-xmas-stripe` 色票；**晶片的 `.fav-xmas-stripe` 與 `--xmas-stripe` 要留**。明年要用就改日期。
+
 網站沒有帳號系統，「幾個人」的統計靠前端 `localStorage` 存的匿名 `wg_client_id`（`crypto.randomUUID()`），後端用 `COUNT(DISTINCT clientId)` 估算，不對應真實身分。
 
 ### 靜態資源快取
 **CSS、JS、icon 一律走 `_headers` 快取 30 天（`max-age=2592000`，不加 `immutable`，所以按重新整理仍會向伺服器確認）**：`style.css`、`script.js`、`common.js`、`admin.js`、`ga-init.js`、`theme-init.js`、`css-async.js`、`vendor/*`、`icons/*`、`favicon.ico`。這套做法的前提是**所有引用處都帶 `?v=` 版號**，而且**內容改了就一定要把引用它的地方的版號加一**，否則使用者最久一個月看到舊的——改 JS／CSS／icon 時別忘了：
-- `style.css`：`index.html`、`admin.html`、`403.html`、`404.html` 四頁**要用同一個版號**（目前 128；以前三頁各自為政變成 104／73／45，後台和 404 頁會吃到舊樣式）。
+- `style.css`：`index.html`、`admin.html`、`403.html`、`404.html` 四頁**要用同一個版號**（目前 129；以前三頁各自為政變成 104／73／45，後台和 404 頁會吃到舊樣式）。
 - `script.js`（只有 `index.html`）、`admin.js`（只有 `admin.html`）、`common.js`（兩頁都引用，都要排在自己的 script 之前，改了要兩個檔案裡的 `common.js?v=` 一起更新）。
 - `ga-init.js`、`theme-init.js`、`css-async.js`、`vendor/chart.umd.min.js`（`admin.html`，以及 `script.js` 的 `loadChartJs()`）：目前 `?v=1`，改了這些檔案就把 1 往上加。
 - `icons/*`：`index.html`（`og:image`、`twitter:image`、`apple-touch-icon`、QR code）、`manifest.json`、`sw.js`（通知圖示）都帶 `?v=1`，換圖就一起加。

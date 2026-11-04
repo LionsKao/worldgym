@@ -10,6 +10,8 @@
   /* 奶油色系的彩虹（最愛的奶油彩虹色票與晶片、彩蛋標題共用），一樣兩份：--cream-rainbow-stops 不會動、--cream-rainbow-cycle 流動；改色兩份要一起改。 */
   --cream-rainbow-stops:#ef9a93,#f5b27a,#f1d36b,#9bd09d,#8bbbe9,#b496da;
   --cream-rainbow-cycle:#ef9a93 0,#f5b27a 10.61px,#f1d36b 21.21px,#9bd09d 31.82px,#8bbbe9 42.43px,#b496da 53.03px,#ef9a93 63.64px;
+  /* 聖誕的紅綠糖果斜紋（彩蛋期間的限時色票，晶片樣式永久保留）：135° 方向每 31.82px 一個循環（紅、綠各半）。 */
+  --xmas-stripe:repeating-linear-gradient(135deg,#c8453e 0,#c8453e 15.91px,#2f8f5b 15.91px,#2f8f5b 31.82px);
   --navy-ink:#3a3a4a; --chart-tip:#2b2b2b; /* 深色主題下會換掉：navy 當「文字／邊框色」用的地方、圖表提示框底色 */
 }
 html{ overflow-y:scroll; }
@@ -44,6 +46,9 @@ body{
    （不能用 text-shadow：文字填色是透明的，陰影會從字裡透出來）。 */
 html.pride .hero h1{ background:linear-gradient(90deg,var(--cream-rainbow-stops)); -webkit-background-clip:text; background-clip:text; filter:drop-shadow(0 1px 0 rgba(0,0,0,.14)); }
 html.pride .hero h1 .c1, html.pride .hero h1 .c2{ color:transparent; }
+/* 聖誕彩蛋（script.js 的 XMAS_END_DATE，到 2027-01-03）：標題改紅綠相間的 45° 斜紋（每條寬 14px，看得出寬度、只有兩個顏色），做法同上；html.xmas 由 script.js 載入時加上。 */
+html.xmas .hero h1{ background:repeating-linear-gradient(135deg,#c8453e 0,#c8453e 14px,#2f8f5b 14px,#2f8f5b 28px); -webkit-background-clip:text; background-clip:text; filter:drop-shadow(0 1px 0 rgba(0,0,0,.14)); }
+html.xmas .hero h1 .c1, html.xmas .hero h1 .c2{ color:transparent; }
 
 .stripe-bar{
   height:10px; border-radius:6px; overflow:hidden; display:flex; margin:0 auto 26px; max-width:420px;
@@ -409,11 +414,15 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 #favColor-rainbow-flow + label{ background:repeating-linear-gradient(135deg,var(--rainbow-cycle)) 0 0 / 270px 270px; animation:fav-rainbow-swatch 3s linear infinite; }
 #favColor-cream + label{ background:linear-gradient(135deg,var(--cream-rainbow-stops)); }
 #favColor-cream-flow + label{ background:repeating-linear-gradient(135deg,var(--cream-rainbow-cycle)) 0 0 / 270px 270px; animation:fav-rainbow-swatch 3s linear infinite; }
-#favColor-rainbow + label, #favColor-rainbow-flow + label, #favColor-cream + label, #favColor-cream-flow + label{ background-origin:border-box; }
+#favColor-xmas-stripe + label{ background:var(--xmas-stripe); }
+#favColor-rainbow + label, #favColor-rainbow-flow + label, #favColor-cream + label, #favColor-cream-flow + label,
+#favColor-xmas-stripe + label{ background-origin:border-box; }
 @keyframes fav-rainbow-swatch{ to{ background-position:90px 0; } }
 /* 這四顆彩虹色票是限時的（2026-11-02 止）：彩蛋期間（html.pride）取代最後四格的深綠、棕、金、青，過期換回來。
    已經存成彩虹的最愛不受影響——晶片的 .fav-rainbow／.fav-cream 樣式是永久的，只有「選色視窗裡選得到」是限時的。 */
 html:not(.pride) .fav-color-pill.pride-only, html.pride .fav-color-pill.pride-replaced{ display:none; }
+/* 聖誕的「紅綠斜紋」色票同樣是限時的（2027-01-03 止）：期間內（html.xmas）放在第一格、並把最後一格的青色藏起來（維持 14 顆），過期換回來；已存成紅綠斜紋的最愛不受影響。 */
+html:not(.xmas) .fav-color-pill.xmas-only, html.xmas .fav-color-pill.xmas-replaced{ display:none; }
 .fav-item{
   display:inline-flex; align-items:center; box-sizing:border-box; height:31px;
   padding:0 14px; border-radius:999px; border:none; cursor:pointer;
@@ -425,7 +434,9 @@ html:not(.pride) .fav-color-pill.pride-only, html.pride .fav-color-pill.pride-re
 .fav-item.pressing{ transform:scale(.94); }
 /* 彩虹底色的最愛有四種：鮮豔的 .fav-rainbow（不會動）／.fav-rainbow-flow（流動，FAV_EDIT_NOTICE 提示 pill 也用它），
    奶油色系的 .fav-cream（不會動）／.fav-cream-flow（流動）。形狀都沿用 .fav-item。 */
-.fav-item.fav-rainbow, .fav-item.fav-rainbow-flow, .fav-item.fav-cream, .fav-item.fav-cream-flow{ text-shadow:0 1px 2px rgba(0,0,0,.45); }
+.fav-item.fav-rainbow, .fav-item.fav-rainbow-flow, .fav-item.fav-cream, .fav-item.fav-cream-flow, .fav-item.fav-xmas-stripe{ text-shadow:0 1px 2px rgba(0,0,0,.45); }
+/* 聖誕的 .fav-xmas-stripe：紅綠糖果斜紋，不會動（永久保留的晶片樣式） */
+.fav-item.fav-xmas-stripe{ background:var(--xmas-stripe); }
 .fav-item.fav-rainbow{ background:linear-gradient(135deg,var(--rainbow-stops)); }
 .fav-item.fav-cream{ background:linear-gradient(135deg,var(--cream-rainbow-stops)); }
 .fav-item.fav-rainbow-flow{ --flow-cycle:var(--rainbow-cycle); }

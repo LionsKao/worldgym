@@ -1153,11 +1153,12 @@ function bindFavoriteLongPress(btn, index, fav){
     applyFavorite(fav);
   });
 }
-// 顏色選項裡的特殊值（index.html 的 favColor-rainbow／-rainbow-flow／-cream／-cream-flow）：不是色碼，晶片改用對應的 class 畫彩虹底色
-// （鮮豔或奶油色系，各有不會動與流動兩種）
+// 顏色選項裡的特殊值（index.html 的 favColor-rainbow／-rainbow-flow／-cream／-cream-flow／-xmas-stripe）：不是色碼，晶片改用對應的 class 畫彩虹底色
+// （鮮豔或奶油色系的彩虹各有不會動與流動兩種；聖誕的紅綠斜紋 xmas-stripe）
 const FAV_RAINBOW_CLASSES = new Map([
   ["rainbow", "fav-rainbow"], ["rainbow-flow", "fav-rainbow-flow"],
   ["cream", "fav-cream"], ["cream-flow", "fav-cream-flow"],
+  ["xmas-stripe", "fav-xmas-stripe"],
 ]);
 function renderFavorites(){
   updateFavoriteHeart();
@@ -1247,10 +1248,14 @@ function checkFavoriteRadio(name, value){
 function checkedFavoriteValue(name, fallback){
   return checkedValues(name)[0] ?? fallback;
 }
-// 新增模式一定要有選取：上一次編輯自訂圖示／顏色的最愛會留下「整組沒選」，補回每組的第一個。
+// 新增模式一定要有選取：上一次編輯自訂圖示／顏色的最愛會留下「整組沒選」，補回每組預設的那一顆（HTML 上有 checked 的）。
+// 不能直接用第一個 input：色票的第一格現在是限時色票，期間外是藏起來的，勾到它會留下看不見的勾選。
 function ensureFavoriteRadioDefaults(){
   ["favIcon", "favColor"].forEach(name => {
-    if (checkedValues(name).length === 0) document.querySelector(`input[name="${name}"]`).checked = true;
+    if (checkedValues(name).length === 0){
+      const inputs = [...document.querySelectorAll(`input[name="${name}"]`)];
+      (inputs.find(el => el.defaultChecked && isFavoriteRadioShown(el)) ?? inputs.find(isFavoriteRadioShown)).checked = true;
+    }
   });
 }
 // 編輯模式：名稱／圖示／顏色／順序都跟開窗時一樣就不能儲存（沒東西好存）；新增模式永遠可以。
@@ -2094,7 +2099,7 @@ async function runSearchAndShowResults(state){
     showPillWarning(submitBtn, message);
   } finally {
     submitBtn.classList.remove("busy");
-    submitIcon.className = "fa-solid fa-magnifying-glass";
+    submitIcon.className = SUBMIT_IDLE_ICON_CLASS;
     submitBtn.disabled = false;
     updateSubmitState();
   }
@@ -2247,6 +2252,49 @@ function startPrideConfetti(){
   requestAnimationFrame(frame);
 }
 
+// 彩蛋：聖誕節（使用者 2026-11-04 決定），兩段日期不同：
+//   【下雪】2026-12-01 ~ 12-31（SNOW_*）：vendor/pure-snow.js／.css（改過的 pure-snow，見檔頭說明），只在期間內才動態載入，平常不下載；
+//      數量由 #snow 的 data-count 決定（桌機 SNOW_COUNT_DESKTOP、手機 SNOW_COUNT_MOBILE）；開了「減少動態效果」就不下。
+//   a. 分頁標題的 💪 換成 🎄（只留一個 emoji）。 b. 標題「課表查詢」改紅綠斜紋（<html> 加 xmas，style.css 的 html.xmas）。
+//   c. 查詢鈕的放大鏡換成樹（fa-tree）。 d. 最愛選色視窗第一格放「紅綠斜紋」限時色票、最後一格的青色藏起來（html.xmas 切換，見 CLAUDE.md）。
+// 結束日都是「不含當天」：下雪 12/31 當天還有、1/1 零點起不再出現；聖誕彩蛋 12/26 當天還有、12/27 零點起不再出現。
+// 網址加 ?xmas=1 可以在期間外預覽全部（含下雪），加 ?snow=1 只預覽下雪（本機測試用）。
+// 過期之後這整段（含 vendor/pure-snow.*、html.xmas、聖誕色票的切換規則）可以刪；已存成紅綠斜紋的最愛照樣顯示（晶片樣式是永久的）。
+const SNOW_START_DATE = "2026-12-01";
+const SNOW_END_DATE = "2027-01-01";
+const XMAS_START_DATE = "2026-12-21";
+const XMAS_END_DATE = "2026-12-27";
+const SNOW_COUNT_DESKTOP = 60;
+const SNOW_COUNT_MOBILE = 30;
+const xmasParams = new URLSearchParams(location.search);
+const xmasActive = xmasParams.get("xmas") === "1"
+  || (todayIso() >= XMAS_START_DATE && todayIso() < XMAS_END_DATE);
+const snowActive = xmasActive || xmasParams.get("snow") === "1"
+  || (todayIso() >= SNOW_START_DATE && todayIso() < SNOW_END_DATE);
+// 查詢鈕平常的圖示：聖誕期間是樹，其他時候是放大鏡（查詢中會暫時變成轉圈圈，結束後回到這個）
+const SUBMIT_IDLE_ICON_CLASS = xmasActive ? "fa-solid fa-tree" : "fa-solid fa-magnifying-glass";
+if (xmasActive){
+  document.querySelector("#scheduleSubmitBtn i").className = SUBMIT_IDLE_ICON_CLASS;
+  document.documentElement.classList.add("xmas"); // 標題漸層與聖誕色票（style.css）；載入遮罩還蓋著，看不到換樣子的瞬間
+  document.title = "🎄 " + document.title.replace(/^💪\s*/, ""); // 分店頁的標題沒有 💪，一樣在前面補 🎄
+}
+function startSnow(){
+  if (!snowActive || prefersReducedMotion()) return;
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = "vendor/pure-snow.css?v=1";
+  document.head.appendChild(link);
+  const snow = document.createElement("div");
+  snow.id = "snow";
+  snow.setAttribute("aria-hidden", "true");
+  snow.dataset.count = String(window.innerWidth < 600 ? SNOW_COUNT_MOBILE : SNOW_COUNT_DESKTOP);
+  document.body.appendChild(snow);
+  const script = document.createElement("script");
+  script.src = "vendor/pure-snow.js?v=1";
+  script.onload = () => window.createSnow();
+  document.head.appendChild(script);
+}
+
 async function init(){
   // 已登記的通知（已裝 PWA 且已授權通知才會真的打 API）只有「畫查詢結果的鈴鐺」要用，不必擋在最前面：
   // 這裡先讓它在背景跑，跟 /filterOptions、token 預熱同時進行，到要查詢結果、收掉載入遮罩之前才等它（見 finally）。
@@ -2303,7 +2351,7 @@ async function init(){
     }
     document.getElementById("loadingOverlay").classList.add("fade-out");
     setTimeout(() => document.getElementById("loadingOverlay").remove(), 200);
-    try { startPrideConfetti(); } catch(e){ console.error("彩蛋啟動失敗", e); } // 只是裝飾，出錯就算了
+    try { startPrideConfetti(); startSnow(); } catch(e){ console.error("彩蛋啟動失敗", e); } // 只是裝飾，出錯就算了
   }
 }
 init();

@@ -34,7 +34,7 @@ const SOURCES = [
   { file: "404.html", pick: (t) => [...t.matchAll(/\b(?:src|href|content)="([^"]*)"/g)].map((m) => m[1]) },
   { file: "manifest.json", pick: (t) => [...t.matchAll(/"src"\s*:\s*"([^"]*)"/g)].map((m) => m[1]) },
   { file: "sw.js", pick: (t) => [...t.matchAll(/\b(?:icon|badge)\s*:\s*"([^"]*)"/g)].map((m) => m[1]) },
-  { file: "script.js", pick: (t) => [...t.matchAll(/script\.src\s*=\s*"([^"]*)"/g)].map((m) => m[1]) },
+  { file: "script.js", pick: (t) => [...t.matchAll(/(?:script\.src|link\.href)\s*=\s*"([^"]*)"/g)].map((m) => m[1]) },
 ];
 
 const errors = [];
