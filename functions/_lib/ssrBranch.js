@@ -108,7 +108,7 @@ const WEBSITE_NODE = {
   name: "WG課表查詢",
   alternateName: "worldgym.pages.dev",
   url: `${SITE_ORIGIN}/`,
-  description: "快速查詢 World Gym（WG）各分店課表、老師、時段。",
+  description: "非官方 World Gym（WG）課表查詢，自由篩選各分店、時段、課程、老師。",
   inLanguage: "zh-TW",
 };
 
