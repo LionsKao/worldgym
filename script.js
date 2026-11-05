@@ -54,30 +54,8 @@ if (new URLSearchParams(location.search).get("pwa") === "1"){
   writeStored("wg_debug_force_pwa", "1");
 }
 
-// 從舊網域導過來的訪客(Cloudflare 301 redirect 帶 ?utm_source=wgcourse_old 或 ?utm_source=old_index)，
-// 沿用廣告 banner 的位置顯示「記得改書籤」提示，不顯示其他廣告。
-const OLD_DOMAIN_UTM_SOURCES = ["wgcourse_old", "old_index"];
-const cameFromOldDomain = OLD_DOMAIN_UTM_SOURCES.includes(new URLSearchParams(location.search).get("utm_source"));
-if (cameFromOldDomain){
-  // 提示文案講「加完書籤這行就會消失」，所以要讓「使用者當下把網址列加進書籤」存到的是乾淨網址，
-  // 不然書籤存到的還是帶著 utm_source=wgcourse_old 的網址，下次打開又會命中同一組參數、提示又跳出來。
-  // 清網址前要先讓 GA4 送出這次工作階段的第一個 pageview（歸因用得到這組 utm），不然 GA4 抓到的會是
-  // 已經清乾淨、不帶 utm_source 的網址，變成「(not set)」。GA4 的 gtag.js 現在延遲到 window.load
-  // 才開始載入（見 index.html），時間不固定，所以改成等 index.html 送出的 wg-ga-loaded 事件
-  // （gtag.js 真的載入完成）才清，而不是猜一個固定秒數；保底逾時是防呆，避免 GA 被瀏覽器擋掉
-  // （廣告攔截等）或載入失敗時網址永遠清不掉。清之前重新檢查一次，避免蓋掉使用者這段時間內
-  // 自己觸發的網址變化（例如送出查詢後 runSearchAndShowResults 已經把網址換成分享用網址）。
-  const cleanOldDomainUtmFromUrl = () => {
-    if (OLD_DOMAIN_UTM_SOURCES.includes(new URLSearchParams(location.search).get("utm_source"))){
-      history.replaceState(null, "", location.pathname);
-    }
-  };
-  window.addEventListener("wg-ga-loaded", () => setTimeout(cleanOldDomainUtmFromUrl, 500), { once: true });
-  setTimeout(cleanOldDomainUtmFromUrl, 20000);
-}
-
 // 臨時公告（例如颱風提醒）：沿用廣告 banner 的位置，純文字、沒有連結；今天（台灣）早於 endDate 才顯示，
-// 過期自動消失。優先於舊網域提示與廣告，公告期間不載入廣告、也不送廣告點擊統計。
+// 過期自動消失。優先於廣告，公告期間不載入廣告、也不送廣告點擊統計。
 // 下次要發公告就改 text 與 endDate（endDate 是「不含當天」的結束日），script.js 版號加一。
 const SITE_NOTICE = {
   text: "10/24 颱風：北中部及宜蘭團體課停課，嘉義以南照常，詳見官網公告。",
@@ -214,7 +192,7 @@ function withUtmSource(url){
 
 // 一次工作階段只隨機挑一則廣告顯示，不再輪播；使用者要看到別的廣告只能重新整理頁面（等同開新的工作階段）。
 // 橫幅在 index.html 裡預設就是 hidden、也沒有預設文字與連結：沒有生效中的廣告時完全不會出現，
-// 不會在等 /ads 回應的那段時間先閃一下舊內容再消失；有廣告（或舊網域提示）才在這裡填內容並顯示。
+// 不會在等 /ads 回應的那段時間先閃一下舊內容再消失；有廣告才在這裡填內容並顯示。
 function initAdBanner(){
   const banner = document.getElementById("adBanner");
   const el = document.getElementById("adBannerText");
@@ -228,15 +206,6 @@ function initAdBanner(){
     banner.classList.remove("hidden");
     return;
   }
-  if (cameFromOldDomain){
-    el.textContent = "📌 網址換囉！記得把新網址加進書籤，加完這行就會消失";
-    banner.removeAttribute("href");
-    const tag = banner.querySelector(".ad-banner-tag");
-    tag.setAttribute("aria-label", "提示");
-    tag.innerHTML = '<i class="fa-solid fa-fw fa-bookmark"></i>';
-    banner.classList.remove("hidden");
-    return;
-  }
   if (AD_BANNERS.length === 0) return;
   currentAdIndex = Math.floor(Math.random() * AD_BANNERS.length);
   el.textContent = AD_BANNERS[currentAdIndex].text;
@@ -244,7 +213,7 @@ function initAdBanner(){
   banner.classList.remove("hidden");
   bufferAdImpression(AD_BANNERS[currentAdIndex].id);
 }
-if (showSiteNotice || cameFromOldDomain){
+if (showSiteNotice){
   initAdBanner();
 } else {
   fetch(`${WORKER_BASE}/ads`)
@@ -254,7 +223,7 @@ if (showSiteNotice || cameFromOldDomain){
     .finally(initAdBanner);
 }
 document.querySelector(".ad-banner")?.addEventListener("click", () => {
-  if (showSiteNotice || cameFromOldDomain) return;
+  if (showSiteNotice) return;
   trackEvent("click_ad_banner", { ad_text: document.getElementById("adBannerText")?.textContent });
   trackAdClick(AD_BANNERS[currentAdIndex]?.id);
 });
