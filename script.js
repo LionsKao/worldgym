@@ -904,6 +904,8 @@ setupTogglePopover(document.getElementById("privacyBtn"), document.getElementByI
 // 已經是 PWA 模式（standalone）就不需要這顆按鈕了。點擊切換顯示提示文字。
 const notifyInfoBtnWrap = document.getElementById("notifyInfoBtnWrap");
 if (isStandaloneDisplay()) notifyInfoBtnWrap.classList.add("hidden");
+// 不是 PWA 模式時提醒清單是空的（只剩標題列），標題列底下的 margin 會變成多餘的空白，style.css 的 .reminder-not-pwa 把它歸零。
+document.getElementById("reminderView").classList.toggle("reminder-not-pwa", !isPWAInstalled());
 setupTogglePopover(document.getElementById("notifyInfoBtn"), document.getElementById("notifyInfoTooltip"), "#notifyInfoBtnWrap");
 
 // 某一組篩選（input 的 name）目前勾選的值。
