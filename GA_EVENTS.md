@@ -60,7 +60,6 @@
 | 事件名稱 | 觸發時機 | 參數 |
 | --- | --- | --- |
 | `click_github_icon` | 點擊頁面上的 GitHub 連結圖示 | 無 |
-| `click_admin_icon` | 點擊頁面上的後台管理連結圖示 | 無 |
 | `clear_memory` | 在「清除記憶」視窗按下「清除篩選記憶」（勾選條件、常用排序、地區展開狀態；會重新整理）或「清除我的最愛」 | `memory_type`（`filters`／`favorites`） |
 | `toggle_theme` | 頁尾按「深色模式」／「淺色模式」切換主題 | `theme`（`dark`／`light`，切換後的主題） |
 | `send_message` | 透過「留言給站長」功能送出訊息成功 | 無 |

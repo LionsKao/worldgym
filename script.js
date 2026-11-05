@@ -867,9 +867,6 @@ document.addEventListener("click", (e) => {
 const githubLinkIcon = document.getElementById("githubLinkIcon");
 githubLinkIcon.addEventListener("click", () => trackEvent("click_github_icon", {}));
 
-const adminLinkIcon = document.getElementById("adminLinkIcon");
-adminLinkIcon.addEventListener("click", () => trackEvent("click_admin_icon", {}));
-
 const copyUrlBtn = document.getElementById("copyUrlBtn");
 copyUrlBtn.addEventListener("click", async (e) => {
   e.stopPropagation();
