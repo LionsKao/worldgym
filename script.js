@@ -2170,39 +2170,50 @@ document.getElementById("shareUrlBtn").addEventListener("click", () => {
 // 真正畫面上的卡片陰影完全不受影響；同一個 onclone 也把複製 DOM 的 body min-height 設成 0——body 有 min-height:100vh，
 // 撐開模擬視窗高度會連帶把 flex 子層 .page 一起撐高，留下課程不多時的大片空白。
 // 圖片寬度固定成手機寬度（不管桌機還是手機下載都一樣窄，適合直接分享）：用 html2canvas 的 windowWidth 讓它在內部的
-// 複製視窗裡用這個寬度重新排版（會套用 MOBILE_BREAKPOINT_PX 這個斷點的手機版樣式），不是單純裁切／縮放桌機版的排版，
-// 而且只影響截圖當下那份複製視窗，不會讓使用者畫面跟著變窄。scale 鎖 2：圖片只會用這個固定寬度分享，不需要吃滿手機或
-// Retina 螢幕的 devicePixelRatio（常見到 2～3），不然像素數會暴增好幾倍、拖慢產圖與編碼。
-const MOBILE_BREAKPOINT_PX = 480; // 對應 style.css 的 @media (max-width:480px)
-const DOWNLOAD_IMAGE_WIDTH = MOBILE_BREAKPOINT_PX - 60;
-function loadHtml2Canvas(){
-  if (window.html2canvas) return Promise.resolve();
-  if (!loadHtml2Canvas._promise){
-    loadHtml2Canvas._promise = new Promise((resolve, reject) => {
-      const script = document.createElement("script");
-      script.src = "vendor/html2canvas.min.js?v=1";
-      script.onload = resolve;
-      script.onerror = () => {
-        loadHtml2Canvas._promise = null; // 失敗要清掉快取，不然往後每次點擊都直接重用這個已經失敗的 promise，永遠不會重新嘗試載入
-        reject(new Error("html2canvas 載入失敗"));
-      };
-      document.body.appendChild(script);
-    });
-  }
-  return loadHtml2Canvas._promise;
+// 複製視窗裡用這個寬度重新排版（會套用 style.css 的 @media (max-width:480px) 手機版樣式），不是單純裁切／縮放桌機版的
+// 排版，而且只影響截圖當下那份複製視窗，不會讓使用者畫面跟著變窄。scale 鎖 2：圖片只會用這個固定寬度分享，不需要吃滿
+// 手機或 Retina 螢幕的 devicePixelRatio（常見到 2～3），不然像素數會暴增好幾倍、拖慢產圖與編碼。
+// 截圖期間用 pointer-events:none 鎖住 .page 本身（不是只鎖 downloadImageBtn／backBtn 兩顆按鈕）：結果列表裡的
+// 老師名字、PWA 小鈴鐺都是可以點的，點了會改動 .page 的內容，一樣可能截到跟使用者點擊當下不一樣的畫面。
+const DOWNLOAD_IMAGE_WIDTH = 420; // 略窄於 style.css 的 @media (max-width:480px) 斷點，確保觸發手機版樣式
+// 共用的 vendor script 延遲載入：checkLoaded 判斷是否已經有全域變數代表載入完成；回傳的函式記住載入中的
+// promise，重複呼叫不會重複注入 <script>。失敗要清掉快取的 promise（不清掉的話失敗一次就永久卡死，要重新
+// 整理頁面才會好），也要把失敗的 <script> 節點從 DOM 移除，不留下孤兒節點。
+function createVendorScriptLoader(src, checkLoaded, onReady){
+  let promise = null;
+  return function load(){
+    if (checkLoaded()) return Promise.resolve();
+    if (!promise){
+      promise = new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = src;
+        script.onload = () => { onReady?.(); resolve(); };
+        script.onerror = () => {
+          script.remove();
+          promise = null;
+          reject(new Error(`${src} 載入失敗`));
+        };
+        document.body.appendChild(script);
+      });
+    }
+    return promise;
+  };
 }
+const loadHtml2Canvas = createVendorScriptLoader("vendor/html2canvas.min.js?v=1", () => !!window.html2canvas);
 const downloadImageBtn = document.getElementById("downloadImageBtn");
 const downloadImageBackBtn = document.getElementById("backBtn");
 downloadImageBtn.addEventListener("click", async () => {
   trackEvent("download_image", { result_count: lastResultRows.length });
   const icon = downloadImageBtn.querySelector("i");
+  const pageEl = document.querySelector(".page");
   downloadImageBtn.disabled = true;
   downloadImageBackBtn.disabled = true; // 載入/截圖期間鎖住返回鈕，避免中途切回篩選頁、截到錯誤的畫面
+  pageEl.style.pointerEvents = "none"; // 同時鎖住結果列表裡可以點的東西（老師名字、小鈴鐺），避免點了改動內容、截到跟點擊當下不一樣的畫面
   icon.className = "fa-solid fa-spinner fa-spin";
   await new Promise((r) => setTimeout(r, 0)); // 讓瀏覽器先畫出轉圈圈：html2canvas 跑在主執行緒，直接接著做可能完全沒機會重繪
   try {
     await loadHtml2Canvas();
-    const canvas = await window.html2canvas(document.querySelector(".page"), {
+    const canvas = await window.html2canvas(pageEl, {
       backgroundColor: getComputedStyle(document.body).backgroundColor,
       scale: Math.min(window.devicePixelRatio || 1, 2),
       ignoreElements: (el) => el.classList?.contains("visually-hidden") || el.hasAttribute?.("data-export-exclude"),
@@ -2232,6 +2243,7 @@ downloadImageBtn.addEventListener("click", async () => {
   } finally {
     downloadImageBtn.disabled = false;
     downloadImageBackBtn.disabled = false;
+    pageEl.style.pointerEvents = "";
     icon.className = "fa-solid fa-image";
     setCopyMenuOpen(false);
   }
@@ -2431,23 +2443,11 @@ document.addEventListener("visibilitychange", () => {
 
 // 首頁的公開排行報表（分店查詢排行、課程查詢排行）：資料來自不需管理密鑰的公開端點，
 // Chart.js 體積不小，等區塊真的進入畫面才動態載入，避免拖慢首屏。
-function loadChartJs(){
-  if (window.Chart) return Promise.resolve();
-  if (!loadChartJs._promise){
-    loadChartJs._promise = new Promise((resolve, reject) => {
-      const script = document.createElement("script");
-      script.src = "vendor/chart.umd.min.js?v=1";
-      script.onload = () => {
-        // Chart.js 預設用 Helvetica/Arial，不會吃頁面的 CSS 字型，這裡統一成全站的 Nunito
-        window.Chart.defaults.font.family = '"Nunito", sans-serif';
-        resolve();
-      };
-      script.onerror = reject;
-      document.body.appendChild(script);
-    });
-  }
-  return loadChartJs._promise;
-}
+const loadChartJs = createVendorScriptLoader(
+  "vendor/chart.umd.min.js?v=1",
+  () => !!window.Chart,
+  () => { window.Chart.defaults.font.family = '"Nunito", sans-serif'; } // Chart.js 預設用 Helvetica/Arial，不會吃頁面的 CSS 字型，這裡統一成全站的 Nunito
+);
 
 // 區塊（距離畫面 200px 以內）第一次進入畫面才呼叫 load，之後不再觀察——Chart.js 與統計資料等真的要看到才載入。
 function loadWhenVisible(el, load){
