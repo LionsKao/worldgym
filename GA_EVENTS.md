@@ -52,6 +52,7 @@
 | `open_copy_menu` | 結果頁底部右邊的複製鈕點開，展開「複製文字」「複製連結」兩顆按鈕（跟 `copy_results`／`share_url` 比，可以看有多少人展開了卻沒選）| 無 |
 | `copy_results` | 複製查詢結果文字到剪貼簿 | `result_count` 複製的課程筆數 |
 | `share_url` | 複製目前篩選條件的分享網址 | 無 |
+| `download_image` | 把查詢結果下載成一張 PNG 圖片 | `result_count` 下載時的課程筆數 |
 | `copy_site_url` | 複製網站首頁網址（帶 `utm_source=website_link`）| 無 |
 | `open_qr_code` | 打開網站 QR Code 顯示 | 無 |
 

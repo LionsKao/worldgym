@@ -100,7 +100,7 @@
     <span class="s1"></span><span class="s2"></span><span class="s3"></span><span class="s4"></span><span class="s5"></span>
   </div>
 
-  <a class="sheet ad-banner hidden" id="adBanner" target="_blank" rel="noopener sponsored">
+  <a class="sheet ad-banner hidden" id="adBanner" target="_blank" rel="noopener sponsored" data-export-exclude>
     <span class="section-tag ad-banner-tag" style="--accent:var(--navy)" aria-label="廣告"><i class="fa-solid fa-rectangle-ad"></i></span>
     <span class="ad-banner-text-wrap">
       <span class="ad-banner-text" id="adBannerText"></span>
@@ -316,7 +316,7 @@
         </div>
         <div class="search-wrap">
           <span class="search-icons"><i class="fa-solid fa-magnifying-glass"></i></span>
-          <input type="text" class="section-search" data-search-for="teacherGrid" data-collapsible="teacherWrap" aria-label="搜尋老師" placeholder="搜尋老師">
+          <input type="text" class="section-search" data-search-for="teacherGrid" data-collapsible="teacherWrap" aria-label="搜尋老師" placeholder="搜尋老師" maxlength="30">
           <button type="button" class="search-clear" aria-label="清除搜尋">&times;</button>
         </div>
         <div class="collapsible" id="teacherWrap">
@@ -473,6 +473,7 @@
     <div class="copy-menu-items" id="copyMenuItems">
       <button type="button" class="submit-btn teal-btn copy-menu-item" id="copyResultsBtn" aria-label="複製課表文字"><i class="fa-solid fa-copy"></i></button>
       <button type="button" class="submit-btn blue-btn copy-menu-item" id="shareUrlBtn" aria-label="複製連結"><i class="fa-solid fa-link"></i></button>
+      <button type="button" class="submit-btn orange-btn copy-menu-item" id="downloadImageBtn" aria-label="下載圖片"><i class="fa-solid fa-image"></i></button>
     </div>
     <button type="button" class="submit-btn teal-btn" id="copyMenuBtn" aria-label="複製或分享" aria-haspopup="true" aria-expanded="false" aria-controls="copyMenuItems"><i class="fa-solid fa-share-nodes"></i></button>
   </div>
@@ -607,7 +608,7 @@
     <div class="fav-modal-field">
       <div class="fav-name-row">
         <div class="fav-name-input-wrap">
-          <input type="text" id="favNameInput" class="section-search" aria-label="幫這個最愛命名" placeholder="幫這個最愛命名">
+          <input type="text" id="favNameInput" class="section-search" aria-label="幫這個最愛命名" placeholder="幫這個最愛命名" maxlength="20">
           <button type="button" class="search-clear" id="favNameClearBtn" aria-label="清除文字">&times;</button>
         </div>
         <button type="button" class="fav-name-random-btn" id="favNameRandomBtn" aria-label="隨機取名"><i class="fa-solid fa-dice"></i></button>
@@ -631,6 +632,6 @@
 </div>
 
 <script src="common.js?v=6"></script>
-<script src="script.js?v=173"></script>
+<script src="script.js?v=180"></script>
 </body>
 </html>

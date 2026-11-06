@@ -1902,6 +1902,7 @@ function renderScheduleResults(rows, onlyTeacher){
       const key = reminderKeyFromFields(c.branchSlug, c.dayOfWeek, c.startTime, c.className, c.teacherName);
       const existing = registeredReminders.get(key);
       bell.className = "fa-solid bell-icon" + (existing ? " fa-bell-slash armed" : " fa-bell");
+      bell.dataset.exportExclude = ""; // 下載圖片時排除（見 downloadImageBtn 的 ignoreElements）
       bell.dataset.branchSlug = c.branchSlug;
       bell.dataset.branchName = c.branchName;
       bell.dataset.className = c.className;
@@ -2149,6 +2150,84 @@ document.getElementById("shareUrlBtn").addEventListener("click", () => {
   trackEvent("share_url", {});
   setCopyMenuOpen(false);
   copyTextWithToast(location.href, copyMenuBtn, "已複製網址到剪貼簿");
+});
+// 下載圖片：只有點了才載入 html2canvas（vendor 檔，體積不小，不跟著 script.js 一開始就載入）。
+// 截圖目標是 .page 裡「標題＋彩色長條＋結果列表白卡」這段（不是只截白卡，使用者 2026-11-06 要求要有標題），
+// 不含底下這排操作按鈕（.page 的 DOM 範圍本來就不包含它們，是 sibling）。
+// ignoreElements 排除的不是逐一列舉的元素，而是兩種通用判斷：①用 .visually-hidden（clip:rect() 技巧）藏起來的文字
+// （html2canvas 不支援 clip，會露出來，例如頁尾 SEO 文字、標題裡給讀屏器看的全名），不管站上哪裡用到這個技巧都一併擋掉；
+// ②標了 data-export-exclude 的元素，這是刻意不想出現在分享圖片裡的產品決策（PWA 小鈴鐺、廣告橫幅，見 index.html 與
+// renderResults() 加這個屬性的地方），跟「是不是隱藏」無關。以後要再排除新東西，照這兩種分類標記就好，不用回來改這支函式。
+// html2canvas 畫不出模糊的 box-shadow（.sheet 的陰影會變成一整排由淺到深的色塊，像鬼影一樣）：onclone 把截圖當下
+// 那份複製 DOM 裡所有 .sheet 的陰影都拿掉再畫（不是只挑 #mainFormSheet，避免以後有別的 .sheet 剛好也沒被隱藏時重演一次），
+// 真正畫面上的卡片陰影完全不受影響；同一個 onclone 也把複製 DOM 的 body min-height 設成 0——body 有 min-height:100vh，
+// 撐開模擬視窗高度會連帶把 flex 子層 .page 一起撐高，留下課程不多時的大片空白。
+// 圖片寬度固定成手機寬度（不管桌機還是手機下載都一樣窄，適合直接分享）：用 html2canvas 的 windowWidth 讓它在內部的
+// 複製視窗裡用這個寬度重新排版（會套用 MOBILE_BREAKPOINT_PX 這個斷點的手機版樣式），不是單純裁切／縮放桌機版的排版，
+// 而且只影響截圖當下那份複製視窗，不會讓使用者畫面跟著變窄。scale 鎖 2：圖片只會用這個固定寬度分享，不需要吃滿手機或
+// Retina 螢幕的 devicePixelRatio（常見到 2～3），不然像素數會暴增好幾倍、拖慢產圖與編碼。
+const MOBILE_BREAKPOINT_PX = 480; // 對應 style.css 的 @media (max-width:480px)
+const DOWNLOAD_IMAGE_WIDTH = MOBILE_BREAKPOINT_PX - 60;
+function loadHtml2Canvas(){
+  if (window.html2canvas) return Promise.resolve();
+  if (!loadHtml2Canvas._promise){
+    loadHtml2Canvas._promise = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "vendor/html2canvas.min.js?v=1";
+      script.onload = resolve;
+      script.onerror = () => {
+        loadHtml2Canvas._promise = null; // 失敗要清掉快取，不然往後每次點擊都直接重用這個已經失敗的 promise，永遠不會重新嘗試載入
+        reject(new Error("html2canvas 載入失敗"));
+      };
+      document.body.appendChild(script);
+    });
+  }
+  return loadHtml2Canvas._promise;
+}
+const downloadImageBtn = document.getElementById("downloadImageBtn");
+const downloadImageBackBtn = document.getElementById("backBtn");
+downloadImageBtn.addEventListener("click", async () => {
+  trackEvent("download_image", { result_count: lastResultRows.length });
+  const icon = downloadImageBtn.querySelector("i");
+  downloadImageBtn.disabled = true;
+  downloadImageBackBtn.disabled = true; // 載入/截圖期間鎖住返回鈕，避免中途切回篩選頁、截到錯誤的畫面
+  icon.className = "fa-solid fa-spinner fa-spin";
+  await new Promise((r) => setTimeout(r, 0)); // 讓瀏覽器先畫出轉圈圈：html2canvas 跑在主執行緒，直接接著做可能完全沒機會重繪
+  try {
+    await loadHtml2Canvas();
+    const canvas = await window.html2canvas(document.querySelector(".page"), {
+      backgroundColor: getComputedStyle(document.body).backgroundColor,
+      scale: Math.min(window.devicePixelRatio || 1, 2),
+      ignoreElements: (el) => el.classList?.contains("visually-hidden") || el.hasAttribute?.("data-export-exclude"),
+      onclone: (clonedDoc) => {
+        clonedDoc.querySelectorAll(".sheet").forEach((el) => { el.style.boxShadow = "none"; });
+        clonedDoc.body.style.minHeight = "0";
+      },
+      windowWidth: DOWNLOAD_IMAGE_WIDTH,
+    });
+    await new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (!blob){ reject(new Error("toBlob failed")); return; }
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `WG課表_${todayIso()}.png`;
+        document.body.appendChild(link); // 有些瀏覽器對沒掛進文件的 <a> 觸發 click() 不保證會下載
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        resolve();
+      }, "image/png");
+    });
+  } catch (err){
+    console.error("下載圖片失敗", err);
+    showPillWarning(copyMenuBtn, "圖片產生失敗，請稍後再試");
+  } finally {
+    downloadImageBtn.disabled = false;
+    downloadImageBackBtn.disabled = false;
+    icon.className = "fa-solid fa-image";
+    setCopyMenuOpen(false);
+  }
 });
 
 // 彩蛋：2026-10-31 台灣同志遊行，標題改成奶油色系的漸層彩虹、畫面持續飄下奶油色系的彩虹紙片（使用者 2026-10-30 決定，只到 11/2）。
