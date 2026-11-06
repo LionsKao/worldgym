@@ -264,6 +264,18 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
   background:var(--coral); color:#fff; cursor:wait; box-shadow:0 6px 16px rgba(232,96,76,0.45);
 }
 #scheduleSubmitBtn, #backBtn, #mailBackBtn, #adminBackBtn, #adminLoginBackBtn{ width:80px; height:80px; font-size:28px; }
+/* 彩蛋：投票日（script.js 的 VOTE_*，只有 2026-11-28 當天，<html> 加 vote）：查詢鈕整顆變成「圈選印章」——白底、珊瑚色粗圓環貼齊按鈕邊緣，
+   中間一條貫穿的直線加一條往左下的斜線（維基百科「圈選印章」的樣子）。印章用 mask 畫、顏色跟著 currentColor，所以未選條件時自動變灰；
+   查詢中（.busy）不套用，轉圈圈照舊顯示在珊瑚色底上。::before 比按鈕大 2px 往外溢出再被 overflow 切掉，圓環才不會留白邊。過期後整段可刪。 */
+html.vote #scheduleSubmitBtn:not(.busy){ position:relative; overflow:hidden; background:#fff; color:var(--coral); }
+html.vote #scheduleSubmitBtn:not(.busy) i{ display:none; }
+html.vote #scheduleSubmitBtn:not(.busy)::before{
+  content:""; position:absolute; inset:-2px; background:currentColor;
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48' fill='none' stroke='black'%3E%3Ccircle cx='24' cy='24' r='22' stroke-width='3.6'/%3E%3Cline x1='24.5' y1='2' x2='24.5' y2='46' stroke-width='3.2'/%3E%3Cline x1='24.5' y1='24.5' x2='9.1' y2='39.9' stroke-width='3.2'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48' fill='none' stroke='black'%3E%3Ccircle cx='24' cy='24' r='22' stroke-width='3.6'/%3E%3Cline x1='24.5' y1='2' x2='24.5' y2='46' stroke-width='3.2'/%3E%3Cline x1='24.5' y1='24.5' x2='9.1' y2='39.9' stroke-width='3.2'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+}
+html.vote #scheduleSubmitBtn.gray-btn:not(.busy){ background:#ccc; color:#999; }
+html[data-theme="dark"].vote #scheduleSubmitBtn.gray-btn:not(.busy){ background:#3b3b47; color:#6c6c7a; }
 .pink-btn{ background:#e0629b; box-shadow:0 6px 16px rgba(224,98,155,0.45); }
 .gray-btn{ background:#ccc; color:#999; box-shadow:none; } /* 要排在 .pink-btn 後面：「已經是最愛」的愛心要蓋過粉色 */
 .reset-active{ background:#5aa9e6; box-shadow:0 6px 16px rgba(90,169,230,0.45); }

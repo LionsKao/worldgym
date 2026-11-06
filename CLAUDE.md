@@ -214,13 +214,15 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 - **標題「課表查詢」**改紅綠相間的 45° 斜紋（只有紅綠兩色、每條寬 14px，使用者先試 10px 後要求更粗，不要漸層）：`style.css` 的 `html.xmas .hero h1`，做法同同志遊行的標題。
 - **最愛的顏色多一顆限時色票「紅綠斜紋」**（`xmas-stripe`，晶片加 `.fav-xmas-stripe`，不會動、45° 糖果斜紋，顏色是 `--xmas-stripe`）：只在期間內放在**第一格**，並把最後一格的青色 `#207f8a` 藏起來（維持 14 顆；使用者 2026-11-04 要求放第一個）（`index.html` 的 `.xmas-only`／`.xmas-replaced`，`html.xmas` 切換，沒有 JS），期間後換回青色。使用者看過四顆（漸層、斜紋、流動斜紋、金色）後決定只留這一顆。規則同彩虹色票：**已存成紅綠斜紋的最愛不受影響**，晶片樣式與 `FAV_RAINBOW_CLASSES` 永久保留，過期後只是選色視窗選不到（編輯時整組不勾、儲存沿用原值）。
 
+**彩蛋：投票日（2026-11-28 縣市長選舉，只有當天）**（使用者 2026-11-06 決定）：`script.js` 的 `VOTE_START_DATE`／`VOTE_END_DATE`（`2026-11-29` 不含當天），台灣日期判斷、過期自動消失；網址加 `?vote=1` 可在期間外預覽。期間內在 `<html>` 加 `vote`，**查詢鈕整顆變成「圈選印章」**（維基百科「圈選印章」的樣子：白底、珊瑚色粗圓環貼齊按鈕邊緣、一條貫穿圓心的直線加一條從圓心往左下的斜線）。畫面全由 `style.css` 的 `html.vote #scheduleSubmitBtn` 處理，**JS 的圖示邏輯一行都沒改**：`<i>` 用 CSS 藏起來，印章畫在 `::before`（`mask` 加 `background:currentColor`，所以未選條件時自動變灰、深色模式有專門的灰；比按鈕大 2px 往外溢出再被 `overflow:hidden` 切掉，圓環才不會留白邊）；查詢中（`.busy`）不套用，轉圈圈照舊顯示在珊瑚色底。按鈕的 `aria-label`「查詢課表」不變。使用者逐步調整出來的：先試「卜」字（不像）→ 看圖片搜尋找到真正的印章形狀 → 改白底珊瑚線條 → 嫌太小，要整顆按鈕就是一個章。**政治中立**：只用珊瑚與白，不用任何政黨色，不放候選人、政黨、民調；分頁標題與提醒橫幅這次沒做。過期後 `script.js` 的 `VOTE_*`／`voteActive` 與 `style.css` 的 `html.vote` 規則可以整段刪；明年（或下次選舉）要用就改日期。
+
 過期後可以刪的：`startSnow`／`SNOW_*`／`XMAS_*`／`xmasActive`、`vendor/pure-snow.*`、`html.xmas` 標題規則、`.xmas-only`／`.xmas-replaced` 與 `#favColor-xmas-stripe` 色票；**晶片的 `.fav-xmas-stripe` 與 `--xmas-stripe` 要留**。明年要用就改日期。
 
 網站沒有帳號系統，「幾個人」的統計靠前端 `localStorage` 存的匿名 `wg_client_id`（`crypto.randomUUID()`），後端用 `COUNT(DISTINCT clientId)` 估算，不對應真實身分。
 
 ### 靜態資源快取
 **CSS、JS、icon 一律走 `_headers` 快取 30 天（`max-age=2592000`，不加 `immutable`，所以按重新整理仍會向伺服器確認）**：`style.css`、`script.js`、`common.js`、`admin.js`、`ga-init.js`、`theme-init.js`、`css-async.js`、`vendor/*`、`icons/*`、`favicon.ico`。這套做法的前提是**所有引用處都帶 `?v=` 版號**，而且**內容改了就一定要把引用它的地方的版號加一**，否則使用者最久一個月看到舊的——改 JS／CSS／icon 時別忘了：
-- `style.css`：`index.html`、`admin.html`、`403.html`、`404.html` 四頁**要用同一個版號**（目前 132；以前三頁各自為政變成 104／73／45，後台和 404 頁會吃到舊樣式）。
+- `style.css`：`index.html`、`admin.html`、`403.html`、`404.html` 四頁**要用同一個版號**（目前 133；以前三頁各自為政變成 104／73／45，後台和 404 頁會吃到舊樣式）。
 - `script.js`（只有 `index.html`）、`admin.js`（只有 `admin.html`）、`common.js`（兩頁都引用，都要排在自己的 script 之前，改了要兩個檔案裡的 `common.js?v=` 一起更新）。
 - `ga-init.js`、`theme-init.js`、`css-async.js`、`vendor/chart.umd.min.js`（`admin.html`，以及 `script.js` 的 `loadChartJs()`）：目前 `?v=1`（`ga-init.js` 是 `?v=2`），改了這些檔案就把版號往上加。
 - `icons/*`：`index.html`（`og:image`、`twitter:image`、`apple-touch-icon`、QR code）、`manifest.json`、`sw.js`（通知圖示）都帶 `?v=1`，換圖就一起加。

@@ -2220,6 +2220,15 @@ function startPrideConfetti(){
   requestAnimationFrame(frame);
 }
 
+// 彩蛋：投票日（使用者 2026-11-06 決定，縣市長選舉 2026-11-28 是週六）：只有 11/28 當天，查詢鈕整顆變成「圈選印章」（白底、珊瑚色粗圓環加直線與斜線），
+// 11/29 零點起自動換回放大鏡。<html> 加 vote，畫面全由 style.css 的 html.vote 處理（用 CSS 畫，查詢中的轉圈圈與未選條件的灰色狀態照舊，不用改 JS 的圖示邏輯）。
+// 結束日是「不含當天」；網址加 ?vote=1 可以在期間外預覽（本機測試用）。過期之後這段與 style.css 的 html.vote 規則可以整段刪。
+const VOTE_START_DATE = "2026-11-28";
+const VOTE_END_DATE = "2026-11-29";
+const voteActive = new URLSearchParams(location.search).get("vote") === "1"
+  || (todayIso() >= VOTE_START_DATE && todayIso() < VOTE_END_DATE);
+if (voteActive) document.documentElement.classList.add("vote");
+
 // 彩蛋：聖誕節（使用者 2026-11-04 決定），兩段日期不同：
 //   【下雪】2026-12-01 ~ 12-31（SNOW_*）：vendor/pure-snow.js／.css（改過的 pure-snow，見檔頭說明），只在期間內才動態載入，平常不下載；
 //      數量由 #snow 的 data-count 決定（桌機 SNOW_COUNT_DESKTOP、手機 SNOW_COUNT_MOBILE）；開了「減少動態效果」就不下。
