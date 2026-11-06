@@ -1153,6 +1153,7 @@ function renderFavorites(){
 
 const addFavoriteModal = document.getElementById("addFavoriteModal");
 const favNameInput = document.getElementById("favNameInput");
+const FAV_NAME_DEFAULT_MAXLENGTH = Number(favNameInput.getAttribute("maxlength")) || 20; // 存原始值：編輯超長舊資料時會動態調大 maxLength，調大後 getAttribute 讀到的就不是預設值了
 const favNameClearBtn = document.getElementById("favNameClearBtn");
 function syncFavNameClearBtn(){
   favNameClearBtn.classList.toggle("visible", favNameInput.value !== "");
@@ -1240,6 +1241,12 @@ function syncFavSubmitState(){
 }
 // 名稱欄的狀態同時影響清除鈕與儲存鈕，開窗、輸入、骰子、清除都走這個。
 function syncFavNameField(){
+  // maxlength 加上去之前存的舊名稱可能本來就比預設上限長：若只是把 maxLength 調到剛好等於目前長度，
+  // 長度一樣會「已達上限」，使用者還是打不動。這種情況多給一點空間讓使用者能接著打字/修改，不是鎖死在目前長度；
+  // 正常情況（新增，或舊名稱沒超過上限）維持原本的上限。
+  favNameInput.maxLength = favNameInput.value.length > FAV_NAME_DEFAULT_MAXLENGTH
+    ? favNameInput.value.length + 50
+    : FAV_NAME_DEFAULT_MAXLENGTH;
   syncFavNameClearBtn();
   syncFavSubmitState();
 }
