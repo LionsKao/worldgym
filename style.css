@@ -295,7 +295,7 @@ html[data-theme="dark"].vote #scheduleSubmitBtn.gray-btn:not(.busy){ background:
   transition:opacity .18s ease, transform .18s ease, visibility 0s linear .18s;
 }
 .copy-menu.open .copy-menu-items{ pointer-events:auto; }
-.copy-menu.open #copyMenuBtn{ background:#a0a0a8; box-shadow:0 6px 16px rgba(0,0,0,0.18); } /* 展開時主鈕變灰的 ×，跟下面兩顆有顏色的選項區分開 */
+.copy-menu.open #copyMenuBtn{ background:#a0a0a8; box-shadow:0 6px 16px rgba(0,0,0,0.18); } /* 展開時主鈕變灰的 ×，跟下面三顆有顏色的選項區分開 */
 .copy-menu.open .copy-menu-item{
   opacity:1; visibility:visible; transform:none;
   transition:opacity .18s ease, transform .18s ease, visibility 0s;
