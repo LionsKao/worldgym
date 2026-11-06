@@ -282,7 +282,7 @@ html[data-theme="dark"].vote #scheduleSubmitBtn.gray-btn:not(.busy){ background:
 .teal-btn{ background:var(--teal); box-shadow:0 6px 16px rgba(63,174,143,0.45); }
 .orange-btn{ background:var(--orange); box-shadow:0 6px 16px rgba(240,160,75,0.45); }
 .blue-btn{ background:#4a90d9; box-shadow:0 6px 16px rgba(74,144,217,0.45); }
-/* 結果頁底部右邊的複製鈕：點開往上長出兩顆純圖示按鈕（1 複製文字、2 複製連結），靠近手指的是比較常用的複製文字。
+/* 結果頁底部右邊的複製鈕：點開往上長出三顆純圖示按鈕（1 複製文字、2 複製連結、3 下載圖片），靠近手指的是比較常用的複製文字。
    選項不佔版面（絕對定位在主鈕上方），收起時 visibility:hidden，鍵盤與讀屏都不會點到。 */
 .copy-menu{ position:relative; }
 .copy-menu-items{
@@ -300,7 +300,9 @@ html[data-theme="dark"].vote #scheduleSubmitBtn.gray-btn:not(.busy){ background:
   opacity:1; visibility:visible; transform:none;
   transition:opacity .18s ease, transform .18s ease, visibility 0s;
 }
-.copy-menu.open .copy-menu-item + .copy-menu-item{ transition-delay:.04s; }
+/* + 選擇器只會分出「前面有沒有東西」兩種狀態，3 顆以上時第 2、3 顆會套到同一個值、沒有依序的效果，改成逐一指定。 */
+.copy-menu.open .copy-menu-item:nth-child(2){ transition-delay:.04s; }
+.copy-menu.open .copy-menu-item:nth-child(3){ transition-delay:.08s; }
 @media (prefers-reduced-motion:reduce){ .copy-menu-item, .copy-menu.open .copy-menu-item{ transition:none; } }
 .hidden{ display:none; }
 #filterForm, #resultView, #mailView{ transition:opacity .2s ease; }

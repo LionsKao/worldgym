@@ -2121,7 +2121,7 @@ function formatResultLine(row){
   const prefix = row.flagged ? `⚠ ${row.c.date.slice(5).replace("-", "/")} ` : "";
   return prefix + formatResultBody(row);
 }
-// 結果頁底部右邊的複製鈕：點開往上長出「複製文字」「複製連結」兩顆純圖示按鈕（style.css 的 .copy-menu）。
+// 結果頁底部右邊的複製鈕：點開往上長出「複製文字」「複製連結」「下載圖片」三顆純圖示按鈕（style.css 的 .copy-menu）。
 // 點選單以外的地方、按 Esc、選了其中一個都會收起來；提示掛在主鈕上，因為選項收起後就看不到了。
 const copyMenu = document.getElementById("copyMenu");
 const copyMenuBtn = document.getElementById("copyMenuBtn");
