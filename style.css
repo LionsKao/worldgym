@@ -346,6 +346,10 @@ html[data-theme="dark"].vote #scheduleSubmitBtn.gray-btn:not(.busy){ background:
   box-shadow:0 8px 24px rgba(0,0,0,0.2); max-width:320px; width:90%; text-align:center;
 }
 .modal-text{ margin:0 0 18px; font-size:14px; color:var(--ink); font-weight:700; }
+/* iOS Safari 的 <a download> 不會真的觸發存檔，只會開啟圖片，所以改成這個視窗：顯示圖片、叫使用者長按儲存。
+   max-height + overflow-y 是因為課程多時圖片本身會很長，手機螢幕放不下整張。 */
+.download-preview-box{ max-width:420px; max-height:85vh; overflow-y:auto; }
+.download-preview-img{ display:block; width:100%; height:auto; border-radius:12px; margin-top:4px; }
 .modal-text-icons{ display:flex; align-items:center; justify-content:center; gap:6px; font-size:13px; font-weight:800; } /* 圖示標題：字級、粗細、圖示間距同 .section-tag，但沒有底色 */
 .modal-actions{ display:flex; gap:10px; justify-content:center; }
 .modal-actions-stack{ flex-direction:column; } /* 直向排列：按鈕撐滿寬度、高度回到 .modal-btn 的 38px，不吃 flex:1 */

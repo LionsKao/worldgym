@@ -78,7 +78,7 @@
 <link rel="preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha384-PPIZEGYM1v8zp5Py7UjFb79S58UeqCL9pYVnVPURKEqvioPROaVAJKKLzvH2rDnI" crossorigin="anonymous">
 <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha384-PPIZEGYM1v8zp5Py7UjFb79S58UeqCL9pYVnVPURKEqvioPROaVAJKKLzvH2rDnI" crossorigin="anonymous"></noscript>
 <script src="css-async.js?v=1"></script>
-<link rel="stylesheet" href="style.css?v=135">
+<link rel="stylesheet" href="style.css?v=136">
 <style>#loadingOverlay{position:fixed;top:0;left:0;width:100%;height:100%;background:var(--paper,#fff);z-index:9999;}</style>
 <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "8513ca23d1fc42f2af05b18ff29c709d"}'></script><!-- End Cloudflare Web Analytics -->
 </head>
@@ -543,6 +543,14 @@
   </div>
 </div>
 
+<div id="downloadImagePreviewModal" class="modal-overlay hidden">
+  <div class="modal-box download-preview-box">
+    <button type="button" class="modal-close-btn" id="downloadImagePreviewCloseBtn" aria-label="關閉"><i class="fa-solid fa-xmark"></i></button>
+    <p class="modal-text">長按圖片即可儲存到相簿</p>
+    <img id="downloadImagePreviewImg" class="download-preview-img" alt="課表圖片">
+  </div>
+</div>
+
 <div id="addFavoriteModal" class="modal-overlay hidden">
   <div class="modal-box fav-modal-box">
     <button type="button" class="modal-close-btn" id="favModalCloseBtn" aria-label="取消"><i class="fa-solid fa-xmark"></i></button>
@@ -632,6 +640,6 @@
 </div>
 
 <script src="common.js?v=6"></script>
-<script src="script.js?v=184"></script>
+<script src="script.js?v=185"></script>
 </body>
 </html>

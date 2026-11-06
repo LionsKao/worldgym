@@ -2175,6 +2175,8 @@ document.getElementById("shareUrlBtn").addEventListener("click", () => {
 // 手機或 Retina 螢幕的 devicePixelRatio（常見到 2～3），不然像素數會暴增好幾倍、拖慢產圖與編碼。
 // 截圖期間用 pointer-events:none 鎖住 .page 本身（不是只鎖 downloadImageBtn／backBtn 兩顆按鈕）：結果列表裡的
 // 老師名字、PWA 小鈴鐺都是可以點的，點了會改動 .page 的內容，一樣可能截到跟使用者點擊當下不一樣的畫面。
+// iOS（含 iPadOS）的 <a download> 不會真的觸發存檔，所以 isIOS() 為真時改開 #downloadImagePreviewModal
+// 顯示圖片，請使用者自己長按儲存；其他瀏覽器維持原本 <a download> 的做法。
 const DOWNLOAD_IMAGE_WIDTH = 420; // 略窄於 style.css 的 @media (max-width:480px) 斷點，確保觸發手機版樣式
 // 共用的 vendor script 延遲載入：checkLoaded 判斷是否已經有全域變數代表載入完成；回傳的函式記住載入中的
 // promise，重複呼叫不會重複注入 <script>。失敗要清掉快取的 promise（不清掉的話失敗一次就永久卡死，要重新
@@ -2200,6 +2202,20 @@ function createVendorScriptLoader(src, checkLoaded, onReady){
   };
 }
 const loadHtml2Canvas = createVendorScriptLoader("vendor/html2canvas.min.js?v=1", () => !!window.html2canvas);
+// iOS Safari（含 iPadOS）的 <a download> 不會真的觸發「儲存檔案」，點了只會開啟圖片或完全沒反應；
+// 這類瀏覽器改成開一個預覽視窗顯示圖片，請使用者自己長按儲存到相簿，這是 iOS 公認的繞過做法。
+// iPadOS 13 起 UA／platform 都偽裝成 Mac，要另外用「有沒有觸控」分辨。
+function isIOS(){
+  return /iP(hone|od|ad)/.test(navigator.platform) || (navigator.userAgent.includes("Mac") && "ontouchend" in document);
+}
+const downloadImagePreviewModal = document.getElementById("downloadImagePreviewModal");
+const downloadImagePreviewImg = document.getElementById("downloadImagePreviewImg");
+let downloadImagePreviewUrl = null; // 預覽視窗目前顯示的 blob URL，關閉時才 revoke（使用者長按儲存可能要花一點時間，不能跟一般下載一樣 1 秒後就收回）
+function closeDownloadImagePreview(){
+  downloadImagePreviewModal.classList.add("hidden");
+  if (downloadImagePreviewUrl){ URL.revokeObjectURL(downloadImagePreviewUrl); downloadImagePreviewUrl = null; }
+}
+document.getElementById("downloadImagePreviewCloseBtn").addEventListener("click", closeDownloadImagePreview);
 const downloadImageBtn = document.getElementById("downloadImageBtn");
 const downloadImageBackBtn = document.getElementById("backBtn");
 downloadImageBtn.addEventListener("click", async () => {
@@ -2213,11 +2229,16 @@ downloadImageBtn.addEventListener("click", async () => {
   await new Promise((r) => setTimeout(r, 0)); // 讓瀏覽器先畫出轉圈圈：html2canvas 跑在主執行緒，直接接著做可能完全沒機會重繪
   try {
     await loadHtml2Canvas();
+    await document.fonts.ready; // 確保 Font Awesome 圖示字型已經就緒，避免截圖當下才觸發字型載入／比對拖慢速度
     const canvas = await window.html2canvas(pageEl, {
       backgroundColor: getComputedStyle(document.body).backgroundColor,
       scale: Math.min(window.devicePixelRatio || 1, 2),
+      imageTimeout: 3000, // 預設 15 秒，截圖內容裡沒有真的圖片要等，萬一卡住也不要讓使用者等那麼久
       ignoreElements: (el) => el.classList?.contains("visually-hidden") || el.hasAttribute?.("data-export-exclude"),
       onclone: (clonedDoc) => {
+        // iOS Safari 已知的 html2canvas 問題：document clone 階段會卡住，起因是頁面上任何地方（不限截圖範圍內）
+        // 有 loading="lazy" 的 <img>（這裡是通知頁的 QR code）。截圖只是給桌面複製一份靜態畫面，不需要真的延遲載入。
+        clonedDoc.querySelectorAll('img[loading="lazy"]').forEach((img) => { img.loading = "eager"; });
         clonedDoc.querySelectorAll(".sheet").forEach((el) => { el.style.boxShadow = "none"; });
         clonedDoc.body.style.minHeight = "0";
       },
@@ -2227,13 +2248,19 @@ downloadImageBtn.addEventListener("click", async () => {
       canvas.toBlob((blob) => {
         if (!blob){ reject(new Error("toBlob failed")); return; }
         const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `WG課表_${todayIso()}.png`;
-        document.body.appendChild(link); // 有些瀏覽器對沒掛進文件的 <a> 觸發 click() 不保證會下載
-        link.click();
-        link.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        if (isIOS()){
+          downloadImagePreviewUrl = url;
+          downloadImagePreviewImg.src = url;
+          downloadImagePreviewModal.classList.remove("hidden");
+        } else {
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = `WG課表_${todayIso()}.png`;
+          document.body.appendChild(link); // 有些瀏覽器對沒掛進文件的 <a> 觸發 click() 不保證會下載
+          link.click();
+          link.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
         resolve();
       }, "image/png");
     });
