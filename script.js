@@ -2159,8 +2159,8 @@ document.getElementById("shareUrlBtn").addEventListener("click", () => {
   copyTextWithToast(location.href, copyMenuBtn, "已複製網址到剪貼簿");
 });
 // 下載圖片：只有點了才載入 html2canvas（vendor 檔，體積不小，不跟著 script.js 一開始就載入）。
-// 截圖目標是 .page 裡「標題＋彩色長條＋結果列表白卡」這段（不是只截白卡，使用者 2026-11-06 要求要有標題），
-// 不含底下這排操作按鈕（.page 的 DOM 範圍本來就不包含它們，是 sibling）。
+// 截圖目標是 #resultArea（只有課程列）：2026-11-06 原本是「標題＋彩色長條＋結果列表白卡」整段，
+// 2026-11-07 使用者改成只要課程、不要標題與白卡，底色用頁面的米色（body 背景色），四周留 15px。
 // ignoreElements 排除的不是逐一列舉的元素，而是兩種通用判斷：①用 .visually-hidden（clip:rect() 技巧）藏起來的文字
 // （html2canvas 不支援 clip，會露出來，例如頁尾 SEO 文字、標題裡給讀屏器看的全名），不管站上哪裡用到這個技巧都一併擋掉；
 // ②標了 data-export-exclude 的元素，這是刻意不想出現在分享圖片裡的產品決策（PWA 小鈴鐺、廣告橫幅，見 index.html 與
@@ -2177,6 +2177,7 @@ document.getElementById("shareUrlBtn").addEventListener("click", () => {
 // 老師名字、PWA 小鈴鐺都是可以點的，點了會改動 .page 的內容，一樣可能截到跟使用者點擊當下不一樣的畫面。
 // iOS（含 iPadOS）的 <a download> 不會真的觸發存檔，所以 isIOS() 為真時改開 #downloadImagePreviewModal
 // 顯示圖片，請使用者自己長按儲存；其他瀏覽器維持原本 <a download> 的做法。
+const DOWNLOAD_IMAGE_PADDING = 15; // 圖片裡課程列四周的留白（px）
 const DOWNLOAD_IMAGE_WIDTH = 420; // 略窄於 style.css 的 @media (max-width:480px) 斷點，確保觸發手機版樣式
 // 共用的 vendor script 延遲載入：checkLoaded 判斷是否已經有全域變數代表載入完成；回傳的函式記住載入中的
 // promise，重複呼叫不會重複注入 <script>。失敗要清掉快取的 promise（不清掉的話失敗一次就永久卡死，要重新
@@ -2250,12 +2251,19 @@ downloadImageBtn.addEventListener("click", async () => {
       Promise.all(lazyImgs.map((img) => img.complete ? null : new Promise((r) => { img.onload = img.onerror = r; }))),
       new Promise((r) => setTimeout(r, 3000)),
     ]);
-    const canvas = await withTimeout(window.html2canvas(pageEl, {
+    // 只截課程列（#resultArea）：不含標題、色條、篩選標籤與白卡；底色用 body 目前的背景色（淺色是米色 --bg、
+    // 深色是對應的深色），課程列四周的留白由 onclone 給複製出來的 #resultArea 加 padding（見下）。
+    const canvas = await withTimeout(window.html2canvas(document.getElementById("resultArea"), {
       backgroundColor: getComputedStyle(document.body).backgroundColor,
       scale: Math.min(window.devicePixelRatio || 1, 2),
       imageTimeout: 3000, // 預設 15 秒，截圖內容裡沒有真的圖片要等，萬一卡住也不要讓使用者等那麼久
       ignoreElements: (el) => el.classList?.contains("visually-hidden") || el.hasAttribute?.("data-export-exclude"),
       onclone: (clonedDoc) => {
+        // 課程列四周留白：加在複製出來的 #resultArea 上（border-box，圖片寬度不變、課程列各縮 DOWNLOAD_IMAGE_PADDING），
+        // 這樣圖片邊緣不會緊貼著課程列；真正畫面上的結果區完全不受影響。
+        const area = clonedDoc.getElementById("resultArea");
+        area.style.boxSizing = "border-box";
+        area.style.padding = `${DOWNLOAD_IMAGE_PADDING}px`;
         clonedDoc.querySelectorAll(".sheet").forEach((el) => { el.style.boxShadow = "none"; });
         clonedDoc.body.style.minHeight = "0";
       },
