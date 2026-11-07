@@ -2216,6 +2216,15 @@ function closeDownloadImagePreview(){
   if (downloadImagePreviewUrl){ URL.revokeObjectURL(downloadImagePreviewUrl); downloadImagePreviewUrl = null; }
 }
 document.getElementById("downloadImagePreviewCloseBtn").addEventListener("click", closeDownloadImagePreview);
+// 下載圖片每個階段都加逾時：任何一步卡住（iPhone 上曾經一直轉）就丟出帶階段名稱的錯誤，不會永遠轉圈圈；
+// 階段名稱會顯示在失敗提示裡，使用者回報時才知道是卡在哪一步。
+function withTimeout(promise, ms, stage){
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(Object.assign(new Error(`${stage} 逾時`), { stage })), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 const downloadImageBtn = document.getElementById("downloadImageBtn");
 const downloadImageBackBtn = document.getElementById("backBtn");
 downloadImageBtn.addEventListener("click", async () => {
@@ -2228,9 +2237,10 @@ downloadImageBtn.addEventListener("click", async () => {
   icon.className = "fa-solid fa-spinner fa-spin";
   await new Promise((r) => setTimeout(r, 0)); // 讓瀏覽器先畫出轉圈圈：html2canvas 跑在主執行緒，直接接著做可能完全沒機會重繪
   try {
-    await loadHtml2Canvas();
-    await document.fonts.ready; // 確保 Font Awesome 圖示字型已經就緒，避免截圖當下才觸發字型載入／比對拖慢速度
-    const canvas = await window.html2canvas(pageEl, {
+    await withTimeout(loadHtml2Canvas(), 10000, "載入");
+    // 確保 Font Awesome 圖示字型已經就緒，避免截圖當下才觸發字型載入／比對拖慢速度；只等 2 秒，等不到就直接截（不當成失敗）
+    await Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 2000))]);
+    const canvas = await withTimeout(window.html2canvas(pageEl, {
       backgroundColor: getComputedStyle(document.body).backgroundColor,
       scale: Math.min(window.devicePixelRatio || 1, 2),
       imageTimeout: 3000, // 預設 15 秒，截圖內容裡沒有真的圖片要等，萬一卡住也不要讓使用者等那麼久
@@ -2243,10 +2253,10 @@ downloadImageBtn.addEventListener("click", async () => {
         clonedDoc.body.style.minHeight = "0";
       },
       windowWidth: DOWNLOAD_IMAGE_WIDTH,
-    });
-    await new Promise((resolve, reject) => {
+    }), 20000, "截圖");
+    await withTimeout(new Promise((resolve, reject) => {
       canvas.toBlob((blob) => {
-        if (!blob){ reject(new Error("toBlob failed")); return; }
+        if (!blob){ reject(Object.assign(new Error("toBlob failed"), { stage: "轉檔" })); return; }
         const url = URL.createObjectURL(blob);
         if (isIOS()){
           downloadImagePreviewUrl = url;
@@ -2263,10 +2273,10 @@ downloadImageBtn.addEventListener("click", async () => {
         }
         resolve();
       }, "image/png");
-    });
+    }), 10000, "轉檔");
   } catch (err){
     console.error("下載圖片失敗", err);
-    showPillWarning(copyMenuBtn, "圖片產生失敗，請稍後再試");
+    showPillWarning(copyMenuBtn, `圖片產生失敗${err.stage ? `（${err.stage}）` : ""}，請稍後再試`);
   } finally {
     downloadImageBtn.disabled = false;
     downloadImageBackBtn.disabled = false;
