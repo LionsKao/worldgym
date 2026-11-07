@@ -2240,15 +2240,22 @@ downloadImageBtn.addEventListener("click", async () => {
     await withTimeout(loadHtml2Canvas(), 10000, "載入");
     // 確保 Font Awesome 圖示字型已經就緒，避免截圖當下才觸發字型載入／比對拖慢速度；只等 2 秒，等不到就直接截（不當成失敗）
     await Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 2000))]);
+    // iOS Safari 已知的 html2canvas 問題：複製文件之後它會等「文件裡每一張圖」載入完成（沒有逾時），而 loading="lazy"
+    // 又藏在隱藏區塊裡的圖（這裡是通知頁的 QR code）在 Safari 永遠不會載入，截圖就永遠卡住。html2canvas 在 WebKit 上是
+    // 先等圖片、之後才呼叫 onclone，所以不能在 onclone 裡改複製出來的 DOM，要在截圖前先把真實頁面上的圖改成 eager
+    // 並等它載入（QR code 很小，改成 eager 的流量可以忽略）。
+    const lazyImgs = [...document.querySelectorAll('img[loading="lazy"]')];
+    lazyImgs.forEach((img) => { img.loading = "eager"; });
+    await Promise.race([
+      Promise.all(lazyImgs.map((img) => img.complete ? null : new Promise((r) => { img.onload = img.onerror = r; }))),
+      new Promise((r) => setTimeout(r, 3000)),
+    ]);
     const canvas = await withTimeout(window.html2canvas(pageEl, {
       backgroundColor: getComputedStyle(document.body).backgroundColor,
       scale: Math.min(window.devicePixelRatio || 1, 2),
       imageTimeout: 3000, // 預設 15 秒，截圖內容裡沒有真的圖片要等，萬一卡住也不要讓使用者等那麼久
       ignoreElements: (el) => el.classList?.contains("visually-hidden") || el.hasAttribute?.("data-export-exclude"),
       onclone: (clonedDoc) => {
-        // iOS Safari 已知的 html2canvas 問題：document clone 階段會卡住，起因是頁面上任何地方（不限截圖範圍內）
-        // 有 loading="lazy" 的 <img>（這裡是通知頁的 QR code）。截圖只是給桌面複製一份靜態畫面，不需要真的延遲載入。
-        clonedDoc.querySelectorAll('img[loading="lazy"]').forEach((img) => { img.loading = "eager"; });
         clonedDoc.querySelectorAll(".sheet").forEach((el) => { el.style.boxShadow = "none"; });
         clonedDoc.body.style.minHeight = "0";
       },
