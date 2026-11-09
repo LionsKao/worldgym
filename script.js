@@ -2253,8 +2253,9 @@ downloadImageBtn.addEventListener("click", async () => {
     ]);
     // 只截課程列（#resultArea）：不含標題、色條、篩選標籤與白卡；底色用 body 目前的背景色（淺色是米色 --bg、
     // 深色是對應的深色），課程列四周的留白由 onclone 給複製出來的 #resultArea 加 padding（見下）。
+    const bodyStyle = getComputedStyle(document.body);
     const canvas = await withTimeout(window.html2canvas(document.getElementById("resultArea"), {
-      backgroundColor: getComputedStyle(document.body).backgroundColor,
+      backgroundColor: bodyStyle.backgroundColor,
       scale: Math.min(window.devicePixelRatio || 1, 2),
       imageTimeout: 3000, // 預設 15 秒，截圖內容裡沒有真的圖片要等，萬一卡住也不要讓使用者等那麼久
       ignoreElements: (el) => el.classList?.contains("visually-hidden") || el.hasAttribute?.("data-export-exclude"),
@@ -2266,6 +2267,8 @@ downloadImageBtn.addEventListener("click", async () => {
         area.style.padding = `${DOWNLOAD_IMAGE_PADDING}px`;
         clonedDoc.querySelectorAll(".sheet").forEach((el) => { el.style.boxShadow = "none"; });
         clonedDoc.body.style.minHeight = "0";
+        // 老師名字平常是可以點的連結、用橘色提示；下載圖片不需要「可以點」的視覺提示，改成跟其他文字一樣的顏色（--ink，跟著目前主題）。
+        clonedDoc.querySelectorAll(".teacher-link").forEach((el) => { el.style.color = bodyStyle.color; });
       },
       windowWidth: DOWNLOAD_IMAGE_WIDTH,
     }), 20000, "截圖");
