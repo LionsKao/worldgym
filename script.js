@@ -777,6 +777,7 @@ function updateSubmitState(){
   // 星期格的 change 事件因此也不需要呼叫這個函式。「加到最愛」在查詢結果頁底下，進得了結果頁就一定通過這個條件，不用另外擋。
   const valid = isSearchValid();
   document.getElementById("scheduleSubmitBtn").classList.toggle("gray-btn", !valid);
+  refreshSubmitIcon();
 }
 const pillWarnTooltip = document.createElement("div");
 pillWarnTooltip.id = "pillWarnTooltip";
@@ -937,13 +938,11 @@ function buildShareUrl(state){
   return url.toString();
 }
 function updateResetButtonState(){
-  // room 一定會有預設值（團體教室），所以不算進「有沒有選篩選」的判斷，不然按鈕永遠不會變灰。
-  const hasSelection = FILTER_GROUPS.filter(name => name !== "room").some(name =>
-    document.querySelector(`input[name="${name}"]:checked`)
-  );
+  const hasSelection = hasAnyFilterSelected();
   const btn = document.getElementById("resetFiltersBtn");
   btn.classList.toggle("gray-btn", !hasSelection);
   btn.classList.toggle("reset-active", hasSelection);
+  refreshSubmitIcon();
 }
 document.getElementById("dayGrid").addEventListener("change", () => { saveSelection("wg_selected_day", ["day"]); updateResetButtonState(); });
 document.getElementById("timeGrid").addEventListener("change", () => { saveSelection("wg_selected_time", ["time"]); updateResetButtonState(); });
@@ -1067,8 +1066,10 @@ function applyFavorite(fav){
   updateResetButtonState();
   trackEventOncePerSession("apply_favorite", fav.label, { favorite_label: fav.label });
   logFavoriteEvent("apply");
-  searchTriggerSource = "favorite";
-  document.getElementById("filterForm").requestSubmit(document.getElementById("scheduleSubmitBtn"));
+  // 直接呼叫共用的 performSearch()，不經過 requestSubmit() 重新進入表單監聽器——該監聽器原本會在
+  // 重入時把這裡剛設好的 searchTriggerSource 蓋回 "manual"（因為套用最愛後 isSearchValid() 多半為真，
+  // 不會落入語音那條分支），導致 search_schedule 的 trigger_source 從未真正記成 "favorite" 過。
+  performSearch("favorite");
 }
 // 長按最愛晶片（約 0.5 秒）開編輯視窗；短按照舊套用並查詢。手指移動超過一小段距離（在捲動）或提早放開就取消。
 // 桌機右鍵、鍵盤的 Menu 鍵／Shift+F10 會觸發 contextmenu，也開編輯視窗。
@@ -1441,7 +1442,7 @@ document.getElementById("clearMemoryCloseBtn").addEventListener("click", () => {
   clearMemoryModal.classList.add("hidden");
 });
 // 「篩選記憶」＝勾選條件、常用排序（點擊次數）、分店地區展開狀態；新增這類記憶的 key 要加進來。
-// 其餘（wg_client_id、提醒分鐘、wg_theme 主題偏好、各種旗標）不清：清掉 wg_client_id 會讓同一個人在最愛統計裡變成新使用者。
+// 其餘（wg_client_id、提醒分鐘、wg_theme 主題偏好、wg_voice_search_enabled 語音搜尋開關、各種旗標）不清：清掉 wg_client_id 會讓同一個人在最愛統計裡變成新使用者。
 const FILTER_MEMORY_KEYS = [
   ...SELECTION_STORAGE_KEYS,
   "wg_branch_clicks", "wg_course_clicks", "wg_teacher_clicks",
@@ -1493,6 +1494,265 @@ themeToggleBtn.addEventListener("click", () => {
   trackEvent("toggle_theme", { theme: next });
 });
 renderThemeToggle();
+
+// 語音搜尋（使用者 2026-11-09 定案）：quickLinksSheet 的開關存 localStorage，預設關閉；開啟後，
+// 篩選頁完全沒勾選任何篩選（跟 #resetFiltersBtn 呈現 .gray-btn 同一個條件，比查詢鈕原本的
+// isSearchValid() 更嚴格）時，查詢鈕圖示會從放大鏡換成麥克風，點下去用 Web Speech API 語音輸入，
+// 自動比對出分店/老師/課程/星期/時段/教室並直接送出查詢——沒有「聽到了沒」的確認畫面。
+// 比對演算法在另外延遲載入的 voice-search.js（見 loadVoiceSearch），這裡只負責：開關本身、
+// 查詢鈕的圖示/狀態機、SpeechRecognition 生命週期、以及套用/送出篩選的兩個全域出口
+// （window.applyVoiceFilters／window.submitVoiceSearch，voice-search.js 比對完會呼叫這兩個）。
+const VOICE_SEARCH_STORAGE_KEY = "wg_voice_search_enabled";
+let voiceSearchEnabled = readStored(VOICE_SEARCH_STORAGE_KEY) === "1";
+const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+function isSpeechRecognitionSupported(){ return !!SpeechRecognitionCtor; }
+// "idle" | "starting"（已按下，等瀏覽器權限視窗／onstart）| "listening"（真的在收音）| "processing"（收到結果，比對中）。
+// 原本 voiceRecognitionState／voiceProcessing 是兩個獨立旗標，"starting"／"processing" 這兩個中間狀態
+// 一律用同一個 state 表示：micEligible() 只看是不是 "idle"，不用再各自檢查兩個變數。
+let voiceRecognitionState = "idle";
+// 麥克風權限被拒絕後，紫色麥克風要變回原本的灰色查詢鈕，不然使用者會一直點到注定失敗的麥克風。
+// 單一狀態值（不是兩個各自要注意先後順序的旗標）："unknown"（還不知道，例如查不到 Permissions API
+// 的瀏覽器、或還沒查完）｜"prompt"｜"granted"｜"denied"。有 Permissions API 支援的瀏覽器用真正的
+// 權限狀態（見下方 navigator.permissions.query，連使用者事後跑去瀏覽器設定重新允許都會透過 onchange
+// 自動反映，不用重新整理頁面）直接覆寫這個值；只有在查不到 Permissions API（仍是 "unknown"）時，
+// onerror 收到 not-allowed 才退回去把它設成 "denied"，只能重新整理頁面復原——使用者只是把瀏覽器原生
+// 的麥克風權限視窗按掉（不等於真的封鎖）時，真正的權限狀態通常還是 "prompt"，onchange 永遠不會觸發，
+// 若 onerror 也跟著設成 "denied" 就會卡住回不去，所以已經查得到真正狀態時 onerror 不該再自己猜。
+let voiceMicPermission = "unknown";
+// room 一定會有預設值（團體教室），所以不算進「有沒有選篩選」的判斷，不然按鈕永遠不會變灰——
+// #resetFiltersBtn 的灰色狀態跟麥克風是否出現共用這個判斷。
+function hasAnyFilterSelected(){
+  return FILTER_GROUPS.filter(name => name !== "room").some(name =>
+    document.querySelector(`input[name="${name}"]:checked`)
+  );
+}
+// 麥克風出現條件故意比 isSearchValid()（只看分店/老師）更嚴格，鍵結 resetFiltersBtn 的灰色條件
+// （使用者 2026-11-09 確認）；聖誕樹／投票日印章兩個彩蛋也在同一顆按鈕上置換圖示，優先權更高——
+// 這幾天麥克風完全不出現，開關本身不受影響，彩蛋結束後自動恢復。
+function micEligible(){
+  return voiceSearchEnabled && isSpeechRecognitionSupported() && voiceRecognitionState === "idle" && voiceMicPermission !== "denied"
+    && !hasAnyFilterSelected() && !xmasActive && !voteActive;
+}
+// 查詢鈕平常圖示的單一決定點：聖誕期間是樹；語音開啟且沒選任何篩選（或已經按下麥克風、不管是等待中／
+// 收音中／比對中）是麥克風；其餘是放大鏡。查詢中（.busy）另有自己的轉圈圈，不經過這裡。
+// mic 由呼叫端算好傳進來（refreshSubmitIcon() 已經算過一次，這裡不用重算一次 micEligible()）。
+function computeSubmitIconClass(mic){
+  if (xmasActive) return "fa-solid fa-tree";
+  if (mic) return "fa-solid fa-microphone";
+  return "fa-solid fa-magnifying-glass";
+}
+function refreshSubmitIcon(){
+  const submitBtn = document.getElementById("scheduleSubmitBtn");
+  if (submitBtn.classList.contains("busy")) return; // 查詢中的樣式交給 runSearchAndShowResults 自己管
+  const mic = voiceRecognitionState !== "idle" || micEligible();
+  submitBtn.classList.toggle("purple-btn", mic);
+  submitBtn.classList.toggle("voice-listening", voiceRecognitionState === "listening");
+  if (mic) submitBtn.classList.remove("gray-btn");
+  else if (!isSearchValid()) submitBtn.classList.add("gray-btn");
+  submitBtn.querySelector("i").className = computeSubmitIconClass(mic);
+  submitBtn.setAttribute("aria-label", !mic ? "查詢課表" : (voiceRecognitionState === "listening" ? "聆聽中，再次點擊結束" : "語音搜尋課表"));
+}
+
+const voiceSearchToggleBtn = document.getElementById("voiceSearchToggleBtn");
+function renderVoiceSearchToggle(){
+  voiceSearchToggleBtn.innerHTML = voiceSearchEnabled
+    ? '<i class="fa-solid fa-fw fa-microphone-slash"></i>關閉語音搜尋功能（測試）'
+    : '<i class="fa-solid fa-fw fa-microphone"></i>開啟語音搜尋功能（測試）';
+  voiceSearchToggleBtn.setAttribute("aria-label", voiceSearchEnabled ? "關閉語音搜尋功能（測試）" : "開啟語音搜尋功能（測試）");
+  voiceSearchToggleBtn.setAttribute("aria-pressed", String(voiceSearchEnabled));
+}
+voiceSearchToggleBtn.addEventListener("click", () => {
+  voiceSearchEnabled = !voiceSearchEnabled;
+  if (voiceSearchEnabled) writeStored(VOICE_SEARCH_STORAGE_KEY, "1");
+  else removeStored(VOICE_SEARCH_STORAGE_KEY);
+  // !== "idle"（不是只看 "listening"）：還在等瀏覽器權限視窗、或收到結果正在比對中關掉開關，也要能取消。
+  if (!voiceSearchEnabled && voiceRecognitionState !== "idle") cancelVoiceSearch();
+  renderVoiceSearchToggle();
+  refreshSubmitIcon();
+  trackEvent("toggle_voice_search", { enabled: voiceSearchEnabled });
+});
+renderVoiceSearchToggle();
+// 瀏覽器連 SpeechRecognition 都不支援時，查麥克風權限毫無意義（micEligible() 一定是 false）——
+// 不用為了這種瀏覽器也付出一次非同步的 Permissions API 查詢＋留著一個常駐的 onchange listener。
+if (isSpeechRecognitionSupported() && navigator.permissions?.query){
+  navigator.permissions.query({ name: "microphone" }).then((status) => {
+    voiceMicPermission = status.state;
+    refreshSubmitIcon();
+    status.onchange = () => {
+      voiceMicPermission = status.state;
+      refreshSubmitIcon();
+    };
+  }).catch(() => {}); // 查不到（例如 Safari 不支援 "microphone" descriptor）就維持 "unknown"，退回 onerror 的 fallback
+}
+
+const loadVoiceSearch = createVendorScriptLoader("voice-search.js?v=4", () => !!window.WGVoiceSearch);
+let activeRecognition = null;
+let voiceTimeoutTimer = null;
+const VOICE_RECOGNITION_TIMEOUT_MS = 10000;
+
+// 聆聽／比對期間鎖住的不只是重設/通知兩顆按鈕，篩選 checkbox 本身也要鎖：不然使用者在這段期間
+// 手動勾選，會被語音結果套用時的 applyFilterState()（整組取代）悄悄蓋掉、毫無提示。
+// day/time/room/branch 的 checkbox 一律寫死在 index.html、parse 完就不會再變，第一次用到就快取起來，
+// 不用每次鎖/解鎖都重新查一次 DOM（光分店就 100 多個 checkbox）。course/teacher 是 /filterOptions
+// 回來後才非同步渲染的，用到當下不一定已經存在，故意不快取，照舊每次查 document.querySelectorAll。
+const STATIC_LOCK_GROUPS = ["day", "time", "room", "branch"];
+let cachedStaticLockInputs = null;
+function setVoiceRecordingLock(active){
+  ["resetFiltersBtn", "notifyBtn"].forEach(id => {
+    const el = document.getElementById(id);
+    el.disabled = active;
+    el.classList.toggle("voice-dimmed", active);
+  });
+  if (!cachedStaticLockInputs){
+    cachedStaticLockInputs = STATIC_LOCK_GROUPS.flatMap(name => [...document.querySelectorAll(`input[name="${name}"]`)]);
+  }
+  cachedStaticLockInputs.forEach(input => { input.disabled = active; });
+  ["course", "teacher"].forEach(name => {
+    document.querySelectorAll(`input[name="${name}"]`).forEach(input => { input.disabled = active; });
+  });
+}
+function showVoiceTooltip(){
+  const tip = document.getElementById("submitTooltip");
+  tip.innerHTML = '聆聽中・請說話<span class="voice-tooltip-hint">再點一下或停頓即可結束</span>';
+  tip.classList.add("wrap", "visible");
+}
+function hideVoiceTooltip(){
+  document.getElementById("submitTooltip").classList.remove("visible", "wrap");
+}
+// 把這次 recognition 的計時器／參照／提示收乾淨，但不解鎖按鈕、不改 voiceRecognitionState——
+// 呼叫端（onresult 收到結果轉成 "processing"、或 resetVoiceUI() 真的回到 "idle"）自己決定下一步。
+// 取名特意跟 resetVoiceUI() 分開（不是「reset」系列），避免以後有人誤以為它也會解鎖/收尾。
+function clearRecognitionSession(){
+  clearTimeout(voiceTimeoutTimer);
+  activeRecognition = null;
+  hideVoiceTooltip();
+}
+// 真正「這次語音嘗試整個結束」才呼叫：取消、逾時、辨識出錯、沒聽到聲音、比對/送出完成都走這裡。
+function resetVoiceUI(){
+  clearRecognitionSession();
+  setVoiceRecordingLock(false);
+  voiceRecognitionState = "idle";
+  refreshSubmitIcon();
+}
+function reportVoiceFailure(reason, message){
+  trackEvent("voice_search_failed", { reason });
+  showPillWarning(document.getElementById("scheduleSubmitBtn"), message);
+}
+// 拔掉這個 recognition 物件的事件處理器：abort()/stop() 之後瀏覽器仍會非同步觸發 onerror("aborted")／
+// onend，不拔掉的話這些事後才到的事件會跟呼叫端自己的收尾重複處理（例如彈出第二次、矛盾的失敗訊息）。
+function detachRecognitionHandlers(recognition){
+  recognition.onstart = null;
+  recognition.onresult = null;
+  recognition.onerror = null;
+  recognition.onend = null;
+}
+// 拔掉處理器＋abort() 這組動作 cancelVoiceSearch()／handleVoiceTimeout() 都要做，抽成一個共用函式；
+// 回傳「有沒有真的中止到什麼」，讓 handleVoiceTimeout() 可以沿用原本「沒有 session 就整個不做事」的行為。
+function abortActiveRecognition(){
+  if (!activeRecognition) return false;
+  detachRecognitionHandlers(activeRecognition);
+  try{ activeRecognition.abort(); } catch(e){}
+  return true;
+}
+function cancelVoiceSearch(){
+  abortActiveRecognition();
+  resetVoiceUI();
+}
+// re-tap 用 stop()（不是 abort()）：結束音訊擷取但仍會對已經聽到的內容觸發一次 onresult——
+// continuous=false 本來就是「暫停就結束」，re-tap 等於幫使用者提前結束這個暫停等待，不是放棄已經講的內容。
+function stopVoiceSearchManually(){
+  if (activeRecognition){ try{ activeRecognition.stop(); } catch(e){} }
+}
+// 逾時保險：瀏覽器的麥克風權限視窗如果使用者一直不理（不同意也不拒絕），SpeechRecognition
+// 既不會觸發 onstart 也不會觸發 onerror，畫面會卡在看起來什麼事都沒發生。所以逾時計時從
+// startVoiceSearch() 一開始（點下麥克風那一刻）就起算，不是等 onstart 才開始算——這樣不管是
+// 「權限視窗沒人理」還是「已經在聽但一直不講話」，10 秒後都會放棄。
+function handleVoiceTimeout(){
+  if (!abortActiveRecognition()) return;
+  resetVoiceUI();
+  reportVoiceFailure("timeout", "沒有反應，請再試一次");
+}
+async function startVoiceSearch(){
+  if (!isSpeechRecognitionSupported()) return;
+  // "starting" 從點下麥克風這一刻就生效（不是等 onstart）：micEligible() 立刻變 false，
+  // 按鈕與 checkbox 也立刻鎖住，雙重防止瀏覽器權限視窗還沒回應時再點一次造成同時兩個 session。
+  voiceRecognitionState = "starting";
+  setVoiceRecordingLock(true);
+  refreshSubmitIcon();
+  loadVoiceSearch().catch((e) => console.error("voice-search.js 載入失敗", e)); // 跟聆聽平行載入，不等它
+  const recognition = new SpeechRecognitionCtor();
+  recognition.lang = "zh-TW";
+  recognition.continuous = false;
+  recognition.interimResults = false;
+  activeRecognition = recognition;
+  voiceTimeoutTimer = setTimeout(handleVoiceTimeout, VOICE_RECOGNITION_TIMEOUT_MS);
+  recognition.onstart = () => {
+    voiceRecognitionState = "listening";
+    showVoiceTooltip();
+    refreshSubmitIcon();
+    trackEvent("start_voice_search", {}); // 這裡才是真的確認開始聆聽；start() 呼叫失敗不算「開始聆聽」
+  };
+  recognition.onresult = async (event) => {
+    // 整段（含底下的狀態切換／refreshSubmitIcon）都包在 try/finally 裡：任何一步意外丟例外，
+    // finally 的 resetVoiceUI() 都保證會跑，不會讓狀態卡在 "processing" 回不去 "idle"。
+    try{
+      clearRecognitionSession(); // 瀏覽器端已經停止聆聽（continuous=false），先清計時器/提示，按鈕暫時維持鎖住
+      voiceRecognitionState = "processing";
+      refreshSubmitIcon();
+      const transcript = (event.results[0]?.[0]?.transcript || "").trim();
+      if (!transcript){ reportVoiceFailure("empty", "沒聽清楚，請再試一次"); return; }
+      await loadVoiceSearch();
+      const outcome = await window.WGVoiceSearch.applyTranscript(transcript);
+      if (outcome === "submitted") trackEvent("voice_search_matched", {});
+      else if (outcome === "insufficient") reportVoiceFailure("insufficient", "請補充分店或老師名稱再試一次");
+      else if (outcome !== "cancelled") reportVoiceFailure("no-match", "聽不懂這個條件，請再試一次");
+      // "cancelled"：比對這段期間使用者自己把開關關掉了，voice-search.js 什麼都沒套用/送出，
+      // 這裡也不用再顯示任何訊息（使用者已經看到開關變化，不需要多一次提示）。
+    } catch(e){
+      console.error("語音搜尋比對失敗", e);
+      reportVoiceFailure("apply-error", "搜尋發生錯誤，請再試一次");
+    } finally {
+      resetVoiceUI();
+    }
+  };
+  recognition.onerror = (event) => {
+    if (event.error === "aborted") return; // cancelVoiceSearch()/handleVoiceTimeout() 已經拔過處理器、收尾過了
+    detachRecognitionHandlers(recognition); // 避免這個已經處理過的 session 之後又觸發 onend 重複處理
+    const permissionIssue = event.error === "not-allowed" || event.error === "service-not-allowed";
+    // Permissions API 已經查得到真正狀態時（voiceMicPermission 不是 "unknown"）不要在這裡再自己猜——
+    // 使用者只是把瀏覽器原生的麥克風權限視窗按掉，真正的權限狀態通常還是 "prompt"（不是 "denied"），
+    // onchange 永遠不會觸發，這裡設了就會卡住回不去；查不到 Permissions API 的瀏覽器才退回這個 fallback。
+    if (permissionIssue && voiceMicPermission === "unknown") voiceMicPermission = "denied";
+    resetVoiceUI();
+    if (permissionIssue){
+      reportVoiceFailure("permission-denied", "請允許麥克風權限才能使用語音搜尋");
+    } else {
+      reportVoiceFailure("recognition-error", "語音辨識發生錯誤，請再試一次");
+    }
+  };
+  // onresult 已經把狀態切出 "listening" 才會進到比對/收尾（見上面），所以這裡只要還是 "listening"
+  // 就代表沒收到任何結果就結束了——不用另外維護一個 voiceResultPending 旗標來記同一件事。
+  recognition.onend = () => {
+    if (voiceRecognitionState === "listening"){ resetVoiceUI(); reportVoiceFailure("no-speech", "沒聽到聲音，請再試一次"); }
+  };
+  try{ recognition.start(); } catch(e){ console.error(e); resetVoiceUI(); }
+}
+
+// voice-search.js 比對完篩選後呼叫這兩個函式（不要直接呼叫 applyFilterState）：room 若語音沒提到
+// 教室類型，voice-search.js 會自己補目前勾選的值，這裡只負責套用＋存＋（送出版）直接呼叫共用的
+// performSearch()（見 filterForm 的 submit 監聽器旁邊）——不透過 requestSubmit() 重新進入表單監聽器，
+// 這樣 searchTriggerSource 不會被誤判，也不需要任何旗標去猜「這次重入是不是語音觸發的」。
+function applyVoiceFilters(state){
+  applyFilterState(state); // 內部已呼叫 updateSubmitState()
+  FILTER_GROUPS.forEach(name => saveSelection(`wg_selected_${name}`, [name]));
+  updateResetButtonState();
+}
+function submitVoiceSearch(state){
+  applyVoiceFilters(state);
+  performSearch("voice");
+}
+window.applyVoiceFilters = applyVoiceFilters;
+window.submitVoiceSearch = submitVoiceSearch;
 
 // 頁面載入時課程/老師清單抓取失敗（伺服器或資料庫異常）跳出的提示 modal。
 const serviceErrorModal = document.getElementById("serviceErrorModal");
@@ -1841,6 +2101,11 @@ async function runScheduleQueryCached(queryState){
 
 let lastResultRows = [];
 let TEACHER_NAMES = [];
+// voice-search.js 的課程/老師詞彙要等 /filterOptions 落地（成功或失敗都算，見 init() 的 finally）才能讀，
+// 這個 promise 讓它知道何時可以安全讀取 courseGrid／teacherGrid，最壞情況 6 秒內一定會 resolve
+// （見 QUERY_GIVE_UP_AFTER_MS）。
+let resolveFilterOptionsSettled;
+const filterOptionsSettledPromise = new Promise((resolve) => { resolveFilterOptionsSettled = resolve; });
 function renderTeacherGrid(){
   const checked = new Set(checkedValues("teacher"));
   renderGrid("teacherGrid", "teacher", sortByClickCount(TEACHER_NAMES, "wg_teacher_clicks").map(n => ({ value: n, label: n, checked: checked.has(n) })));
@@ -1940,14 +2205,17 @@ document.getElementById("resultArea").addEventListener("click", async (e) => {
   // 重新整理後會從舊的儲存值還原，跟畫面當時的篩選對不上。
   FILTER_GROUPS.forEach(name => saveSelection(`wg_selected_${name}`, [name]));
   updateResetButtonState();
-  searchTriggerSource = "teacher_link";
+  // 正常不會發生（選了老師後 hasTeacherSelected() 一定是 true），只防老師資料跟目前清單對不上的冷門情況；
+  // 保留這層檢查才能在那種情況下維持原本「安靜地什麼都不做」，不會變成在隱藏的 submitBtn 上彈提示。
   if (!isSearchValid()) return;
   // 這裡不用 requestSubmit：結果頁時 filterForm 是 hidden 的，submitBtn 的 spin 圖示使用者看不到，
-  // 改成讓結果頁本來就看得到的返回按鈕轉圈，查詢完換出第二層結果後再變回箭頭。
+  // 改成讓結果頁本來就看得到的返回按鈕轉圈，查詢完換出第二層結果後再變回箭頭。改走共用的 performSearch()
+  // （不要直接呼叫 runSearchAndShowResults()）：這樣連續點同一位老師也會觸發連續查詢提醒 modal，
+  // 不會因為是從結果頁點進來的就繞過這層保護——跟手動按查詢鈕、套用最愛、語音共用同一套。
   teacherLink.classList.add("busy");
   const backBtnIcon = document.querySelector("#backBtn i");
   backBtnIcon.className = "fa-solid fa-spinner fa-spin";
-  await runSearchAndShowResults(currentFilterState());
+  await performSearch("teacher_link");
   teacherLink.classList.remove("busy");
   backBtnIcon.className = "fa-solid fa-arrow-left";
 });
@@ -2075,9 +2343,8 @@ async function runSearchAndShowResults(state){
     showPillWarning(submitBtn, message);
   } finally {
     submitBtn.classList.remove("busy");
-    submitIcon.className = SUBMIT_IDLE_ICON_CLASS;
     submitBtn.disabled = false;
-    updateSubmitState();
+    updateSubmitState(); // 會透過 refreshSubmitIcon() 設回正確圖示（含麥克風條件）
   }
 }
 // 同一個篩選條件連續手動查詢滿 5 次就跳 modal 提醒 30 分鐘去重規則，避免使用者一直查/返回白耗 D1 讀取量。
@@ -2092,13 +2359,16 @@ const REPEAT_QUERY_MODAL_THRESHOLD = 5;
 let lastManualQueryKey = null;
 let sameFilterQueryStreak = 0;
 
-document.getElementById("filterForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
+// 共用邏輯（驗證、連續查詢提醒、真正送出）：手動按查詢鈕、套用最愛、語音都呼叫這個函式，
+// 用明確的 triggerSource 參數，不靠 requestSubmit() 重新進入表單監聽器再用旗標或事件屬性去猜
+// 這次查詢是誰觸發的——曾經試過 e.isTrusted，但實測 requestSubmit() 觸發的 submit 事件
+// isTrusted 也是 true（瀏覽器原生 API 呼叫，不是純手刻的 Event），分不出來，所以用直接呼叫。
+async function performSearch(triggerSource){
   if (!isSearchValid()){
     showPillWarning(document.getElementById("scheduleSubmitBtn"), "請先選擇一些分店或老師");
     return;
   }
-  searchTriggerSource = "manual";
+  searchTriggerSource = triggerSource;
   const state = currentFilterState();
   const filterKey = JSON.stringify(state);
   if (filterKey === lastManualQueryKey){
@@ -2112,6 +2382,19 @@ document.getElementById("filterForm").addEventListener("submit", async (e) => {
     showRepeatQueryModal();
   }
   await runSearchAndShowResults(state);
+}
+
+document.getElementById("filterForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (voiceRecognitionState === "listening"){
+    stopVoiceSearchManually();
+    return;
+  }
+  if (micEligible()){
+    startVoiceSearch();
+    return;
+  }
+  performSearch("manual");
 });
 document.getElementById("backBtn").addEventListener("click", showFilterView);
 
@@ -2190,7 +2473,20 @@ function createVendorScriptLoader(src, checkLoaded, onReady){
       promise = new Promise((resolve, reject) => {
         const script = document.createElement("script");
         script.src = src;
-        script.onload = () => { onReady?.(); resolve(); };
+        script.onload = () => {
+          // <script> 的 load 事件在腳本中途拋出例外時一樣會觸發（只有真的網路載入失敗才會走 onerror），
+          // 所以 onload 不能直接當成「載入成功」：一定要連 checkLoaded() 也通過才算數，不然腳本如果
+          // 在跑到設定好 checkLoaded() 要看的那個全域變數之前就出錯，這個 promise 會被誤判成功、
+          // 永久快取住，之後永遠不會再重試載入。
+          if (!checkLoaded()){
+            script.remove();
+            promise = null;
+            reject(new Error(`${src} 載入後未通過 checkLoaded`));
+            return;
+          }
+          onReady?.();
+          resolve();
+        };
         script.onerror = () => {
           script.remove();
           promise = null;
@@ -2401,10 +2697,8 @@ const xmasActive = xmasParams.get("xmas") === "1"
   || (todayIso() >= XMAS_START_DATE && todayIso() < XMAS_END_DATE);
 const snowActive = xmasActive || xmasParams.get("snow") === "1"
   || (todayIso() >= SNOW_START_DATE && todayIso() < SNOW_END_DATE);
-// 查詢鈕平常的圖示：聖誕期間是樹，其他時候是放大鏡（查詢中會暫時變成轉圈圈，結束後回到這個）
-const SUBMIT_IDLE_ICON_CLASS = xmasActive ? "fa-solid fa-tree" : "fa-solid fa-magnifying-glass";
 if (xmasActive){
-  document.querySelector("#scheduleSubmitBtn i").className = SUBMIT_IDLE_ICON_CLASS;
+  refreshSubmitIcon(); // 單一決定點在 computeSubmitIconClass()，這裡不另外手動設 className
   document.documentElement.classList.add("xmas"); // 標題漸層與聖誕色票（style.css）；載入遮罩還蓋著，看不到換樣子的瞬間
   document.title = "🎄 " + document.title.replace(/^💪\s*/, ""); // 分店頁的標題沒有 💪，一樣在前面補 🎄
 }
@@ -2470,6 +2764,7 @@ async function init(){
     showServiceErrorModal();
   } finally {
     updateResetButtonState();
+    resolveFilterOptionsSettled(); // 語音搜尋模組判斷課程/老師清單是否已經確定就緒（成功或失敗都算）用
     await preloadRemindersPromise; // 查詢結果的鈴鐺要靠它判斷哪些已登記（見 renderScheduleResults）
     // 帶網址參數進來時，遮罩要一路蓋到查詢結果準備好才收掉，
     // 不然中間會先露出篩選畫面再跳到結果畫面（分享網址的使用情境最容易看到這個閃爍）。

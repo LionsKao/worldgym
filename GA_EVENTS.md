@@ -6,7 +6,7 @@
 
 | 事件名稱 | 觸發時機 | 參數 |
 | --- | --- | --- |
-| `search_schedule` | 按下查詢按鈕後，**真正成功顯示結果頁**才算（查無結果、超量警告、逾時/限流/伺服器錯誤都不算）| `branch_count` 分店數、`has_teacher`/`has_course` 是否有指定、`day_count` 星期數、`trigger_source` 觸發來源（`manual`/`favorite` 等）|
+| `search_schedule` | 按下查詢按鈕後，**真正成功顯示結果頁**才算（查無結果、超量警告、逾時/限流/伺服器錯誤都不算）| `branch_count` 分店數、`has_teacher`/`has_course` 是否有指定、`day_count` 星期數、`trigger_source` 觸發來源（`manual`/`favorite`/`voice` 等）|
 | `reset_filters` | 按下「清除所有篩選條件」| 無 |
 | `select_all_branch` | 用「全選」勾選某縣市/區域全部分店 | `city_name` 縣市或區域名稱 |
 | `select_teacher_filter`（每個老師每個 session 只送一次）| 在老師篩選網格勾選某位老師 | `teacher_name` |
@@ -55,6 +55,15 @@
 | `download_image` | 把查詢結果下載成一張 PNG 圖片 | `result_count` 下載時的課程筆數 |
 | `copy_site_url` | 複製網站首頁網址（帶 `utm_source=website_link`）| 無 |
 | `open_qr_code` | 打開網站 QR Code 顯示 | 無 |
+
+## 語音搜尋
+
+| 事件名稱 | 觸發時機 | 參數 |
+| --- | --- | --- |
+| `toggle_voice_search` | 通知頁頁尾按「開啟/關閉語音搜尋功能」切換開關 | `enabled`（切換後是否開啟）|
+| `start_voice_search` | 沒勾選任何篩選時點查詢鈕的麥克風圖示，開始聆聽 | 無 |
+| `voice_search_matched` | 語音比對出分店或老師，直接套用並送出查詢（真正成功顯示結果頁另外算一次 `search_schedule`，`trigger_source:"voice"`）| 無 |
+| `voice_search_failed` | 語音搜尋沒有成功送出查詢（沒聽到聲音、聽不懂、權限被拒、辨識發生錯誤、逾時等）| `reason`（`empty`/`no-match`/`insufficient`/`permission-denied`/`no-speech`/`recognition-error`/`apply-error`/`timeout`）|
 
 ## 其他
 

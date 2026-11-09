@@ -2,9 +2,38 @@
   Content-Security-Policy: default-src 'self'; script-src 'self' https://www.googletagmanager.com https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src https://fonts.gstatic.com https://cdnjs.cloudflare.com; img-src 'self' data: blob: https://*.google-analytics.com https://*.googletagmanager.com https://*.g.doubleclick.net https://www.google.com https://www.google.com.tw; connect-src 'self' https://worldgym-api.lions2100.workers.dev https://*.google-analytics.com https://analytics.google.com https://*.analytics.google.com https://*.googletagmanager.com https://*.g.doubleclick.net https://www.google.com https://www.google.com.tw https://cloudflareinsights.com; manifest-src 'self'; worker-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
   X-Frame-Options: DENY
   Strict-Transport-Security: max-age=31536000
-  Permissions-Policy: camera=(), microphone=(), payment=(), usb=(), geolocation=(self)
+  Permissions-Policy: camera=(), microphone=(self), payment=(), usb=(), geolocation=(self)
   Referrer-Policy: strict-origin-when-cross-origin
   X-Content-Type-Options: nosniff
+
+# 麥克風權限（語音搜尋用）只有首頁（/ 與分店頁）需要，後台與錯誤頁完全沒有相關程式碼，依最小權限原則
+# 收回來：Cloudflare Pages 的 _headers 是「所有符合的規則一起套用、同一個標頭名稱重複出現會用逗號接起來」，
+# 不是「比較精確的路徑贏」，所以不能只在這裡設一個 microphone=() 就以為蓋得過 /* 的 microphone=(self)——
+# 要先用 "!" 把從 /* 繼承來的 Permissions-Policy 整個拔掉，再重新設一次完整的值。每個路徑各自獨立一段
+# （不要把多個路徑疊在一起共用同一組標頭——這格式下不確定那樣寫兩個路徑是不是都會生效，分開寫最保險）。
+# /403、/404 是因為 403.html／404.html 實際會被 308 轉址到不帶副檔名的網址（見 CLAUDE.md「台灣 IP 限制」），
+# 兩種路徑都要蓋到。**本機 wrangler pages dev 測過，這個 "!" 覆寫在本機沒有生效**（/admin.html 讀到的
+# Permissions-Policy 跟首頁一樣還是帶 microphone=(self)），不確定是本機模擬的限制還是語法本身有問題，
+# push 上線後要用 `curl -I https://worldgym.pages.dev/admin.html` 實際確認過一次。
+/admin.html
+  ! Permissions-Policy
+  Permissions-Policy: camera=(), microphone=(), payment=(), usb=(), geolocation=(self)
+
+/403.html
+  ! Permissions-Policy
+  Permissions-Policy: camera=(), microphone=(), payment=(), usb=(), geolocation=(self)
+
+/403
+  ! Permissions-Policy
+  Permissions-Policy: camera=(), microphone=(), payment=(), usb=(), geolocation=(self)
+
+/404.html
+  ! Permissions-Policy
+  Permissions-Policy: camera=(), microphone=(), payment=(), usb=(), geolocation=(self)
+
+/404
+  ! Permissions-Policy
+  Permissions-Policy: camera=(), microphone=(), payment=(), usb=(), geolocation=(self)
 
 # 靜態資源（CSS、JS、icon）一律快取 30 天（2592000 秒）。能這樣做的前提是：所有引用處都帶 ?v= 版號——
 # 檔案內容改了，就要把引用它的地方的版號加一，使用者才會去抓新的；沒加的話使用者最久一個月看到舊的。
@@ -14,6 +43,9 @@
   Cache-Control: public, max-age=2592000
 
 /script.js
+  Cache-Control: public, max-age=2592000
+
+/voice-search.js
   Cache-Control: public, max-age=2592000
 
 /common.js

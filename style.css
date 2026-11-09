@@ -1,6 +1,6 @@
 :root{
   --ink:#2b2b2b; --paper:#fff; --sub:#7a7a7a; --line:#ececec;
-  --navy:#3a3a4a; --teal:#3fae8f; --cream:#f5e6a8; --orange:#f0a04b; --coral:#e8604c;
+  --navy:#3a3a4a; --teal:#3fae8f; --cream:#f5e6a8; --orange:#f0a04b; --coral:#e8604c; --purple:#6c5fc7;
   --bg:#f7f5ef;
   /* 彩虹最愛的顏色，兩份同一組色：--rainbow-stops 是不會動的（整條漸層拉滿整個晶片／色票）；
      --rainbow-cycle 是流動的，位置寫死成一個循環 63.64px（沿 135° 漸層方向），水平看每 90px（63.64×√2）重複一次，
@@ -282,6 +282,46 @@ html[data-theme="dark"].vote #scheduleSubmitBtn.gray-btn:not(.busy){ background:
 .teal-btn{ background:var(--teal); box-shadow:0 6px 16px rgba(63,174,143,0.45); }
 .orange-btn{ background:var(--orange); box-shadow:0 6px 16px rgba(240,160,75,0.45); }
 .blue-btn{ background:#4a90d9; box-shadow:0 6px 16px rgba(74,144,217,0.45); }
+.purple-btn{ background:var(--purple); box-shadow:0 6px 16px rgba(108,95,199,0.45); }
+/* 語音搜尋：沒選任何篩選時查詢鈕變麥克風（.purple-btn，紫色跟 themeToggleBtn 的 accent 同一色）。
+   聆聽中（.voice-listening）維持紫色不轉紅：外圍兩圈脈衝環（::before/::after 不同 delay）＋
+   鈕內等化器短條取代麥克風圖示，跟使用者確認過的 mockup 方向一致。 */
+#scheduleSubmitBtn.voice-listening{ position:relative; }
+/* 圖示換成等化器動畫、外圍脈衝環都只在不排斥動態效果時才做；减少動態效果的使用者直接保留
+   靜態的麥克風圖示當聆聽中的回饋，不然圖示被藏起來、等化器又因為下面 reduce 區塊拿掉動畫
+   沒有任何高度，會變成什麼都看不到的空紫色圓圈。 */
+@media (prefers-reduced-motion:no-preference){
+  #scheduleSubmitBtn.voice-listening i{ display:none; }
+  #scheduleSubmitBtn.voice-listening .voice-eq{ display:flex; }
+}
+#scheduleSubmitBtn.voice-listening::before,
+#scheduleSubmitBtn.voice-listening::after{
+  content:""; position:absolute; inset:0; border-radius:50%;
+  border:2px solid var(--purple); pointer-events:none;
+  animation:voice-pulse 1.8s ease-out infinite;
+}
+#scheduleSubmitBtn.voice-listening::after{ animation-delay:.9s; }
+@keyframes voice-pulse{
+  0%{ transform:scale(1); opacity:.6; }
+  100%{ transform:scale(1.5); opacity:0; }
+}
+.voice-eq{ display:none; align-items:flex-end; gap:3px; height:14px; }
+.voice-eq span{ width:3px; background:#fff; border-radius:2px; animation:voice-eq-bounce .9s ease-in-out infinite; }
+.voice-eq span:nth-child(1){ animation-delay:0s; }
+.voice-eq span:nth-child(2){ animation-delay:.15s; }
+.voice-eq span:nth-child(3){ animation-delay:.3s; }
+.voice-eq span:nth-child(4){ animation-delay:.45s; }
+@keyframes voice-eq-bounce{ 0%,100%{ height:4px; } 50%{ height:14px; } }
+.voice-tooltip-hint{ display:block; font-size:10.5px; font-weight:600; opacity:.75; margin-top:3px; }
+/* 聆聽中鎖住左右兩顆按鈕（比照下載圖片鎖住 backBtn 的做法）：變淡＋真的 disabled。
+   #notifyBtn 平常是 .orange-btn，:disabled 的 .submit-btn:disabled 顏色優先權較高會蓋掉，這裡用 id 贏回來；
+   #resetFiltersBtn 在麥克風出現時本來就已經是 .gray-btn，跟 :disabled 同一組顏色，不用贏回來。 */
+.voice-dimmed{ opacity:.35; }
+#notifyBtn.voice-dimmed:disabled{ background:var(--orange); color:#fff; box-shadow:0 6px 16px rgba(240,160,75,0.45); }
+@media (prefers-reduced-motion:reduce){
+  #scheduleSubmitBtn.voice-listening::before,
+  #scheduleSubmitBtn.voice-listening::after{ animation:none; }
+}
 /* 結果頁底部右邊的複製鈕：點開往上長出三顆純圖示按鈕（1 複製文字、2 複製連結、3 下載圖片），靠近手指的是比較常用的複製文字。
    選項不佔版面（絕對定位在主鈕上方），收起時 visibility:hidden，鍵盤與讀屏都不會點到。 */
 .copy-menu{ position:relative; }
@@ -494,7 +534,7 @@ html:not(.xmas) .fav-color-pill.xmas-only, html.xmas .fav-color-pill.xmas-replac
 .mail-disclaimer .section-tag{ flex-shrink:0; cursor:default; font-size:12.5px; }
 .mail-disclaimer .section-tag i{ font-size:13px; }
 #githubLinkIcon, #adminLoginBackBtn, #officialSiteLink{ cursor:pointer; text-decoration:none; }
-#qrCodeBtn, #copyUrlBtn, #privacyBtn, #notifyInfoBtn, #themeToggleBtn, #clearMemoryBtn{ border:none; font-family:inherit; cursor:pointer; }
+#qrCodeBtn, #copyUrlBtn, #privacyBtn, #notifyInfoBtn, #themeToggleBtn, #clearMemoryBtn, #voiceSearchToggleBtn{ border:none; font-family:inherit; cursor:pointer; }
 #notifyInfoBtn{ background:var(--paper); color:var(--accent); border:1.5px solid var(--line); }
 .qr-tooltip{ padding:10px; background:var(--paper); }
 .qr-tooltip img{ display:block; width:132px; height:132px; }

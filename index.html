@@ -78,7 +78,7 @@
 <link rel="preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha384-PPIZEGYM1v8zp5Py7UjFb79S58UeqCL9pYVnVPURKEqvioPROaVAJKKLzvH2rDnI" crossorigin="anonymous">
 <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha384-PPIZEGYM1v8zp5Py7UjFb79S58UeqCL9pYVnVPURKEqvioPROaVAJKKLzvH2rDnI" crossorigin="anonymous"></noscript>
 <script src="css-async.js?v=1"></script>
-<link rel="stylesheet" href="style.css?v=136">
+<link rel="stylesheet" href="style.css?v=139">
 <style>#loadingOverlay{position:fixed;top:0;left:0;width:100%;height:100%;background:var(--paper,#fff);z-index:9999;}</style>
 <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "8513ca23d1fc42f2af05b18ff29c709d"}'></script><!-- End Cloudflare Web Analytics -->
 </head>
@@ -333,8 +333,8 @@
       <div class="submit-btn-wrap" id="submitBtnWrap">
         <button type="button" class="submit-btn gray-btn" id="resetFiltersBtn" aria-label="清除已選篩選"><i class="fa-solid fa-backward-step"></i></button>
         <span class="tooltip-wrap" id="submitBtnTooltipWrap">
-          <span class="hint-tooltip" id="submitTooltip"></span>
-          <button type="submit" class="submit-btn" id="scheduleSubmitBtn" aria-label="查詢課表"><i class="fa-solid fa-magnifying-glass"></i></button>
+          <span class="hint-tooltip" id="submitTooltip" aria-live="polite"></span>
+          <button type="submit" class="submit-btn" id="scheduleSubmitBtn" aria-label="查詢課表"><i class="fa-solid fa-magnifying-glass"></i><span class="voice-eq" aria-hidden="true"><span></span><span></span><span></span><span></span></span></button>
         </span>
         <button type="button" class="submit-btn orange-btn" id="notifyBtn" aria-label="通知"><i class="fa-solid fa-ellipsis-vertical"></i></button>
       </div>
@@ -450,7 +450,7 @@
 
   <div class="sheet hidden" id="quickLinksSheet">
     <div class="mail-disclaimer">
-      <button type="button" class="section-tag" id="themeToggleBtn" aria-label="切換為深色模式" style="--accent:#6c5fc7"><i class="fa-solid fa-fw fa-moon"></i>深色模式</button>
+      <button type="button" class="section-tag" id="themeToggleBtn" aria-label="切換為深色模式" style="--accent:var(--purple)"><i class="fa-solid fa-fw fa-moon"></i>深色模式</button>
       <button type="button" class="section-tag" id="clearMemoryBtn" style="--accent:var(--navy)"><i class="fa-solid fa-fw fa-trash"></i>清除記憶</button>
       <a href="https://www.worldgymtaiwan.com" target="_blank" rel="noopener" class="section-tag" id="officialSiteLink" aria-label="前往 World Gym 官網" style="--accent:var(--coral)"><i class="fa-solid fa-fw fa-globe"></i>世界健身俱樂部官方網站</a>
       <span class="tooltip-wrap" id="privacyBtnWrap">
@@ -458,6 +458,7 @@
         <button type="button" class="section-tag" id="privacyBtn" aria-label="隱私說明" style="--accent:#127a76"><i class="fa-solid fa-fw fa-shield-halved"></i>隱私說明</button>
       </span>
       <a class="section-tag" id="githubLinkIcon" href="https://github.com/LionsKao/worldgym" target="_blank" rel="noopener" aria-label="GitHub 原始碼" style="--accent:var(--navy)"><i class="fa-brands fa-fw fa-github"></i>GitHub</a>
+      <button type="button" class="section-tag" id="voiceSearchToggleBtn" aria-pressed="false" aria-label="開啟語音搜尋功能（測試）" style="--accent:var(--purple)"><i class="fa-solid fa-fw fa-microphone"></i>開啟語音搜尋功能（測試）</button>
     </div>
   </div>
 
@@ -640,6 +641,6 @@
 </div>
 
 <script src="common.js?v=6"></script>
-<script src="script.js?v=190"></script>
+<script src="script.js?v=197"></script>
 </body>
 </html>

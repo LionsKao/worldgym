@@ -34,7 +34,10 @@ const SOURCES = [
   { file: "404.html", pick: (t) => [...t.matchAll(/\b(?:src|href|content)="([^"]*)"/g)].map((m) => m[1]) },
   { file: "manifest.json", pick: (t) => [...t.matchAll(/"src"\s*:\s*"([^"]*)"/g)].map((m) => m[1]) },
   { file: "sw.js", pick: (t) => [...t.matchAll(/\b(?:icon|badge)\s*:\s*"([^"]*)"/g)].map((m) => m[1]) },
-  { file: "script.js", pick: (t) => [...t.matchAll(/(?:script\.src|link\.href)\s*=\s*"([^"]*)"/g)].map((m) => m[1]) },
+  // createVendorScriptLoader("vendor/xxx.js?v=1", ...) 是字面字串參數、不是 script.src=/link.href= 賦值，
+  // 原本這支腳本抓不到（chart.umd.min.js／html2canvas.min.js／voice-search.js 都是這樣載入的），
+  // 版號改了忘記加也不會被抓出來——補上第二個分支一起抓，兩個分支各自的 capture group 用 ?? 接起來。
+  { file: "script.js", pick: (t) => [...t.matchAll(/(?:script\.src|link\.href)\s*=\s*"([^"]*)"|createVendorScriptLoader\(\s*"([^"]*)"/g)].map((m) => m[1] ?? m[2]) },
 ];
 
 const errors = [];
