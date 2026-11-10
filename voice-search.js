@@ -173,10 +173,9 @@ function matchTranscript(transcript, vocabTerms){
 //   "insufficient" 聽懂了一些、但沒有分店或老師（跟 isSearchValid() 同一條規則）→ 套用聽懂的
 //                  部分到 checkbox（讓使用者接著手動補完），但不送出查詢。
 //   "submitted"    有分店或老師 → 套用＋直接送出查詢，完全不經確認。
-//   "cancelled"    比對這段期間這一輪已經過期（使用者把語音搜尋開關關掉、切到背景…）→ 什麼都不套用、不送出。
+//   "cancelled"    比對這段期間這一輪已經過期（被 script.js 的 cancelVoiceSearch() 取消）→ 什麼都不套用、不送出。
 // isCurrent：script.js 的 runVoiceProcessing 傳進來，回傳這一輪是不是還是最新的一輪。buildVocabulary() 要等篩選選項，
-// 是比對期間唯一的非同步空檔，取消只可能發生在那裡，所以只在它之後檢查一次。這裡不再自己讀 script.js 的
-// voiceSearchEnabled：關掉開關一定會走 cancelVoiceSearch() 讓這一輪過期，而且「關掉又馬上打開」只看開關擋不住。
+// 是比對期間唯一的非同步空檔，取消只可能發生在那裡，所以只在它之後檢查一次，過期就什麼都不套用、不送出。
 async function applyTranscript(transcript, isCurrent){
   const vocab = await buildVocabulary();
   if (!isCurrent()) return "cancelled";

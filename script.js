@@ -1458,7 +1458,7 @@ document.getElementById("clearMemoryCloseBtn").addEventListener("click", () => {
   clearMemoryModal.classList.add("hidden");
 });
 // 「篩選記憶」＝勾選條件、常用排序（點擊次數）、分店地區展開狀態；新增這類記憶的 key 要加進來。
-// 其餘（wg_client_id、提醒分鐘、wg_theme 主題偏好、wg_voice_search_enabled 語音搜尋開關、各種旗標）不清：清掉 wg_client_id 會讓同一個人在最愛統計裡變成新使用者。
+// 其餘（wg_client_id、提醒分鐘、wg_theme 主題偏好、各種旗標）不清：清掉 wg_client_id 會讓同一個人在最愛統計裡變成新使用者。
 const FILTER_MEMORY_KEYS = [
   ...SELECTION_STORAGE_KEYS,
   "wg_branch_clicks", "wg_course_clicks", "wg_teacher_clicks",
@@ -1511,15 +1511,14 @@ themeToggleBtn.addEventListener("click", () => {
 });
 renderThemeToggle();
 
-// 語音搜尋（使用者 2026-11-09 定案）：quickLinksSheet 的開關存 localStorage，預設關閉；開啟後，
+// 語音搜尋（使用者 2026-11-09 定案；2026-11-10 iOS 實機驗證通過後正式開放給所有人，不再有開關）：
 // 篩選頁完全沒勾選任何篩選（跟 #resetFiltersBtn 呈現 .gray-btn 同一個條件，比查詢鈕原本的
-// isSearchValid() 更嚴格）時，查詢鈕圖示會從放大鏡換成麥克風，點下去用 Web Speech API 語音輸入，
-// 自動比對出分店/老師/課程/星期/時段/教室並直接送出查詢——沒有「聽到了沒」的確認畫面。
-// 比對演算法在另外延遲載入的 voice-search.js（見 loadVoiceSearch），這裡只負責：開關本身、
-// 查詢鈕的圖示/狀態機、SpeechRecognition 生命週期、以及套用/送出篩選的兩個全域出口
+// isSearchValid() 更嚴格）時，查詢鈕圖示會從放大鏡換成麥克風，點下去語音輸入，
+// 自動比對出分店/老師/課程/星期/時段/教室並直接送出查詢——沒有「聽到了沒」的確認畫面；
+// 有勾選任何篩選時仍是放大鏡的原本查詢。瀏覽器不支援語音（isVoiceSupported() 為假）或麥克風權限被拒時，一律維持放大鏡。
+// 比對演算法在另外延遲載入的 voice-search.js（見 loadVoiceSearch），這裡只負責：
+// 查詢鈕的圖示/狀態機、SpeechRecognition／錄音生命週期、以及套用/送出篩選的兩個全域出口
 // （window.applyVoiceFilters／window.submitVoiceSearch，voice-search.js 比對完會呼叫這兩個）。
-const VOICE_SEARCH_STORAGE_KEY = "wg_voice_search_enabled";
-let voiceSearchEnabled = readStored(VOICE_SEARCH_STORAGE_KEY) === "1";
 const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
 function isSpeechRecognitionSupported(){ return !!SpeechRecognitionCtor; }
 // 雙軌（第十版，見 CLAUDE.md「語音搜尋」）：iOS／iPadOS 的 Safari（含加到主畫面的 PWA）SpeechRecognition 第二次
@@ -1561,12 +1560,12 @@ function hasAnyFilterSelected(){
 }
 // 麥克風出現條件故意比 isSearchValid()（只看分店/老師）更嚴格，鍵結 resetFiltersBtn 的灰色條件
 // （使用者 2026-11-09 確認）；聖誕樹／投票日印章兩個彩蛋也在同一顆按鈕上置換圖示，優先權更高——
-// 這幾天麥克風完全不出現，開關本身不受影響，彩蛋結束後自動恢復。
+// 這幾天麥克風完全不出現，彩蛋結束後自動恢復。
 function micEligible(){
-  return voiceSearchEnabled && isVoiceSupported() && voiceRecognitionState === "idle" && voiceMicPermission !== "denied"
+  return isVoiceSupported() && voiceRecognitionState === "idle" && voiceMicPermission !== "denied"
     && !hasAnyFilterSelected() && !xmasActive && !voteActive;
 }
-// 查詢鈕圖示的單一決定點：聖誕期間是樹；語音辨識／比對中（"processing"）是轉圈圈；語音開啟且沒選任何篩選
+// 查詢鈕圖示的單一決定點：聖誕期間是樹；語音辨識／比對中（"processing"）是轉圈圈；沒選任何篩選且支援語音
 // （或已經按下麥克風、等待中／收音中）是麥克風；其餘是放大鏡。查詢送出中（.busy）的轉圈圈由
 // runSearchAndShowResults 自己設定（refreshSubmitIcon 遇到 .busy 直接 return），不經過這裡。
 // mic 由呼叫端算好傳進來（refreshSubmitIcon() 已經算過一次，這裡不用重算一次 micEligible()）。
@@ -1594,33 +1593,6 @@ function refreshSubmitIcon(){
     : "語音搜尋課表");
 }
 
-const voiceSearchToggleBtn = document.getElementById("voiceSearchToggleBtn");
-// 開關按鈕上順便顯示目前 script.js 的版號：直接讀這個 <script> 標籤自己的 src（document.currentScript
-// 只在最初同步執行這段程式碼時有效，不能搬到 callback 裡），不是另外手寫一個常數，版號一定跟實際
-// 載入的檔案一致，不會有「忘記同步」的風險——用來確認 push 後自動部署的新版本是否已經生效。
-const SCRIPT_VERSION_LABEL = (() => {
-  const m = (document.currentScript?.src || "").match(/[?&]v=([^&]+)/);
-  return m ? `v${m[1]}` : "";
-})();
-function renderVoiceSearchToggle(){
-  const suffix = SCRIPT_VERSION_LABEL ? `（測試 ${SCRIPT_VERSION_LABEL}）` : "（測試）";
-  voiceSearchToggleBtn.innerHTML = voiceSearchEnabled
-    ? `<i class="fa-solid fa-fw fa-microphone-slash"></i>關閉語音搜尋功能${suffix}`
-    : `<i class="fa-solid fa-fw fa-microphone"></i>開啟語音搜尋功能${suffix}`;
-  voiceSearchToggleBtn.setAttribute("aria-label", voiceSearchEnabled ? `關閉語音搜尋功能${suffix}` : `開啟語音搜尋功能${suffix}`);
-  voiceSearchToggleBtn.setAttribute("aria-pressed", String(voiceSearchEnabled));
-}
-voiceSearchToggleBtn.addEventListener("click", () => {
-  voiceSearchEnabled = !voiceSearchEnabled;
-  if (voiceSearchEnabled) writeStored(VOICE_SEARCH_STORAGE_KEY, "1");
-  else removeStored(VOICE_SEARCH_STORAGE_KEY);
-  // !== "idle"（不是只看 "listening"）：還在等瀏覽器權限視窗、或收到結果正在比對中關掉開關，也要能取消。
-  if (!voiceSearchEnabled && voiceRecognitionState !== "idle") cancelVoiceSearch();
-  renderVoiceSearchToggle();
-  refreshSubmitIcon();
-  trackEvent("toggle_voice_search", { enabled: voiceSearchEnabled });
-});
-renderVoiceSearchToggle();
 // 瀏覽器連語音搜尋都不支援時（沒有 SpeechRecognition、也不能走 iOS 錄音），查麥克風權限毫無意義
 // （micEligible() 一定是 false）——不用為了這種瀏覽器也付出一次非同步的 Permissions API 查詢＋留著一個常駐的 onchange listener。
 if (isVoiceSupported() && navigator.permissions?.query){
@@ -1634,7 +1606,7 @@ if (isVoiceSupported() && navigator.permissions?.query){
   }).catch(() => {}); // 查不到（例如 Safari 不支援 "microphone" descriptor）就維持 "unknown"，退回 onerror 的 fallback
 }
 
-const loadVoiceSearch = createVendorScriptLoader("voice-search.js?v=8", () => !!window.WGVoiceSearch);
+const loadVoiceSearch = createVendorScriptLoader("voice-search.js?v=9", () => !!window.WGVoiceSearch);
 let activeRecognition = null;
 let voiceTimeoutTimer = null;
 const VOICE_RECOGNITION_TIMEOUT_MS = 6000;
@@ -1756,6 +1728,9 @@ function abortActiveRecognition(){
   try{ activeRecognition.abort(); } catch(e){}
   return true;
 }
+// 目前唯一的呼叫端是「清除篩選」（#resetFiltersBtn）：那顆鈕在語音進行中是 disabled（setVoiceRecordingLock），
+// 所以實際上語音進行中碰不到這裡。以前還有「語音搜尋開關」（2026-11-10 拿掉）會在辨識中途取消，voiceRunId／
+// isCurrent／取消上傳都是為它準備的；留著當防護，之後若有新的取消來源可以直接用。
 function cancelVoiceSearch(){
   abortActiveRecognition();
   voiceRunId++; // 讓還在上傳辨識中的那一輪（runVoiceProcessing）變成過期，結果回來不再套用
@@ -1806,7 +1781,7 @@ class VoiceFailure extends Error {
 // getTranscript 回傳（或 resolve 成）辨識出來的文字；iOS 路徑裡它是「上傳＋雲端轉錄」，會花一兩秒。
 // 整段（含狀態切換／refreshSubmitIcon）都包在 try/finally 裡：任何一步意外丟例外，
 // finally 的 resetVoiceUI() 都保證會跑，不會讓狀態卡在 "processing" 回不去 "idle"。
-// voiceRunId：iOS 路徑的辨識期間比較久，這段時間使用者可能已經把開關關掉（cancelVoiceSearch）甚至又開始新的一次錄音；
+// voiceRunId：iOS 路徑的辨識期間比較久，這段時間這一輪若被取消（cancelVoiceSearch）甚至又開始新的一次錄音；
 // 過期的這一輪結果回來時不能再套用、也不能 resetVoiceUI() 把新的一輪蓋掉。
 let voiceRunId = 0;
 async function runVoiceProcessing(getTranscript){
@@ -1820,12 +1795,12 @@ async function runVoiceProcessing(getTranscript){
     if (!transcript){ reportVoiceFailure("empty", "沒聽清楚，請再試一次"); return; }
     await loadVoiceSearch();
     // isCurrent 傳進去：載入引擎之後、applyTranscript 內部等篩選選項／建詞彙表還有一段非同步，取消可能發生在那裡
-    // （例如「關掉開關又立刻打開」），voice-search.js 在那段之後檢查一次，過期就什麼都不套用、不送出。
+    // （例如被取消後又馬上開始新的一輪），voice-search.js 在那段之後檢查一次，過期就什麼都不套用、不送出。
     const outcome = await window.WGVoiceSearch.applyTranscript(transcript, isCurrent);
     if (outcome === "submitted") trackEvent("voice_search_matched", {});
     else if (outcome === "insufficient") reportVoiceFailure("insufficient", "請補充分店或老師名稱再試一次");
     else if (outcome === "no-match") reportVoiceFailure("no-match", "聽不懂這個條件，請再試一次");
-    // "cancelled"：這一輪在比對期間已經過期（使用者關掉開關、切到背景…），voice-search.js 什麼都沒套用/送出，
+    // "cancelled"：這一輪在比對期間已經過期（被 cancelVoiceSearch() 取消），voice-search.js 什麼都沒套用/送出，
     // 這裡也不用再顯示任何訊息（使用者已經看到自己的操作結果，不需要多一次提示）。
   } catch(e){
     if (!isCurrent()) return;

@@ -60,7 +60,6 @@
 
 | 事件名稱 | 觸發時機 | 參數 |
 | --- | --- | --- |
-| `toggle_voice_search` | 通知頁頁尾按「開啟/關閉語音搜尋功能」切換開關 | `enabled`（切換後是否開啟）|
 | `start_voice_search` | 沒勾選任何篩選時點查詢鈕的麥克風圖示，開始聆聽（iOS／iPadOS 是真的開始錄音） | iOS／iPadOS 錄音路徑帶 `engine:"recorder"`（錄音上傳 Cloudflare AI 轉文字）；其他裝置（瀏覽器原生 SpeechRecognition）沒有參數 |
 | `voice_search_matched` | 語音比對出分店或老師，直接套用並送出查詢（真正成功顯示結果頁另外算一次 `search_schedule`，`trigger_source:"voice"`）| 無 |
 | `voice_search_failed` | 語音搜尋沒有成功送出查詢（沒聽到聲音、聽不懂、權限被拒、辨識發生錯誤、逾時、上一個 session 還沒收尾、麥克風硬體叫不醒等）| `reason`（`empty`/`no-match`/`insufficient`/`permission-denied`/`no-speech`/`recognition-error`/`apply-error`/`timeout`/`not-ready`/`mic-silent`；iOS／iPadOS 錄音路徑另有 `record-error` 錄音或麥克風啟動失敗、`upload-failed` 上傳時網路異常或逾時、`transcribe-failed` Worker／Workers AI 回錯誤、`rate-limited` 被流量限制擋下）|

@@ -535,7 +535,7 @@ html:not(.xmas) .fav-color-pill.xmas-only, html.xmas .fav-color-pill.xmas-replac
 .mail-disclaimer .section-tag{ flex-shrink:0; cursor:default; font-size:12.5px; }
 .mail-disclaimer .section-tag i{ font-size:13px; }
 #githubLinkIcon, #adminLoginBackBtn, #officialSiteLink{ cursor:pointer; text-decoration:none; }
-#qrCodeBtn, #copyUrlBtn, #privacyBtn, #notifyInfoBtn, #themeToggleBtn, #clearMemoryBtn, #voiceSearchToggleBtn{ border:none; font-family:inherit; cursor:pointer; }
+#qrCodeBtn, #copyUrlBtn, #privacyBtn, #notifyInfoBtn, #themeToggleBtn, #clearMemoryBtn{ border:none; font-family:inherit; cursor:pointer; }
 #notifyInfoBtn{ background:var(--paper); color:var(--accent); border:1.5px solid var(--line); }
 .qr-tooltip{ padding:10px; background:var(--paper); }
 .qr-tooltip img{ display:block; width:132px; height:132px; }
