@@ -63,7 +63,7 @@
 | `toggle_voice_search` | 通知頁頁尾按「開啟/關閉語音搜尋功能」切換開關 | `enabled`（切換後是否開啟）|
 | `start_voice_search` | 沒勾選任何篩選時點查詢鈕的麥克風圖示，開始聆聽 | 無 |
 | `voice_search_matched` | 語音比對出分店或老師，直接套用並送出查詢（真正成功顯示結果頁另外算一次 `search_schedule`，`trigger_source:"voice"`）| 無 |
-| `voice_search_failed` | 語音搜尋沒有成功送出查詢（沒聽到聲音、聽不懂、權限被拒、辨識發生錯誤、逾時等）| `reason`（`empty`/`no-match`/`insufficient`/`permission-denied`/`no-speech`/`recognition-error`/`apply-error`/`timeout`）|
+| `voice_search_failed` | 語音搜尋沒有成功送出查詢（沒聽到聲音、聽不懂、權限被拒、辨識發生錯誤、逾時、上一個 session 還沒收尾等）| `reason`（`empty`/`no-match`/`insufficient`/`permission-denied`/`no-speech`/`recognition-error`/`apply-error`/`timeout`/`not-ready`）|
 
 ## 其他
 
