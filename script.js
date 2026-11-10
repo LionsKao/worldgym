@@ -1522,6 +1522,9 @@ const VOICE_SEARCH_STORAGE_KEY = "wg_voice_search_enabled";
 let voiceSearchEnabled = readStored(VOICE_SEARCH_STORAGE_KEY) === "1";
 const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
 function isSpeechRecognitionSupported(){ return !!SpeechRecognitionCtor; }
+// 實驗性：只 new 一次、之後每次都重複用同一個物件（不是原本每次都 new 全新的），測試這樣
+// 是否能避開 iOS 第二次收不到音的問題。只是測試用，驗證完沒有比較好就改回來。
+let sharedRecognition = null;
 // "idle" | "starting"（已按下，等瀏覽器權限視窗／onstart）| "listening"（真的在收音）| "processing"（收到結果，比對中）。
 // 原本 voiceRecognitionState／voiceProcessing 是兩個獨立旗標，"starting"／"processing" 這兩個中間狀態
 // 一律用同一個 state 表示：micEligible() 只看是不是 "idle"，不用再各自檢查兩個變數。
@@ -1738,10 +1741,14 @@ function startVoiceSearch(){
   setVoiceRecordingLock(true);
   refreshSubmitIcon();
   loadVoiceSearch().catch((e) => console.error("voice-search.js 載入失敗", e)); // 跟聆聽平行載入，不等它
-  const recognition = new SpeechRecognitionCtor();
-  recognition.lang = "zh-TW";
-  recognition.continuous = false;
-  recognition.interimResults = false;
+  // 實驗性：第一次才 new，之後重複用 sharedRecognition（見該變數宣告處）。
+  if (!sharedRecognition){
+    sharedRecognition = new SpeechRecognitionCtor();
+    sharedRecognition.lang = "zh-TW";
+    sharedRecognition.continuous = false;
+    sharedRecognition.interimResults = false;
+  }
+  const recognition = sharedRecognition;
   activeRecognition = recognition;
   // settled 刻意只存在這次呼叫的區域變數（閉包），不用模組層級變數共用：下一個 session 已經把這個
   // 狀態重新初始化之後，萬一上一個 session 的 onend 才姍姍來遲，不能讓它讀到／改到「新 session 的」
