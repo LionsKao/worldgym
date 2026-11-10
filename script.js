@@ -785,6 +785,19 @@ pillWarnTooltip.className = "pill-warn-tooltip";
 document.body.appendChild(pillWarnTooltip);
 let pillWarnTimer = null;
 let activeTooltipAnchor = null;
+const voiceTooltipEl = document.getElementById("submitTooltip");
+// pillWarnTooltip（提示/警告訊息）跟 #submitTooltip（語音聆聽中提示）是兩個獨立定位的浮動元素，
+// 互不知道對方的存在；其中一個要出現時，如果另一個還在淡出轉場中（CSS transition 150ms），
+// 兩個會同時半透明疊在畫面上，文字糊成一團看不清楚（使用者實機截圖回報過）。這裡在「即將顯示
+// 其中一個」之前，先把另一個瞬間隱藏（暫時拔掉 transition、強制 reflow、再還原），不讓它有
+// 淡出的時間可以跟新出現的這個重疊；各自原本「自然消失」時仍然照舊淡出，不受影響。
+function hideTooltipElementImmediately(el){
+  const prevTransition = el.style.transition;
+  el.style.transition = "none";
+  el.classList.remove("visible", "wrap");
+  void el.offsetWidth; // 強制瀏覽器套用上面這行，下一行還原 transition 才不會連這次隱藏也變成淡出
+  el.style.transition = prevTransition;
+}
 // 靠右對齊的鈴鐺離螢幕邊緣很近，不夾住的話 tooltip 置中對齊錨點時會超出可視範圍被切掉。
 function positionPillTooltip(rect){
   const half = pillWarnTooltip.offsetWidth / 2;
@@ -798,6 +811,7 @@ function positionPillTooltip(rect){
   pillWarnTooltip.style.setProperty("--arrow-left", arrowPct + "%");
 }
 function showPillWarning(anchorEl, text, iconClass){
+  hideTooltipElementImmediately(voiceTooltipEl); // 避免跟還在淡出的語音聆聽提示疊在一起
   const rect = anchorEl.getBoundingClientRect();
   pillWarnTooltip.classList.remove("wrap");
   pillWarnTooltip.innerHTML = "";
@@ -814,6 +828,7 @@ function showPillWarning(anchorEl, text, iconClass){
   pillWarnTimer = setTimeout(() => pillWarnTooltip.classList.remove("visible"), 1800);
 }
 function showHoverTooltip(anchorEl, text, wrap = true){
+  hideTooltipElementImmediately(voiceTooltipEl); // 避免跟還在淡出的語音聆聽提示疊在一起
   const rect = anchorEl.getBoundingClientRect();
   pillWarnTooltip.classList.toggle("wrap", wrap);
   // text 含課程/老師名稱（來自爬官網的資料），一律當純文字放，不能用 innerHTML。
@@ -1632,12 +1647,13 @@ function setVoiceRecordingLock(active){
   });
 }
 function showVoiceTooltip(){
-  const tip = document.getElementById("submitTooltip");
-  tip.innerHTML = '聆聽中・請說話<span class="voice-tooltip-hint">再點一下或停頓即可結束</span>';
-  tip.classList.add("wrap", "visible");
+  hideTooltipElementImmediately(pillWarnTooltip); // 避免跟還在淡出的提示/警告 pill 疊在一起
+  clearTimeout(pillWarnTimer);
+  voiceTooltipEl.innerHTML = '聆聽中・請說話<span class="voice-tooltip-hint">再點一下或停頓即可結束</span>';
+  voiceTooltipEl.classList.add("wrap", "visible");
 }
 function hideVoiceTooltip(){
-  document.getElementById("submitTooltip").classList.remove("visible", "wrap");
+  voiceTooltipEl.classList.remove("visible", "wrap");
 }
 // 把這次 recognition 的計時器／參照／提示收乾淨，但不解鎖按鈕、不改 voiceRecognitionState——
 // 呼叫端（onresult 收到結果轉成 "processing"、或 resetVoiceUI() 真的回到 "idle"）自己決定下一步。
