@@ -1712,6 +1712,19 @@ function cancelVoiceSearch(){
   abortActiveRecognition();
   resetVoiceUI();
 }
+// 切到背景時主動收麥克風：continuous=false 只有「真的講完話偵測到停頓」或逾時才會自然結束，
+// 使用者點了麥克風、還沒講話就切到別的 App 的話，收音會一直掛著不會自動停（Web Speech API
+// 規範本身的行為，不是沒處理好——MDN 官方範例也一樣，使用者實測驗證過）。這裡用
+// visibilitychange 補一道：偵測到真的切到背景（不是切到前景時誤觸發）才呼叫 cancelVoiceSearch()，
+// 跟使用者自己點「再點一次結束」、逾時、取消走同一條收尾路徑，recognitionReady 一樣會在
+// 冷卻後設回 true，不影響回到頁面後下一次點擊正常開始新的一次。
+// 刻意只在 "starting"／"listening" 這兩個真的還握著麥克風的狀態才取消："processing"（已經拿到
+// 結果、在比對/送出中）這時候 recognition 早就不歸我們管了（onresult 一開始就清空
+// activeRecognition），這裡貿然呼叫 resetVoiceUI() 只會讓狀態提前跳回 "idle"、跟稍後
+// applyTranscript() 真正套用/送出的結果打架，徒增一個不相關的新問題。
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden" && (voiceRecognitionState === "starting" || voiceRecognitionState === "listening")) cancelVoiceSearch();
+});
 // re-tap 用 stop()（不是 abort()）：結束音訊擷取但仍會對已經聽到的內容觸發一次 onresult——
 // continuous=false 本來就是「暫停就結束」，re-tap 等於幫使用者提前結束這個暫停等待，不是放棄已經講的內容。
 function stopVoiceSearchManually(){
