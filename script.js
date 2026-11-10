@@ -1624,6 +1624,14 @@ const VOICE_RECOGNITION_TIMEOUT_MS = 10000;
 // 等待，改成：還沒收尾完就直接放棄這次點擊、顯示提示，讓使用者自己再點一次（下一次點擊本身就是新的
 // 使用者手勢，到時候通常已經收尾完畢）。只有這個 session 自己的 onend／start() 例外會把它設回 true。
 let recognitionReady = true;
+// onend 事件觸發不等於 iOS 底層真的把麥克風硬體釋放乾淨：使用者實機回報過，onend 已經來過、
+// recognitionReady 照理說已經能開始下一次，但緊接著點第二次麥克風時 UI 正常進入「聆聽中」
+// （紫色/紅色、脈衝環都有），手機狀態列卻只有麥克風圖示、沒有代表「真的在收音」的橘色圓點，
+// 等於完全沒收到音。緩衝一小段時間才把 recognitionReady 設回 true，讓太快點第二次的使用者
+// 先吃到「請稍候一下再試一次」；緩衝期間之外的下一次點擊本身仍是全新、同步的使用者手勢，
+// 不受影響（這個緩衝只延後「門什麼時候重新打開」，不是在點擊當下 await 等待，不會重蹈
+// 「await 讓 recognition.start() 脫離使用者手勢同步呼叫鏈」的舊坑）。
+const RECOGNITION_COOLDOWN_MS = 400;
 
 // 聆聽／比對期間鎖住的不只是重設/通知兩顆按鈕，篩選 checkbox 本身也要鎖：不然使用者在這段期間
 // 手動勾選，會被語音結果套用時的 applyFilterState()（整組取代）悄悄蓋掉、毫無提示。
@@ -1805,10 +1813,12 @@ function startVoiceSearch(){
   };
   // onresult 已經把狀態切出 "listening" 才會進到比對/收尾（見上面），所以這裡只要還是 "listening"
   // 就代表沒收到任何結果就結束了——不用另外維護一個 voiceResultPending 旗標來記同一件事。
-  // recognitionReady = true 不管哪條路徑都要呼叫到：這是唯一告訴下一次點麥克風「這個 session 真的
-  // 結束、麥克風資源釋放了」的信號，漏呼叫會讓下一次點擊被白白拒絕（顯示「請稍候」，使用者要再點一次）。
+  // recognitionReady = true（經過 RECOGNITION_COOLDOWN_MS 緩衝，見該常數宣告處）不管哪條路徑都要
+  // 呼叫到：這是唯一告訴下一次點麥克風「這個 session 真的結束、麥克風資源釋放了」的信號，漏呼叫
+  // 會讓下一次點擊被永遠拒絕（一直顯示「請稍候」）。用 setTimeout 單純延後「門何時重新打開」，
+  // 不影響這個 onend 本身其餘的同步收尾（訊息、UI 重置）。
   recognition.onend = () => {
-    recognitionReady = true;
+    setTimeout(() => { recognitionReady = true; }, RECOGNITION_COOLDOWN_MS);
     if (settled) return; // 已經被 onresult/onerror/取消/逾時處理過，不用再顯示一次訊息
     settled = true;
     if (voiceRecognitionState === "listening"){ resetVoiceUI(); reportVoiceFailure("no-speech", "沒聽到聲音，請再試一次"); }
