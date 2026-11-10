@@ -29,7 +29,12 @@ const TIME_ALIASES = {
 };
 const ROOM_ALIASES = { "團課": "團體教室", "團體課": "團體教室", "飛輪課": "飛輪教室", "飛輪": "飛輪教室" };
 // 只在目標詞確實存在於目前課程清單時才生效（見 courseTerms），小型、可自行擴充。
-const COURSE_ALIASES = { "瑜珈": "瑜伽", "彼拉提斯": "皮拉提斯", "皮拉提": "皮拉提斯" };
+const COURSE_ALIASES = {
+  "瑜珈": "瑜伽", "彼拉提斯": "皮拉提斯", "皮拉提": "皮拉提斯",
+  "康貝": "BODYCOMBAT", "康盃": "BODYCOMBAT", "combat": "BODYCOMBAT", "BC": "BODYCOMBAT",
+  "pump": "BODYPUMP", "BP": "BODYPUMP",
+  "BB": "BODYBALANCE",
+};
 
 function aliasTerms(category, aliasMap){
   const terms = [];
