@@ -1712,18 +1712,21 @@ function cancelVoiceSearch(){
   abortActiveRecognition();
   resetVoiceUI();
 }
-// 切到背景時主動收麥克風：continuous=false 只有「真的講完話偵測到停頓」或逾時才會自然結束，
-// 使用者點了麥克風、還沒講話就切到別的 App 的話，收音會一直掛著不會自動停（Web Speech API
-// 規範本身的行為，不是沒處理好——MDN 官方範例也一樣，使用者實測驗證過）。這裡用
-// visibilitychange 補一道：偵測到真的切到背景（不是切到前景時誤觸發）才呼叫 cancelVoiceSearch()，
-// 跟使用者自己點「再點一次結束」、逾時、取消走同一條收尾路徑，recognitionReady 一樣會在
-// 冷卻後設回 true，不影響回到頁面後下一次點擊正常開始新的一次。
-// 刻意只在 "starting"／"listening" 這兩個真的還握著麥克風的狀態才取消："processing"（已經拿到
+// 切到背景時把畫面狀態收乾淨（不碰 recognition 物件本身）：continuous=false 只有「真的講完話
+// 偵測到停頓」或逾時才會自然結束，使用者點了麥克風、還沒講話就切到別的 App 的話，收音會一直
+// 掛著不會自動停（Web Speech API 規範本身的行為，不是沒處理好——MDN 官方範例也一樣，使用者
+// 實測驗證過）。**刻意不呼叫 cancelVoiceSearch()／abortActiveRecognition()**：使用者懷疑手動
+// abort() 可能反而干擾 iOS 收尾音訊 session 的時機（跟 onresult 那邊拿掉 abort() 的實驗是
+// 同一個方向），這裡改成只呼叫 resetVoiceUI()——把畫面按鈕解鎖、狀態改回 "idle"、清掉計時器，
+// 但不碰底層 recognition，讓它自己照 continuous=false 的規則結束。代價是：如果這之後瀏覽器
+// 才姍姍來遲觸發 onresult／onend，因為 handler 沒被拔掉，仍可能跳出遲到的訊息或悄悄套用結果——
+// 跟 onresult 拿掉 abort() 那個實驗接受的風險是同一種，一起觀察。
+// 刻意只在 "starting"／"listening" 這兩個真的還握著麥克風的狀態才處理："processing"（已經拿到
 // 結果、在比對/送出中）這時候 recognition 早就不歸我們管了（onresult 一開始就清空
 // activeRecognition），這裡貿然呼叫 resetVoiceUI() 只會讓狀態提前跳回 "idle"、跟稍後
 // applyTranscript() 真正套用/送出的結果打架，徒增一個不相關的新問題。
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "hidden" && (voiceRecognitionState === "starting" || voiceRecognitionState === "listening")) cancelVoiceSearch();
+  if (document.visibilityState === "hidden" && (voiceRecognitionState === "starting" || voiceRecognitionState === "listening")) resetVoiceUI();
 });
 // re-tap 用 stop()（不是 abort()）：結束音訊擷取但仍會對已經聽到的內容觸發一次 onresult——
 // continuous=false 本來就是「暫停就結束」，re-tap 等於幫使用者提前結束這個暫停等待，不是放棄已經講的內容。
