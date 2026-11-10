@@ -1702,8 +1702,17 @@ function detachRecognitionHandlers(recognition){
 }
 // 拔掉處理器＋abort() 這組動作 cancelVoiceSearch()／handleVoiceTimeout() 都要做，抽成一個共用函式；
 // 回傳「有沒有真的中止到什麼」，讓 handleVoiceTimeout() 可以沿用原本「沒有 session 就整個不做事」的行為。
+// 使用者實機驗證：拿掉 onresult 裡的 abort() 之後，「有講到話、順利拿到結果」這條路徑可以正常進行
+// 第二次語音查詢；但「沒聽到聲音」或「使用者自己按中止」這兩種——也就是這裡、會真的呼叫 abort() 的
+// 這幾個路徑——麥克風接下來就「復活不了」。代表問題不在「要不要 new 新實例」，而是**手動呼叫
+// abort() 這個動作本身，會讓這個 recognition 物件之後沒辦法再被 start() 復活**（跟它是不是
+// sharedRecognition 共用物件無關——不管新舊物件，只要對它呼叫過 abort()，這個物件就壞掉了）。
+// 修法：呼叫 _markManualStop?.()（跟 _markSettled 同一套模式，見 startVoiceSearch() 建立處）標記
+// 這個 session 是手動中止的，實際「丟棄 sharedRecognition、逼下一次重新 new」統一放在 onend 裡做
+// （不管是 abort() 還是 stop()，瀏覽器最終都會觸發 onend，在那裡一次判斷、一處維護就好）。
 function abortActiveRecognition(){
   if (!activeRecognition) return false;
+  activeRecognition._markManualStop?.();
   detachRecognitionHandlers(activeRecognition);
   try{ activeRecognition.abort(); } catch(e){}
   return true;
@@ -1730,8 +1739,14 @@ document.addEventListener("visibilitychange", () => {
 });
 // re-tap 用 stop()（不是 abort()）：結束音訊擷取但仍會對已經聽到的內容觸發一次 onresult——
 // continuous=false 本來就是「暫停就結束」，re-tap 等於幫使用者提前結束這個暫停等待，不是放棄已經講的內容。
+// 跟 abortActiveRecognition() 同樣的理由（見該函式註解）：手動呼叫 stop() 這個動作本身，可能讓
+// 這個物件之後沒辦法再被 start() 復活，一樣標記 _markManualStop?.()，實際丟棄 sharedRecognition
+// 統一在 onend 裡處理。
 function stopVoiceSearchManually(){
-  if (activeRecognition){ try{ activeRecognition.stop(); } catch(e){} }
+  if (activeRecognition){
+    activeRecognition._markManualStop?.();
+    try{ activeRecognition.stop(); } catch(e){}
+  }
 }
 // 逾時保險：瀏覽器的麥克風權限視窗如果使用者一直不理（不同意也不拒絕），SpeechRecognition
 // 既不會觸發 onstart 也不會觸發 onerror，畫面會卡在看起來什麼事都沒發生。所以逾時計時從
@@ -1774,6 +1789,12 @@ function startVoiceSearch(){
   // session 各自獨立）。
   let settled = false;
   recognition._markSettled = () => { settled = true; };
+  // 跟 settled 同一套模式（session 各自獨立的閉包狀態＋掛在物件上給外部函式呼叫）：
+  // abortActiveRecognition()／stopVoiceSearchManually() 手動中止這個 session 時會呼叫
+  // _markManualStop()，onend 看到這個旗標才知道「這個物件剛被手動 abort()/stop() 過，
+  // 要丟棄 sharedRecognition、逼下一次重新 new」（見 onend 裡的說明）。
+  let manualStop = false;
+  recognition._markManualStop = () => { manualStop = true; };
   recognitionReady = false;
   voiceTimeoutTimer = setTimeout(handleVoiceTimeout, VOICE_RECOGNITION_TIMEOUT_MS);
   recognition.onstart = () => {
@@ -1833,7 +1854,13 @@ function startVoiceSearch(){
   // 呼叫到：這是唯一告訴下一次點麥克風「這個 session 真的結束、麥克風資源釋放了」的信號，漏呼叫
   // 會讓下一次點擊被永遠拒絕（一直顯示「請稍候」）。用 setTimeout 單純延後「門何時重新打開」，
   // 不影響這個 onend 本身其餘的同步收尾（訊息、UI 重置）。
+  // manualStop 為真代表這個物件被手動 abort()/stop() 過（見 abortActiveRecognition()／
+  // stopVoiceSearchManually() 的註解）：使用者實機驗證過這種物件之後沒辦法再被 start() 復活，
+  // 所以丟棄 sharedRecognition，逼下一次 startVoiceSearch() 一定會 new 一個全新物件。只有真的
+  // 「有講到話、順利拿到結果」那條路徑（onresult 完全沒呼叫 abort()/stop()）才會繼續沿用同一個
+  // sharedRecognition，這是目前唯一驗證過可以安全復用的情境。
   recognition.onend = () => {
+    if (manualStop) sharedRecognition = null;
     setTimeout(() => { recognitionReady = true; }, RECOGNITION_COOLDOWN_MS);
     if (settled) return; // 已經被 onresult/onerror/取消/逾時處理過，不用再顯示一次訊息
     settled = true;
