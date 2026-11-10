@@ -1612,7 +1612,7 @@ if (isSpeechRecognitionSupported() && navigator.permissions?.query){
 const loadVoiceSearch = createVendorScriptLoader("voice-search.js?v=7", () => !!window.WGVoiceSearch);
 let activeRecognition = null;
 let voiceTimeoutTimer = null;
-const VOICE_RECOGNITION_TIMEOUT_MS = 10000;
+const VOICE_RECOGNITION_TIMEOUT_MS = 6000;
 // 上一個 session 真的被瀏覽器收尾完（麥克風資源釋放）了嗎——下一次點麥克風要先確認這個是 true
 // 才能開始新的收音。實機 iOS 測試發現：stop()／abort() 兩種寫法都一樣，使用者回報第二次語音查詢
 // 「完全沒聽到聲音」，懷疑是上一個 session 的底層音訊資源還沒真的釋放乾淨，新的 SpeechRecognition
@@ -1633,8 +1633,8 @@ let recognitionReady = true;
 // 「await 讓 recognition.start() 脫離使用者手勢同步呼叫鏈」的舊坑）。
 const RECOGNITION_COOLDOWN_MS = 400;
 // onstart 觸發後，給瀏覽器這麼長時間真的開始收音（onaudiostart）；正常情況權限已經允許過，
-// 硬體應該幾乎立刻回應，抓一個比 10 秒逾時短很多的值，讓「麥克風其實叫不醒」這種情況能提早
-// 偵測到、提早提示使用者，不用乾等到 10 秒逾時才知道這次注定沒有結果。
+// 硬體應該幾乎立刻回應，抓一個比 6 秒逾時短一些的值，讓「麥克風其實叫不醒」這種情況能提早
+// 偵測到、提早提示使用者，不用乾等到 6 秒逾時才知道這次注定沒有結果。
 const AUDIO_START_CHECK_MS = 2500;
 
 // 聆聽／比對期間鎖住的不只是重設/通知兩顆按鈕，篩選 checkbox 本身也要鎖：不然使用者在這段期間
@@ -1742,7 +1742,7 @@ function stopVoiceSearchManually(){
 // 逾時保險：瀏覽器的麥克風權限視窗如果使用者一直不理（不同意也不拒絕），SpeechRecognition
 // 既不會觸發 onstart 也不會觸發 onerror，畫面會卡在看起來什麼事都沒發生。所以逾時計時從
 // startVoiceSearch() 一開始（點下麥克風那一刻）就起算，不是等 onstart 才開始算——這樣不管是
-// 「權限視窗沒人理」還是「已經在聽但一直不講話」，10 秒後都會放棄。
+// 「權限視窗沒人理」還是「已經在聽但一直不講話」，6 秒後都會放棄。
 function handleVoiceTimeout(){
   if (!abortActiveRecognition()) return;
   resetVoiceUI();
@@ -1784,7 +1784,7 @@ function startVoiceSearch(){
   // 底層麥克風硬體真的開始收音；onaudiostart 才是「真的收到音訊資料」（對應手機狀態列的橘色圓點）。
   // 已知的 iOS 平台 bug：onstart 來了、畫面正常進入「聆聽中」，但 onaudiostart 遲遲不來，底層音訊
   // 硬體其實沒有真的打開——這種情況不管等多久都不會有結果，而且是「重新整理頁面才會好」的更嚴重
-  // 狀態（不是「再點一次」就能解決），所以不等滿 10 秒逾時，提早判斷並給使用者更準確的提示。
+  // 狀態（不是「再點一次」就能解決），所以不等滿 6 秒逾時，提早判斷並給使用者更準確的提示。
   let audioStarted = false;
   recognition.onaudiostart = () => { audioStarted = true; };
   recognition.onstart = () => {
