@@ -1522,9 +1522,6 @@ const VOICE_SEARCH_STORAGE_KEY = "wg_voice_search_enabled";
 let voiceSearchEnabled = readStored(VOICE_SEARCH_STORAGE_KEY) === "1";
 const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
 function isSpeechRecognitionSupported(){ return !!SpeechRecognitionCtor; }
-// 實驗性：只 new 一次、之後每次都重複用同一個物件（不是原本每次都 new 全新的），測試這樣
-// 是否能避開 iOS 第二次收不到音的問題。只是測試用，驗證完沒有比較好就改回來。
-let sharedRecognition = null;
 // "idle" | "starting"（已按下，等瀏覽器權限視窗／onstart）| "listening"（真的在收音）| "processing"（收到結果，比對中）。
 // 原本 voiceRecognitionState／voiceProcessing 是兩個獨立旗標，"starting"／"processing" 這兩個中間狀態
 // 一律用同一個 state 表示：micEligible() 只看是不是 "idle"，不用再各自檢查兩個變數。
@@ -1635,6 +1632,10 @@ let recognitionReady = true;
 // 不受影響（這個緩衝只延後「門什麼時候重新打開」，不是在點擊當下 await 等待，不會重蹈
 // 「await 讓 recognition.start() 脫離使用者手勢同步呼叫鏈」的舊坑）。
 const RECOGNITION_COOLDOWN_MS = 400;
+// onstart 觸發後，給瀏覽器這麼長時間真的開始收音（onaudiostart）；正常情況權限已經允許過，
+// 硬體應該幾乎立刻回應，抓一個比 10 秒逾時短很多的值，讓「麥克風其實叫不醒」這種情況能提早
+// 偵測到、提早提示使用者，不用乾等到 10 秒逾時才知道這次注定沒有結果。
+const AUDIO_START_CHECK_MS = 2500;
 
 // 聆聽／比對期間鎖住的不只是重設/通知兩顆按鈕，篩選 checkbox 本身也要鎖：不然使用者在這段期間
 // 手動勾選，會被語音結果套用時的 applyFilterState()（整組取代）悄悄蓋掉、毫無提示。
@@ -1702,17 +1703,13 @@ function detachRecognitionHandlers(recognition){
 }
 // 拔掉處理器＋abort() 這組動作 cancelVoiceSearch()／handleVoiceTimeout() 都要做，抽成一個共用函式；
 // 回傳「有沒有真的中止到什麼」，讓 handleVoiceTimeout() 可以沿用原本「沒有 session 就整個不做事」的行為。
-// 使用者實機驗證：拿掉 onresult 裡的 abort() 之後，「有講到話、順利拿到結果」這條路徑可以正常進行
-// 第二次語音查詢；但「沒聽到聲音」或「使用者自己按中止」這兩種——也就是這裡、會真的呼叫 abort() 的
-// 這幾個路徑——麥克風接下來就「復活不了」。代表問題不在「要不要 new 新實例」，而是**手動呼叫
-// abort() 這個動作本身，會讓這個 recognition 物件之後沒辦法再被 start() 復活**（跟它是不是
-// sharedRecognition 共用物件無關——不管新舊物件，只要對它呼叫過 abort()，這個物件就壞掉了）。
-// 修法：呼叫 _markManualStop?.()（跟 _markSettled 同一套模式，見 startVoiceSearch() 建立處）標記
-// 這個 session 是手動中止的，實際「丟棄 sharedRecognition、逼下一次重新 new」統一放在 onend 裡做
-// （不管是 abort() 還是 stop()，瀏覽器最終都會觸發 onend，在那裡一次判斷、一處維護就好）。
+// 使用者實機驗證過：就算改成每次都丟棄、強制下一次 new 全新物件，「沒聽到聲音」／「使用者自己按
+// 中止」這兩種會真的呼叫到這裡（abort()）的路徑，麥克風還是叫不醒——代表問題不在「這個 JS 物件」
+// 層級（新舊物件結果一樣），而是手動呼叫 abort()/stop() 這個動作本身，讓整個分頁底層的音訊硬體
+// 狀態卡住，不是靠換物件能救回來的（跟使用者更早回報的「必須整個關掉 App 才會好」是同一個現象）。
+// 曾經試過「共用同一個物件、手動中止過就丟棄重建」的機制，驗證無效後已經拿掉，退回最簡單的寫法。
 function abortActiveRecognition(){
   if (!activeRecognition) return false;
-  activeRecognition._markManualStop?.();
   detachRecognitionHandlers(activeRecognition);
   try{ activeRecognition.abort(); } catch(e){}
   return true;
@@ -1739,14 +1736,8 @@ document.addEventListener("visibilitychange", () => {
 });
 // re-tap 用 stop()（不是 abort()）：結束音訊擷取但仍會對已經聽到的內容觸發一次 onresult——
 // continuous=false 本來就是「暫停就結束」，re-tap 等於幫使用者提前結束這個暫停等待，不是放棄已經講的內容。
-// 跟 abortActiveRecognition() 同樣的理由（見該函式註解）：手動呼叫 stop() 這個動作本身，可能讓
-// 這個物件之後沒辦法再被 start() 復活，一樣標記 _markManualStop?.()，實際丟棄 sharedRecognition
-// 統一在 onend 裡處理。
 function stopVoiceSearchManually(){
-  if (activeRecognition){
-    activeRecognition._markManualStop?.();
-    try{ activeRecognition.stop(); } catch(e){}
-  }
+  if (activeRecognition){ try{ activeRecognition.stop(); } catch(e){} }
 }
 // 逾時保險：瀏覽器的麥克風權限視窗如果使用者一直不理（不同意也不拒絕），SpeechRecognition
 // 既不會觸發 onstart 也不會觸發 onerror，畫面會卡在看起來什麼事都沒發生。所以逾時計時從
@@ -1772,14 +1763,12 @@ function startVoiceSearch(){
   setVoiceRecordingLock(true);
   refreshSubmitIcon();
   loadVoiceSearch().catch((e) => console.error("voice-search.js 載入失敗", e)); // 跟聆聽平行載入，不等它
-  // 實驗性：第一次才 new，之後重複用 sharedRecognition（見該變數宣告處）。
-  if (!sharedRecognition){
-    sharedRecognition = new SpeechRecognitionCtor();
-    sharedRecognition.lang = "zh-TW";
-    sharedRecognition.continuous = false;
-    sharedRecognition.interimResults = false;
-  }
-  const recognition = sharedRecognition;
+  // 每次都 new 全新物件：曾經試過共用同一個物件的實驗，驗證對「麥克風叫不醒」這個問題沒有幫助
+  // （見 abortActiveRecognition() 的說明），退回最簡單的寫法。
+  const recognition = new SpeechRecognitionCtor();
+  recognition.lang = "zh-TW";
+  recognition.continuous = false;
+  recognition.interimResults = false;
   activeRecognition = recognition;
   // settled 刻意只存在這次呼叫的區域變數（閉包），不用模組層級變數共用：下一個 session 已經把這個
   // 狀態重新初始化之後，萬一上一個 session 的 onend 才姍姍來遲，不能讓它讀到／改到「新 session 的」
@@ -1789,19 +1778,26 @@ function startVoiceSearch(){
   // session 各自獨立）。
   let settled = false;
   recognition._markSettled = () => { settled = true; };
-  // 跟 settled 同一套模式（session 各自獨立的閉包狀態＋掛在物件上給外部函式呼叫）：
-  // abortActiveRecognition()／stopVoiceSearchManually() 手動中止這個 session 時會呼叫
-  // _markManualStop()，onend 看到這個旗標才知道「這個物件剛被手動 abort()/stop() 過，
-  // 要丟棄 sharedRecognition、逼下一次重新 new」（見 onend 裡的說明）。
-  let manualStop = false;
-  recognition._markManualStop = () => { manualStop = true; };
   recognitionReady = false;
   voiceTimeoutTimer = setTimeout(handleVoiceTimeout, VOICE_RECOGNITION_TIMEOUT_MS);
+  // onaudiostart／onstart 是兩件不同的事：onstart 只代表「辨識引擎這個 session 啟動了」，不保證
+  // 底層麥克風硬體真的開始收音；onaudiostart 才是「真的收到音訊資料」（對應手機狀態列的橘色圓點）。
+  // 已知的 iOS 平台 bug：onstart 來了、畫面正常進入「聆聽中」，但 onaudiostart 遲遲不來，底層音訊
+  // 硬體其實沒有真的打開——這種情況不管等多久都不會有結果，而且是「重新整理頁面才會好」的更嚴重
+  // 狀態（不是「再點一次」就能解決），所以不等滿 10 秒逾時，提早判斷並給使用者更準確的提示。
+  let audioStarted = false;
+  recognition.onaudiostart = () => { audioStarted = true; };
   recognition.onstart = () => {
     voiceRecognitionState = "listening";
     showVoiceTooltip();
     refreshSubmitIcon();
     trackEvent("start_voice_search", {}); // 這裡才是真的確認開始聆聽；start() 呼叫失敗不算「開始聆聽」
+    setTimeout(() => {
+      if (audioStarted || settled) return; // 已經真的在收音，或已經被其他路徑處理過，不用再管
+      settled = true;
+      resetVoiceUI();
+      reportVoiceFailure("mic-silent", "麥克風目前無法使用，請重新整理頁面再試");
+    }, AUDIO_START_CHECK_MS);
   };
   recognition.onresult = async (event) => {
     // 整段（含底下的狀態切換／refreshSubmitIcon）都包在 try/finally 裡：任何一步意外丟例外，
@@ -1854,13 +1850,7 @@ function startVoiceSearch(){
   // 呼叫到：這是唯一告訴下一次點麥克風「這個 session 真的結束、麥克風資源釋放了」的信號，漏呼叫
   // 會讓下一次點擊被永遠拒絕（一直顯示「請稍候」）。用 setTimeout 單純延後「門何時重新打開」，
   // 不影響這個 onend 本身其餘的同步收尾（訊息、UI 重置）。
-  // manualStop 為真代表這個物件被手動 abort()/stop() 過（見 abortActiveRecognition()／
-  // stopVoiceSearchManually() 的註解）：使用者實機驗證過這種物件之後沒辦法再被 start() 復活，
-  // 所以丟棄 sharedRecognition，逼下一次 startVoiceSearch() 一定會 new 一個全新物件。只有真的
-  // 「有講到話、順利拿到結果」那條路徑（onresult 完全沒呼叫 abort()/stop()）才會繼續沿用同一個
-  // sharedRecognition，這是目前唯一驗證過可以安全復用的情境。
   recognition.onend = () => {
-    if (manualStop) sharedRecognition = null;
     setTimeout(() => { recognitionReady = true; }, RECOGNITION_COOLDOWN_MS);
     if (settled) return; // 已經被 onresult/onerror/取消/逾時處理過，不用再顯示一次訊息
     settled = true;
