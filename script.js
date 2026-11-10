@@ -1526,7 +1526,7 @@ function isSpeechRecognitionSupported(){ return !!SpeechRecognitionCtor; }
 // 原本 voiceRecognitionState／voiceProcessing 是兩個獨立旗標，"starting"／"processing" 這兩個中間狀態
 // 一律用同一個 state 表示：micEligible() 只看是不是 "idle"，不用再各自檢查兩個變數。
 let voiceRecognitionState = "idle";
-// 麥克風權限被拒絕後，紫色麥克風要變回原本的灰色查詢鈕，不然使用者會一直點到注定失敗的麥克風。
+// 麥克風權限被拒絕後，紅色麥克風要變回原本的灰色查詢鈕，不然使用者會一直點到注定失敗的麥克風。
 // 單一狀態值（不是兩個各自要注意先後順序的旗標）："unknown"（還不知道，例如查不到 Permissions API
 // 的瀏覽器、或還沒查完）｜"prompt"｜"granted"｜"denied"。有 Permissions API 支援的瀏覽器用真正的
 // 權限狀態（見下方 navigator.permissions.query，連使用者事後跑去瀏覽器設定重新允許都會透過 onchange
@@ -1561,7 +1561,7 @@ function refreshSubmitIcon(){
   const submitBtn = document.getElementById("scheduleSubmitBtn");
   if (submitBtn.classList.contains("busy")) return; // 查詢中的樣式交給 runSearchAndShowResults 自己管
   const mic = voiceRecognitionState !== "idle" || micEligible();
-  submitBtn.classList.toggle("purple-btn", mic);
+  submitBtn.classList.toggle("coral-btn", mic);
   submitBtn.classList.toggle("voice-listening", voiceRecognitionState === "listening");
   if (mic) submitBtn.classList.remove("gray-btn");
   else if (!isSearchValid()) submitBtn.classList.add("gray-btn");

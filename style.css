@@ -282,10 +282,10 @@ html[data-theme="dark"].vote #scheduleSubmitBtn.gray-btn:not(.busy){ background:
 .teal-btn{ background:var(--teal); box-shadow:0 6px 16px rgba(63,174,143,0.45); }
 .orange-btn{ background:var(--orange); box-shadow:0 6px 16px rgba(240,160,75,0.45); }
 .blue-btn{ background:#4a90d9; box-shadow:0 6px 16px rgba(74,144,217,0.45); }
-.purple-btn{ background:var(--purple); box-shadow:0 6px 16px rgba(108,95,199,0.45); }
-/* 語音搜尋：沒選任何篩選時查詢鈕變麥克風（.purple-btn，紫色跟 themeToggleBtn 的 accent 同一色）。
-   聆聽中（.voice-listening）維持紫色不轉紅：外圍兩圈脈衝環（::before/::after 不同 delay）＋
-   鈕內等化器短條取代麥克風圖示，跟使用者確認過的 mockup 方向一致。 */
+.coral-btn{ background:var(--coral); box-shadow:0 6px 16px rgba(232,96,76,0.45); }
+/* 語音搜尋：沒選任何篩選時查詢鈕變麥克風（.coral-btn，紅色用 --coral，跟縮課日星期標紅、
+   查詢中轉圈圈底色同一個紅）。聆聽中（.voice-listening）維持這個紅：外圍兩圈脈衝環
+   （::before/::after 不同 delay）＋鈕內等化器短條取代麥克風圖示。 */
 #scheduleSubmitBtn.voice-listening{ position:relative; }
 /* 圖示換成等化器動畫、外圍脈衝環都只在不排斥動態效果時才做；减少動態效果的使用者直接保留
    靜態的麥克風圖示當聆聽中的回饋，不然圖示被藏起來、等化器又因為下面 reduce 區塊拿掉動畫
@@ -297,7 +297,7 @@ html[data-theme="dark"].vote #scheduleSubmitBtn.gray-btn:not(.busy){ background:
 #scheduleSubmitBtn.voice-listening::before,
 #scheduleSubmitBtn.voice-listening::after{
   content:""; position:absolute; inset:0; border-radius:50%;
-  border:2px solid var(--purple); pointer-events:none;
+  border:2px solid var(--coral); pointer-events:none;
   animation:voice-pulse 1.8s ease-out infinite;
 }
 #scheduleSubmitBtn.voice-listening::after{ animation-delay:.9s; }
