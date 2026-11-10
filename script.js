@@ -1770,20 +1770,13 @@ function startVoiceSearch(){
     // 整段（含底下的狀態切換／refreshSubmitIcon）都包在 try/finally 裡：任何一步意外丟例外，
     // finally 的 resetVoiceUI() 都保證會跑，不會讓狀態卡在 "processing" 回不去 "idle"。
     try{
-      // 原本以為 continuous=false 收到結果後瀏覽器會自動停止收音、釋放麥克風，不用自己呼叫 stop()——
-      // 實機 iOS 測試發現這個假設是錯的：畫面（含查詢鈕圖示）都已經正確切回待機狀態，但狀態列的錄音中
-      // 指示燈一直亮著。先後試過 stop()（溫和結束）跟 abort()（立即結束），兩種寫法效果一樣：第一次
-      // 語音查詢正常（狀態列麥克風圖示＋錄音中圓點都出現），查完返回再用第二次，圓點就不見了（只剩
-      // 麥克風圖示）；使用者後來更回報第二次「完全沒聽到聲音」，確定不只是燈號好不好看，是真的收音
-      // 出問題——改哪種結束方式都沒用，代表問題不在「怎麼結束這一個 session」，而在「上一個 session
-      // 真正被瀏覽器收尾（釋放麥克風資源）之前，下一個 session 就搶著開始」：iOS 快速連續使用時，新的
-      // SpeechRecognition.start() 可能在舊的底層音訊資源還沒真的釋放乾淨時就啟動，導致新的這次根本拿
-      // 不到真正的收音。真正的修法改在 startVoiceSearch()：靠 recognitionReady 這個同步旗標，等瀏覽器
-      // 的 onend 事件真的告訴我們上一個 session 結束了，才允許下一次點擊建立新的 SpeechRecognition；
-      // 故意不用 await 等它——iOS Safari 的 SpeechRecognition.start() 必須留在使用者點擊的同步呼叫鏈
-      // 裡才有效，見 recognitionReady 宣告處的說明。這裡呼叫 abortActiveRecognition() 單純是讓這個已經
-      // 有結果的 session 盡快進入收尾（反正 transcript 已經拿到手），不是這次修法的重點。
-      abortActiveRecognition();
+      // 實驗性：拿掉原本這裡的 abortActiveRecognition()，改回最早版本（9ce8c36）的做法——
+      // 收到結果後不手動 abort()/stop()，單純讓瀏覽器自己照 continuous=false 的規則自然結束
+      // 這次收音。這段 abort() 當初（854a178／502c73d）是為了解決「查詢成功後麥克風指示燈
+      // 一直亮著」加的，後來證實换 stop()／abort() 兩種寫法結果都一樣，真正的競態是靠
+      // recognitionReady 這個同步旗標（加上後來的 400ms 冷卻緩衝）解決，跟這裡呼叫哪個
+      // 方法收尾無關；手動呼叫 abort() 會不會反而干擾 iOS 自己的音訊 session 收尾時機，
+      // 也還沒驗證過，這一版拿掉它、交給瀏覽器自然收尾，用來排除這個可能性。
       clearRecognitionSession();
       voiceRecognitionState = "processing";
       refreshSubmitIcon();
