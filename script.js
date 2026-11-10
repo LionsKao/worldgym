@@ -1696,7 +1696,15 @@ async function startVoiceSearch(){
     // 整段（含底下的狀態切換／refreshSubmitIcon）都包在 try/finally 裡：任何一步意外丟例外，
     // finally 的 resetVoiceUI() 都保證會跑，不會讓狀態卡在 "processing" 回不去 "idle"。
     try{
-      clearRecognitionSession(); // 瀏覽器端已經停止聆聽（continuous=false），先清計時器/提示，按鈕暫時維持鎖住
+      // 原本以為 continuous=false 收到結果後瀏覽器會自動停止收音、釋放麥克風，不用自己呼叫 stop()——
+      // 實機 iOS 測試發現這個假設是錯的：畫面（含查詢鈕圖示）都已經正確切回待機狀態，但狀態列的錄音中
+      // 指示燈一直亮著，代表底層的收音真的還沒停。handleVoiceTimeout()／cancelVoiceSearch()／
+      // stopVoiceSearchManually() 都有明確呼叫 stop()/abort()，只有這個「成功拿到結果」的路徑沒有、
+      // 只是被動等瀏覽器自己結束——這裡補上明確呼叫 stop()，不要依賴自動行為。重用
+      // stopVoiceSearchManually()（這裡 activeRecognition 還沒被下面的 clearRecognitionSession() 清空，
+      // 跟它直接呼叫 recognition.stop() 效果相同），不要再重複寫一次一樣的 try/stop/catch。
+      stopVoiceSearchManually();
+      clearRecognitionSession();
       voiceRecognitionState = "processing";
       refreshSubmitIcon();
       const transcript = (event.results[0]?.[0]?.transcript || "").trim();
