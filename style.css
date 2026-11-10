@@ -254,7 +254,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
   font-size:22px; border:none; background:var(--coral); color:#fff; cursor:pointer;
   box-shadow:0 6px 16px rgba(232,96,76,0.45);
   display:flex; align-items:center; justify-content:center;
-  transition:background-color .2s ease, color .2s ease, box-shadow .2s ease, transform .1s ease, opacity .2s ease;
+  transition:background-color .2s ease, color .2s ease, box-shadow .2s ease, transform .1s ease, opacity .4s ease;
 }
 .submit-btn:disabled{
   background:#ccc; color:#999; cursor:not-allowed; box-shadow:none; pointer-events:none;
