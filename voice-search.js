@@ -173,15 +173,16 @@ function matchTranscript(transcript, vocabTerms){
 //   "insufficient" 聽懂了一些、但沒有分店或老師（跟 isSearchValid() 同一條規則）→ 套用聽懂的
 //                  部分到 checkbox（讓使用者接著手動補完），但不送出查詢。
 //   "submitted"    有分店或老師 → 套用＋直接送出查詢，完全不經確認。
-//   "cancelled"    比對這段期間使用者自己把語音搜尋開關關掉了 → 什麼都不套用、不送出。
-async function applyTranscript(transcript){
+//   "cancelled"    比對這段期間這一輪已經過期（使用者把語音搜尋開關關掉、切到背景…）→ 什麼都不套用、不送出。
+// isCurrent：script.js 的 runVoiceProcessing 傳進來，回傳這一輪是不是還是最新的一輪。buildVocabulary() 要等篩選選項，
+// 是比對期間唯一的非同步空檔，取消只可能發生在那裡，所以只在它之後檢查一次。這裡不再自己讀 script.js 的
+// voiceSearchEnabled：關掉開關一定會走 cancelVoiceSearch() 讓這一輪過期，而且「關掉又馬上打開」只看開關擋不住。
+async function applyTranscript(transcript, isCurrent){
   const vocab = await buildVocabulary();
+  if (!isCurrent()) return "cancelled";
   const matched = matchTranscript(transcript, vocab);
   const hitAny = FILTER_GROUPS.some((name) => matched[name].length > 0);
   if (!hitAny) return "no-match";
-  // voiceSearchEnabled 是 script.js 的全域，比對這段非同步期間使用者可能已經把開關關掉——
-  // 這時不該再套用/送出任何東西，即使語音內容本身聽懂了。
-  if (!voiceSearchEnabled) return "cancelled";
 
   // room 語音沒提到的話，保留使用者目前已勾選的（room 本來就有「團體教室」預設值、不列入 isSearchValid()）。
   const state = { ...matched, room: matched.room.length ? matched.room : checkedValues("room") };

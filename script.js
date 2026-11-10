@@ -1522,6 +1522,23 @@ const VOICE_SEARCH_STORAGE_KEY = "wg_voice_search_enabled";
 let voiceSearchEnabled = readStored(VOICE_SEARCH_STORAGE_KEY) === "1";
 const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
 function isSpeechRecognitionSupported(){ return !!SpeechRecognitionCtor; }
+// 雙軌（第十版，見 CLAUDE.md「語音搜尋」）：iOS／iPadOS 的 Safari（含加到主畫面的 PWA）SpeechRecognition 第二次
+// 之後收不到音，是 WebKit 平台 bug、純 JS 繞不過，所以這類裝置完全不走 SpeechRecognition，改用 MediaRecorder
+// 錄最長 VOICE_RECORD_MAX_MS、上傳 Worker 的 /transcribeVoice 用 Workers AI 轉成文字，再丟進同一個比對引擎。
+// 其他裝置（桌面、Android）照舊用瀏覽器原生 SpeechRecognition，這條路徑一行都沒動。
+// iOS／iPadOS 判斷：下載圖片（iOS 的 <a download> 不會存檔，改開預覽視窗）也用同一個。
+// iPadOS 13 起 UA／platform 都偽裝成 Mac，要另外用「有沒有觸控」分辨：除了 ontouchend 再加
+// maxTouchPoints > 1 輔助（真正的 Mac 沒有多點觸控），兩個條件任一成立就算 iPad。
+// 放在使用它的語音區塊之前、不靠函式提升：以前定義在下載圖片那段（約 1300 行之後），語音在載入時就會呼叫它，
+// 之後有人把那段包進區塊或改成 const，整支 script.js 會在載入時丟 ReferenceError。
+function isIOS(){
+  return /iP(hone|od|ad)/.test(navigator.platform)
+    || (navigator.userAgent.includes("Mac") && ("ontouchend" in document || navigator.maxTouchPoints > 1));
+}
+function useRecorderVoice(){
+  return isIOS() && typeof MediaRecorder !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
+}
+function isVoiceSupported(){ return useRecorderVoice() || isSpeechRecognitionSupported(); }
 // "idle" | "starting"（已按下，等瀏覽器權限視窗／onstart）| "listening"（真的在收音）| "processing"（收到結果，比對中）。
 // 原本 voiceRecognitionState／voiceProcessing 是兩個獨立旗標，"starting"／"processing" 這兩個中間狀態
 // 一律用同一個 state 表示：micEligible() 只看是不是 "idle"，不用再各自檢查兩個變數。
@@ -1546,14 +1563,19 @@ function hasAnyFilterSelected(){
 // （使用者 2026-11-09 確認）；聖誕樹／投票日印章兩個彩蛋也在同一顆按鈕上置換圖示，優先權更高——
 // 這幾天麥克風完全不出現，開關本身不受影響，彩蛋結束後自動恢復。
 function micEligible(){
-  return voiceSearchEnabled && isSpeechRecognitionSupported() && voiceRecognitionState === "idle" && voiceMicPermission !== "denied"
+  return voiceSearchEnabled && isVoiceSupported() && voiceRecognitionState === "idle" && voiceMicPermission !== "denied"
     && !hasAnyFilterSelected() && !xmasActive && !voteActive;
 }
-// 查詢鈕平常圖示的單一決定點：聖誕期間是樹；語音開啟且沒選任何篩選（或已經按下麥克風、不管是等待中／
-// 收音中／比對中）是麥克風；其餘是放大鏡。查詢中（.busy）另有自己的轉圈圈，不經過這裡。
+// 查詢鈕圖示的單一決定點：聖誕期間是樹；語音辨識／比對中（"processing"）是轉圈圈；語音開啟且沒選任何篩選
+// （或已經按下麥克風、等待中／收音中）是麥克風；其餘是放大鏡。查詢送出中（.busy）的轉圈圈由
+// runSearchAndShowResults 自己設定（refreshSubmitIcon 遇到 .busy 直接 return），不經過這裡。
 // mic 由呼叫端算好傳進來（refreshSubmitIcon() 已經算過一次，這裡不用重算一次 micEligible()）。
 function computeSubmitIconClass(mic){
   if (xmasActive) return "fa-solid fa-tree";
+  // 語音辨識／比對中（iOS 要上傳雲端轉文字，會有一兩秒）：轉圈圈，跟查詢中同一個圖示，
+  // 之後直接送出查詢時 .busy 的轉圈圈會無縫接上，使用者看到的是「麥克風 → 聆聽動畫 → 轉圈圈」。
+  // fa-spin 在使用者開了「減少動態效果」時 Font Awesome 自己會停掉動畫，不用另外處理。
+  if (voiceRecognitionState === "processing") return "fa-solid fa-spinner fa-spin";
   if (mic) return "fa-solid fa-microphone";
   return "fa-solid fa-magnifying-glass";
 }
@@ -1566,7 +1588,10 @@ function refreshSubmitIcon(){
   if (mic) submitBtn.classList.remove("gray-btn");
   else if (!isSearchValid()) submitBtn.classList.add("gray-btn");
   submitBtn.querySelector("i").className = computeSubmitIconClass(mic);
-  submitBtn.setAttribute("aria-label", !mic ? "查詢課表" : (voiceRecognitionState === "listening" ? "聆聽中，再次點擊結束" : "語音搜尋課表"));
+  submitBtn.setAttribute("aria-label", !mic ? "查詢課表"
+    : voiceRecognitionState === "listening" ? "聆聽中，再次點擊結束"
+    : voiceRecognitionState === "processing" ? "辨識中"
+    : "語音搜尋課表");
 }
 
 const voiceSearchToggleBtn = document.getElementById("voiceSearchToggleBtn");
@@ -1596,9 +1621,9 @@ voiceSearchToggleBtn.addEventListener("click", () => {
   trackEvent("toggle_voice_search", { enabled: voiceSearchEnabled });
 });
 renderVoiceSearchToggle();
-// 瀏覽器連 SpeechRecognition 都不支援時，查麥克風權限毫無意義（micEligible() 一定是 false）——
-// 不用為了這種瀏覽器也付出一次非同步的 Permissions API 查詢＋留著一個常駐的 onchange listener。
-if (isSpeechRecognitionSupported() && navigator.permissions?.query){
+// 瀏覽器連語音搜尋都不支援時（沒有 SpeechRecognition、也不能走 iOS 錄音），查麥克風權限毫無意義
+// （micEligible() 一定是 false）——不用為了這種瀏覽器也付出一次非同步的 Permissions API 查詢＋留著一個常駐的 onchange listener。
+if (isVoiceSupported() && navigator.permissions?.query){
   navigator.permissions.query({ name: "microphone" }).then((status) => {
     voiceMicPermission = status.state;
     refreshSubmitIcon();
@@ -1609,10 +1634,19 @@ if (isSpeechRecognitionSupported() && navigator.permissions?.query){
   }).catch(() => {}); // 查不到（例如 Safari 不支援 "microphone" descriptor）就維持 "unknown"，退回 onerror 的 fallback
 }
 
-const loadVoiceSearch = createVendorScriptLoader("voice-search.js?v=7", () => !!window.WGVoiceSearch);
+const loadVoiceSearch = createVendorScriptLoader("voice-search.js?v=8", () => !!window.WGVoiceSearch);
 let activeRecognition = null;
 let voiceTimeoutTimer = null;
 const VOICE_RECOGNITION_TIMEOUT_MS = 6000;
+// iOS 錄音路徑（useRecorderVoice）：一次最長錄 8 秒（原本 6 秒，使用者 2026-11-10 依「一句話約 3～4 秒、扣掉開口前的停頓、
+// 講兩個條件會逼近 6 秒、滿了又被無聲截斷」的考量改成 8 秒；它同時是成本與上傳量的天花板，也是沒再點一下時要等的時間）；
+// 點下麥克風到真的拿到麥克風（getUserMedia 回來，中間可能卡在權限視窗）最多等 10 秒，比錄音上限寬，因為第一次要讓人看懂並按下權限視窗；
+// 上傳＋轉錄最多等 15 秒。三個時間都是起始值，沒有精確測試依據。
+const VOICE_RECORD_MAX_MS = 8000;
+const VOICE_RECORD_START_TIMEOUT_MS = 10000;
+const VOICE_TRANSCRIBE_TIMEOUT_MS = 15000;
+let activeRecorderSession = null; // iOS 錄音路徑目前這一次的 session（見 startRecorderVoiceSearch）
+let activeTranscribeController = null; // 正在上傳辨識的那一個請求（cancelVoiceSearch 要能中止它，不讓它白白跑完耗 Workers AI 額度）
 // 上一個 session 真的被瀏覽器收尾完（麥克風資源釋放）了嗎——下一次點麥克風要先確認這個是 true
 // 才能開始新的收音。實機 iOS 測試發現：stop()／abort() 兩種寫法都一樣，使用者回報第二次語音查詢
 // 「完全沒聽到聲音」，懷疑是上一個 session 的底層音訊資源還沒真的釋放乾淨，新的 SpeechRecognition
@@ -1658,11 +1692,15 @@ function setVoiceRecordingLock(active){
     document.querySelectorAll(`input[name="${name}"]`).forEach(input => { input.disabled = active; });
   });
 }
-function showVoiceTooltip(){
+// 預設是 SpeechRecognition 路徑用的兩行版（「聆聽中・請說話」加「再點一下或停頓即可結束」）；iOS 錄音路徑傳 compact=true，
+// 只顯示「聆聽中」：它沒有「停頓自動結束」，預設的副文字會誤導，而且不需要對使用者多做說明。
+function showVoiceTooltip(compact = false){
   hideTooltipElementImmediately(pillWarnTooltip); // 避免跟還在淡出的提示/警告 pill 疊在一起
   clearTimeout(pillWarnTimer);
-  voiceTooltipEl.innerHTML = '聆聽中・請說話<span class="voice-tooltip-hint">再點一下或停頓即可結束</span>';
-  voiceTooltipEl.classList.add("wrap", "visible");
+  voiceTooltipEl.innerHTML = compact ? "聆聽中" : '聆聽中・請說話<span class="voice-tooltip-hint">再點一下或停頓即可結束</span>';
+  // 兩行版用固定寬度的 wrap 版型；compact 讓提示依文字長度縮到最短。
+  voiceTooltipEl.classList.toggle("wrap", !compact);
+  voiceTooltipEl.classList.add("visible");
 }
 function hideVoiceTooltip(){
   voiceTooltipEl.classList.remove("visible", "wrap");
@@ -1676,7 +1714,11 @@ function clearRecognitionSession(){
   hideVoiceTooltip();
 }
 // 真正「這次語音嘗試整個結束」才呼叫：取消、逾時、辨識出錯、沒聽到聲音、比對/送出完成都走這裡。
+// 第一行 cancelRecorderSession() 是 iOS 錄音路徑的收尾：停掉錄音、放開麥克風串流。放在這裡（而不是讓每個呼叫端
+// 各自記得先呼叫）是因為只重設畫面會把計時器清掉、錄音物件與麥克風卻繼續開著（iOS 橘點一直亮）；
+// 沒有錄音 session 時（SpeechRecognition 路徑、或錄音已經正常結束）是 no-op，不影響桌面。
 function resetVoiceUI(){
+  cancelRecorderSession();
   clearRecognitionSession();
   setVoiceRecordingLock(false);
   voiceRecognitionState = "idle";
@@ -1716,6 +1758,8 @@ function abortActiveRecognition(){
 }
 function cancelVoiceSearch(){
   abortActiveRecognition();
+  voiceRunId++; // 讓還在上傳辨識中的那一輪（runVoiceProcessing）變成過期，結果回來不再套用
+  activeTranscribeController?.abort(); // 要在 voiceRunId++ 之後：上傳因此失敗時，那一輪的 catch 才看得出自己已經過期、不跳錯誤訊息
   resetVoiceUI();
 }
 // 切到背景時把畫面狀態收乾淨（不碰 recognition 物件本身）：continuous=false 只有「真的講完話
@@ -1731,24 +1775,202 @@ function cancelVoiceSearch(){
 // 結果、在比對/送出中）這時候 recognition 早就不歸我們管了（onresult 一開始就清空
 // activeRecognition），這裡貿然呼叫 resetVoiceUI() 只會讓狀態提前跳回 "idle"、跟稍後
 // applyTranscript() 真正套用/送出的結果打架，徒增一個不相關的新問題。
+// iOS 錄音路徑的錄音物件是我們自己持有的（不像 SpeechRecognition 有 abort() 干擾 iOS 音訊 session 的疑慮），
+// resetVoiceUI() 會一併把它停掉、放開麥克風；SpeechRecognition 路徑沒有錄音 session，這一步是 no-op。
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden" && (voiceRecognitionState === "starting" || voiceRecognitionState === "listening")) resetVoiceUI();
 });
 // re-tap 用 stop()（不是 abort()）：結束音訊擷取但仍會對已經聽到的內容觸發一次 onresult——
 // continuous=false 本來就是「暫停就結束」，re-tap 等於幫使用者提前結束這個暫停等待，不是放棄已經講的內容。
+// iOS 錄音路徑的 re-tap 則是提前結束錄音（recorder.stop() 之後會照常走上傳辨識）。
 function stopVoiceSearchManually(){
+  if (activeRecorderSession){ stopRecorderSession(activeRecorderSession); return; }
   if (activeRecognition){ try{ activeRecognition.stop(); } catch(e){} }
 }
 // 逾時保險：瀏覽器的麥克風權限視窗如果使用者一直不理（不同意也不拒絕），SpeechRecognition
 // 既不會觸發 onstart 也不會觸發 onerror，畫面會卡在看起來什麼事都沒發生。所以逾時計時從
 // startVoiceSearch() 一開始（點下麥克風那一刻）就起算，不是等 onstart 才開始算——這樣不管是
 // 「權限視窗沒人理」還是「已經在聽但一直不講話」，6 秒後都會放棄。
+// iOS 錄音路徑等 getUserMedia（同樣可能卡在權限視窗）也共用這個處理，只是等待時間是 VOICE_RECORD_START_TIMEOUT_MS；
+// 兩條路徑一個有 recognition、一個有錄音 session，都沒有就代表已經收尾過了，不重複顯示訊息。
 function handleVoiceTimeout(){
-  if (!abortActiveRecognition()) return;
+  if (!abortActiveRecognition() && !activeRecorderSession) return;
   resetVoiceUI();
   reportVoiceFailure("timeout", "沒有反應，請再試一次");
 }
+// 轉錄／上傳失敗要帶「GA reason＋給使用者看的訊息」進 runVoiceProcessing 的 catch。
+class VoiceFailure extends Error {
+  constructor(reason, message){ super(message); this.reason = reason; }
+}
+// 拿到一段文字之後共用的流程：SpeechRecognition 的 onresult 與 iOS 錄音上傳辨識完都走這裡。
+// getTranscript 回傳（或 resolve 成）辨識出來的文字；iOS 路徑裡它是「上傳＋雲端轉錄」，會花一兩秒。
+// 整段（含狀態切換／refreshSubmitIcon）都包在 try/finally 裡：任何一步意外丟例外，
+// finally 的 resetVoiceUI() 都保證會跑，不會讓狀態卡在 "processing" 回不去 "idle"。
+// voiceRunId：iOS 路徑的辨識期間比較久，這段時間使用者可能已經把開關關掉（cancelVoiceSearch）甚至又開始新的一次錄音；
+// 過期的這一輪結果回來時不能再套用、也不能 resetVoiceUI() 把新的一輪蓋掉。
+let voiceRunId = 0;
+async function runVoiceProcessing(getTranscript){
+  const runId = ++voiceRunId;
+  const isCurrent = () => runId === voiceRunId;
+  try{
+    voiceRecognitionState = "processing";
+    refreshSubmitIcon();
+    const transcript = ((await getTranscript()) || "").trim();
+    if (!isCurrent()) return;
+    if (!transcript){ reportVoiceFailure("empty", "沒聽清楚，請再試一次"); return; }
+    await loadVoiceSearch();
+    // isCurrent 傳進去：載入引擎之後、applyTranscript 內部等篩選選項／建詞彙表還有一段非同步，取消可能發生在那裡
+    // （例如「關掉開關又立刻打開」），voice-search.js 在那段之後檢查一次，過期就什麼都不套用、不送出。
+    const outcome = await window.WGVoiceSearch.applyTranscript(transcript, isCurrent);
+    if (outcome === "submitted") trackEvent("voice_search_matched", {});
+    else if (outcome === "insufficient") reportVoiceFailure("insufficient", "請補充分店或老師名稱再試一次");
+    else if (outcome === "no-match") reportVoiceFailure("no-match", "聽不懂這個條件，請再試一次");
+    // "cancelled"：這一輪在比對期間已經過期（使用者關掉開關、切到背景…），voice-search.js 什麼都沒套用/送出，
+    // 這裡也不用再顯示任何訊息（使用者已經看到自己的操作結果，不需要多一次提示）。
+  } catch(e){
+    if (!isCurrent()) return;
+    if (e instanceof VoiceFailure){
+      reportVoiceFailure(e.reason, e.message);
+    } else {
+      console.error("語音搜尋比對失敗", e);
+      reportVoiceFailure("apply-error", "搜尋發生錯誤，請再試一次");
+    }
+  } finally {
+    if (isCurrent()) resetVoiceUI();
+  }
+}
+
+// ---- iOS／iPadOS 錄音路徑（第十版）----
+// 注意：SpeechRecognition 那邊「點擊到 start() 之間不能插入 await」的教訓，這裡對應的是「getUserMedia() 要在
+// 點擊的同步呼叫鏈裡第一個被呼叫」（startRecorderVoiceSearch 在第一個 await 之前只做同步的狀態設定）。
+// 其餘（MediaRecorder.start()、上傳）都在使用者手勢授權之後，不受這個限制。
+function pickRecorderMimeType(){
+  // iOS Safari 一定支援 audio/mp4（AAC）；其餘是保險，萬一 isTypeSupported 都不認就交給瀏覽器預設。
+  return ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"].find((t) => MediaRecorder.isTypeSupported?.(t)) || "";
+}
+function releaseRecorderStream(session){
+  // 一定要把每條音軌 stop()，iOS 才會真的放開麥克風（狀態列的橘點才會消失），不能只丟掉 stream 參照。
+  session.stream?.getTracks().forEach((track) => track.stop());
+}
+function stopRecorderSession(session){
+  if (session.recorder?.state === "recording"){
+    try{ session.recorder.stop(); } catch(e){ console.error(e); }
+  }
+}
+// 放棄這次錄音（取消、切到背景、失敗）：停掉錄音、放開麥克風，並把 activeRecorderSession 清掉。
+// 「這個 session 已經被取消／結束」就是 activeRecorderSession !== session——之後才非同步到的 onstop／onerror／
+// getUserMedia 結果都靠這個判斷要不要處理（不另外存一個 cancelled 旗標，免得兩個來源不一致）。
+// 沒有進行中的 session 就什麼都不做。resetVoiceUI() 會呼叫它，所以每個「這次語音嘗試整個結束」的出口都會一併收乾淨。
+function cancelRecorderSession(){
+  const session = activeRecorderSession;
+  if (!session) return;
+  activeRecorderSession = null;
+  stopRecorderSession(session);
+  releaseRecorderStream(session);
+}
+async function startRecorderVoiceSearch(){
+  voiceRecognitionState = "starting";
+  setVoiceRecordingLock(true);
+  refreshSubmitIcon();
+  loadVoiceSearch().catch((e) => console.error("voice-search.js 載入失敗", e)); // 跟錄音平行載入，不等它
+  // 順便預熱上傳要用的 token（同樣不等它）：token 還新就是 no-op，過期了就讓換發跟錄音重疊，不用等錄完才打 /issueToken。
+  getQueryToken().catch(() => {});
+  const session = { stream: null, recorder: null };
+  activeRecorderSession = session;
+  // 失敗統一出口：只處理還沒被取消的 session（被取消代表呼叫端已經收尾過了，不重複顯示訊息）。
+  const fail = (reason, message) => {
+    if (activeRecorderSession !== session) return;
+    resetVoiceUI(); // 會一併放開錄音與麥克風
+    reportVoiceFailure(reason, message);
+  };
+  // 權限視窗沒人理時 getUserMedia 會一直懸著，跟 SpeechRecognition 路徑共用同一個逾時處理（只是等待時間較寬）。
+  voiceTimeoutTimer = setTimeout(handleVoiceTimeout, VOICE_RECORD_START_TIMEOUT_MS);
+
+  let stream;
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch(e){
+    const denied = e?.name === "NotAllowedError" || e?.name === "SecurityError";
+    if (denied){
+      // 跟 SpeechRecognition 路徑 onerror 同一套：Permissions API 已經查得到真正狀態時不自己猜。
+      if (voiceMicPermission === "unknown") voiceMicPermission = "denied";
+      fail("permission-denied", "請允許麥克風權限才能使用語音搜尋");
+    } else {
+      console.error("getUserMedia 失敗", e);
+      fail("record-error", "無法使用麥克風，請再試一次");
+    }
+    return;
+  }
+  session.stream = stream; // 先掛上去：之後任何 cancel／fail 都能放開麥克風
+  if (activeRecorderSession !== session){ releaseRecorderStream(session); return; } // 等權限期間已經被取消／逾時
+  try{
+    const mimeType = pickRecorderMimeType();
+    const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+    const chunks = [];
+    session.recorder = recorder;
+    recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+    recorder.onerror = (e) => { console.error("MediaRecorder 錯誤", e.error || e); fail("record-error", "錄音發生錯誤，請再試一次"); };
+    recorder.onstop = () => {
+      releaseRecorderStream(session);
+      if (activeRecorderSession !== session) return; // 已經被取消，或錄音錯誤時 fail() 收尾過了
+      activeRecorderSession = null;
+      clearRecognitionSession(); // 清掉最長錄音的計時器與提示
+      const blob = new Blob(chunks, { type: recorder.mimeType || mimeType || "audio/mp4" });
+      runVoiceProcessing(() => transcribeVoiceBlob(blob));
+    };
+    recorder.start();
+  } catch(e){
+    console.error("MediaRecorder 啟動失敗", e);
+    fail("record-error", "無法錄音，請再試一次");
+    return;
+  }
+  // 從真的開始錄音起算最長 VOICE_RECORD_MAX_MS，到了自動結束並送去辨識（沒有靜音自動停止，使用者也可以提早再點一下）。
+  clearTimeout(voiceTimeoutTimer);
+  voiceTimeoutTimer = setTimeout(() => stopRecorderSession(session), VOICE_RECORD_MAX_MS);
+  voiceRecognitionState = "listening";
+  // 只顯示「聆聽中」、不加任何說明，提示框也縮到剛好包住文字：使用者 2026-11-10 要求 iOS 的實作差異
+  // （錄音上傳、8 秒上限、平台 bug）不用讓使用者知道，這個網站靠圖示就看得懂怎麼操作。
+  showVoiceTooltip(true);
+  refreshSubmitIcon();
+  trackEvent("start_voice_search", { engine: "recorder" });
+}
+// 上傳錄音到 Worker 的 /transcribeVoice，回傳辨識出來的文字。帶 /issueToken 的短效 token（跟 /queryClasses 同一套）。
+// 失敗丟 VoiceFailure（runVoiceProcessing 會顯示訊息並送 GA）。
+async function transcribeVoiceBlob(blob){
+  if (blob.size < 200) return ""; // 跟 Worker 的 VOICE_MIN_BYTES 同一個意思：太小一定不是真的錄音，當成沒聽到
+  const controller = new AbortController();
+  activeTranscribeController = controller;
+  const timer = setTimeout(() => controller.abort(), VOICE_TRANSCRIBE_TIMEOUT_MS);
+  const post = (token) => fetch(`${WORKER_BASE}/transcribeVoice`, {
+    method: "POST",
+    headers: { "Content-Type": blob.type, "X-Query-Token": token }, // blob.type 在 onstop 建立時一定有值（至少 audio/mp4）
+    body: blob,
+    signal: controller.signal,
+  });
+  let res;
+  try{
+    res = await post(await getQueryToken());
+    if (res.status === 401) res = await post((await fetchFreshQueryToken()).token); // token 過期：換新的重試一次
+  } catch(e){
+    console.error("語音上傳失敗", e);
+    throw new VoiceFailure("upload-failed", "網路連線異常，請再試一次");
+  } finally {
+    clearTimeout(timer);
+    if (activeTranscribeController === controller) activeTranscribeController = null;
+  }
+  if (res.status === 429) throw new VoiceFailure("rate-limited", "操作太頻繁，請稍後再試");
+  if (!res.ok) throw new VoiceFailure("transcribe-failed", "語音辨識失敗，請再試一次");
+  const data = await res.json().catch(() => null);
+  return typeof data?.text === "string" ? data.text : "";
+}
+
 function startVoiceSearch(){
+  if (useRecorderVoice()){
+    // 兜底：任何沒被內部 try/catch 接住的例外（例如開始錄音之後才丟的）都走 resetVoiceUI()——
+    // 它會連錄音與麥克風串流一起收掉（不然 8 秒計時器被清掉、錄音卻繼續開著，iOS 橘點一直亮）。
+    startRecorderVoiceSearch().catch((e) => { console.error(e); resetVoiceUI(); });
+    return;
+  }
   if (!isSpeechRecognitionSupported()) return;
   // 上一個 session 還沒真的被瀏覽器收尾完，這裡故意直接放棄這次點擊（同步 return，不等待），
   // 理由見 recognitionReady 宣告處的註解：等待一定要靠使用者下一次點擊重新觸發，不能在這個
@@ -1800,34 +2022,17 @@ function startVoiceSearch(){
     }, AUDIO_START_CHECK_MS);
   };
   recognition.onresult = async (event) => {
-    // 整段（含底下的狀態切換／refreshSubmitIcon）都包在 try/finally 裡：任何一步意外丟例外，
-    // finally 的 resetVoiceUI() 都保證會跑，不會讓狀態卡在 "processing" 回不去 "idle"。
-    try{
-      // 實驗性：拿掉原本這裡的 abortActiveRecognition()，改回最早版本（9ce8c36）的做法——
-      // 收到結果後不手動 abort()/stop()，單純讓瀏覽器自己照 continuous=false 的規則自然結束
-      // 這次收音。這段 abort() 當初（854a178／502c73d）是為了解決「查詢成功後麥克風指示燈
-      // 一直亮著」加的，後來證實换 stop()／abort() 兩種寫法結果都一樣，真正的競態是靠
-      // recognitionReady 這個同步旗標（加上後來的 400ms 冷卻緩衝）解決，跟這裡呼叫哪個
-      // 方法收尾無關；手動呼叫 abort() 會不會反而干擾 iOS 自己的音訊 session 收尾時機，
-      // 也還沒驗證過，這一版拿掉它、交給瀏覽器自然收尾，用來排除這個可能性。
-      clearRecognitionSession();
-      voiceRecognitionState = "processing";
-      refreshSubmitIcon();
-      const transcript = (event.results[0]?.[0]?.transcript || "").trim();
-      if (!transcript){ reportVoiceFailure("empty", "沒聽清楚，請再試一次"); return; }
-      await loadVoiceSearch();
-      const outcome = await window.WGVoiceSearch.applyTranscript(transcript);
-      if (outcome === "submitted") trackEvent("voice_search_matched", {});
-      else if (outcome === "insufficient") reportVoiceFailure("insufficient", "請補充分店或老師名稱再試一次");
-      else if (outcome !== "cancelled") reportVoiceFailure("no-match", "聽不懂這個條件，請再試一次");
-      // "cancelled"：比對這段期間使用者自己把開關關掉了，voice-search.js 什麼都沒套用/送出，
-      // 這裡也不用再顯示任何訊息（使用者已經看到開關變化，不需要多一次提示）。
-    } catch(e){
-      console.error("語音搜尋比對失敗", e);
-      reportVoiceFailure("apply-error", "搜尋發生錯誤，請再試一次");
-    } finally {
-      resetVoiceUI();
-    }
+    // 實驗性：拿掉原本這裡的 abortActiveRecognition()，改回最早版本（9ce8c36）的做法——
+    // 收到結果後不手動 abort()/stop()，單純讓瀏覽器自己照 continuous=false 的規則自然結束
+    // 這次收音。這段 abort() 當初（854a178／502c73d）是為了解決「查詢成功後麥克風指示燈
+    // 一直亮著」加的，後來證實换 stop()／abort() 兩種寫法結果都一樣，真正的競態是靠
+    // recognitionReady 這個同步旗標（加上後來的 400ms 冷卻緩衝）解決，跟這裡呼叫哪個
+    // 方法收尾無關；手動呼叫 abort() 會不會反而干擾 iOS 自己的音訊 session 收尾時機，
+    // 也還沒驗證過，這一版拿掉它、交給瀏覽器自然收尾，用來排除這個可能性。
+    // 之後的「切到 processing → 比對 → 套用/送出 → 一定收尾」整段是跟 iOS 錄音路徑共用的
+    // runVoiceProcessing()（第十版從這裡抽出去，行為沒變）。
+    clearRecognitionSession();
+    await runVoiceProcessing(() => event.results[0]?.[0]?.transcript || "");
   };
   recognition.onerror = (event) => {
     if (event.error === "aborted") return; // cancelVoiceSearch()/handleVoiceTimeout() 已經拔過處理器、收尾過了
@@ -2516,6 +2721,10 @@ document.getElementById("filterForm").addEventListener("submit", (e) => {
     stopVoiceSearchManually();
     return;
   }
+  // 語音搜尋進行中（等權限視窗 "starting"／比對與上傳辨識 "processing"）再點查詢鈕不能當成手動查詢：
+  // 篩選頁此時是鎖住、空的，會跳出「請先選擇一些分店或老師」；iOS 的上傳辨識還會持續一兩秒。所有平台都一樣。
+  // "listening" 已經在上面處理成「提前結束」。
+  if (voiceRecognitionState !== "idle") return;
   if (micEligible()){
     startVoiceSearch();
     return;
@@ -2627,10 +2836,7 @@ function createVendorScriptLoader(src, checkLoaded, onReady){
 const loadHtml2Canvas = createVendorScriptLoader("vendor/html2canvas.min.js?v=1", () => !!window.html2canvas);
 // iOS Safari（含 iPadOS）的 <a download> 不會真的觸發「儲存檔案」，點了只會開啟圖片或完全沒反應；
 // 這類瀏覽器改成開一個預覽視窗顯示圖片，請使用者自己長按儲存到相簿，這是 iOS 公認的繞過做法。
-// iPadOS 13 起 UA／platform 都偽裝成 Mac，要另外用「有沒有觸控」分辨。
-function isIOS(){
-  return /iP(hone|od|ad)/.test(navigator.platform) || (navigator.userAgent.includes("Mac") && "ontouchend" in document);
-}
+// （isIOS() 定義在檔案上方「語音搜尋」區塊的開頭：語音雙軌也用同一個判斷。）
 const downloadImagePreviewModal = document.getElementById("downloadImagePreviewModal");
 const downloadImagePreviewImg = document.getElementById("downloadImagePreviewImg");
 let downloadImagePreviewUrl = null; // 預覽視窗目前顯示的 blob URL，關閉時才 revoke（使用者長按儲存可能要花一點時間，不能跟一般下載一樣 1 秒後就收回）

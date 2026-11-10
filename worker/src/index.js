@@ -6,7 +6,8 @@ import { monthlyNameRanking, availableYears, monthlySearchTrend, favoriteStatsCo
 import { scanForNewBranches } from "./branchScan.js";
 import BRANCHES from "./branches-seed.js";
 import { isRequestAllowed } from "./crawlers.js";
-import { nowTaiwanIso, taiwanMonthKey, taiwanIso, postTeamsCard } from "./util.js";
+import { nowTaiwanIso, taiwanMonthKey, taiwanIso, postTeamsCard, todayIsoTaipei } from "./util.js";
+import { Buffer } from "node:buffer"; // 語音搜尋：讀取音檔與轉 base64（wrangler.toml 已開 nodejs_compat）
 
 // 網站是跨網域被呼叫，所以要自己開白名單。
 // 之後如果掛了自訂網域，把新網域加進這個陣列即可。
@@ -77,14 +78,19 @@ async function cachedStats(key, compute) {
 // 只是拉高濫用成本，不是真的能擋住所有非瀏覽器直接呼叫（見 README 相關討論），
 // 所以刻意選簡單、低成本的做法，不追求密碼學等級的嚴謹。
 
-// 每 IP 每 60 秒窗口的請求次數上限打點，KV 帶 expirationTtl 自動過期，不用額外清理。
-async function checkRateLimit(env, kvKeyPrefix, ip, limit, ctx) {
-  const windowBucket = Math.floor(Date.now() / 60000);
-  const key = `${kvKeyPrefix}:${ip}:${windowBucket}`;
+// KV 計數器：這個 key 目前的計數還沒到 limit 就 +1 並回傳 true，否則回傳 false。KV 帶 expirationTtl 自動過期，不用額外清理；
+// put 用 waitUntil 不擋回應。**不是原子操作**（讀跟寫之間別的請求可以插進來，同一個 key 短時間大量寫入也可能被 KV 限速），
+// 爆量時會少算，所以只能當「大致」的上限；要硬上限得改用 D1 的 UPDATE ... RETURNING 之類的原子計數。
+async function takeKvQuota(env, ctx, key, limit, ttlSeconds) {
   const current = parseInt((await env.QUERY_RATE_LIMIT.get(key)) || "0", 10);
   if (current >= limit) return false;
-  ctx.waitUntil(env.QUERY_RATE_LIMIT.put(key, String(current + 1), { expirationTtl: 90 }));
+  ctx.waitUntil(env.QUERY_RATE_LIMIT.put(key, String(current + 1), { expirationTtl: ttlSeconds }));
   return true;
+}
+// 每 IP 每 60 秒窗口的請求次數上限打點。
+async function checkRateLimit(env, kvKeyPrefix, ip, limit, ctx) {
+  const windowBucket = Math.floor(Date.now() / 60000);
+  return takeKvQuota(env, ctx, `${kvKeyPrefix}:${ip}:${windowBucket}`, limit, 90);
 }
 
 // /issueToken、/queryClasses 存取紀錄，事後才有辦法查是不是被爬蟲/腳本大量打（見 query_access_log）。
@@ -517,6 +523,92 @@ async function handleRegisterReminder({ req, env, ctx, origin }) {
   return json(result, 200, origin);
 }
 
+// 語音搜尋的雲端轉文字：只給 iOS／iPadOS 用（Safari 的 SpeechRecognition 第二次之後收不到音，是 WebKit 平台 bug，
+// 前端改成用 MediaRecorder 錄最長 8 秒、上傳到這裡，見 script.js 的 startRecorderVoiceSearch）。其他裝置照舊用瀏覽器內建辨識，不經過這裡。
+// 音檔只在這次請求的記憶體裡，送進 Workers AI 轉成文字就丟掉，不寫 D1／KV、也不進 log。
+// 防濫用（成本是照「音訊秒數」算的，但 Worker 只量得到位元組，所以靠三道一起擋）：
+//   ①要帶 /issueToken 發的短效 token（跟 /queryClasses 同一套）＋每 IP 每分鐘 10 次；
+//   ②音檔大小上限 VOICE_MAX_BYTES：限制單次請求最多能塞多少秒（位元率越低同樣位元組能塞越久，所以上限抓得貼近正常錄音）；
+//   ③全站每天的轉錄次數上限 VOICE_DAILY_LIMIT：前兩道擋不住「很多個 IP 各自小量」，這道把最壞情況的花費變成有上限的數字。
+const VOICE_MODEL = "@cf/openai/whisper-large-v3-turbo";
+// 8 秒的 audio/mp4 約 70～170KB（實測 100～170KB）；256KB 留一點餘裕又不讓單次請求能塞幾分鐘的音訊。
+// 若 iOS 實機錄出來的檔案經常超過這個值，先確認原因（位元率、立體聲）再調，不要直接放寬回 1MB。
+const VOICE_MAX_BYTES = 256 * 1024;
+const VOICE_MIN_BYTES = 200; // 小於這個一定不是一段真的錄音
+const VOICE_MAX_TEXT_LENGTH = 200;
+// 正常使用一天遠低於這個數字（週活躍約 450 人、人均每週約 6 次查詢，全改語音也只有幾百次）；
+// 最壞情況 2000 次 × 256KB 的極低位元率音訊（約 5～6 分鐘）≈ 數十萬 Neurons，把花費壓在一個有限的量級，不是無限。
+// 超過回 429，前端會顯示「操作太頻繁」，使用者仍可手動查詢。計數用 takeKvQuota（非原子、爆量時可能少算），
+// 所以這是「大致的」上限、不是硬性保證；要硬上限得改用原子計數（D1）或 AI Gateway，目前流量不值得。
+const VOICE_DAILY_LIMIT = 2000;
+// 提示語氣：Whisper 預設中文常輸出簡體，這句用繁體寫，把輸出往繁體拉。
+// **刻意不放任何具體的分店／星期／課程**：Whisper 遇到太短、太吵或聽不清的音訊時，常會把提示語原句吐回來，
+// 而語音搜尋比對到完整條件就會「不經確認直接送出查詢」——提示語若是一個有效查詢，使用者就會莫名其妙看到一組沒講過的結果。
+// 保險再多一層：就算還是被複誦，stripPromptEcho() 會把這句從結果裡拿掉。搭配 vad_filter 讓純靜音回空字串。
+const VOICE_PROMPT_PHRASE = "以下是繁體中文的語音搜尋，內容是健身房的課程、老師和分店";
+const VOICE_INITIAL_PROMPT = `${VOICE_PROMPT_PHRASE}。`;
+const VOICE_PROMPT_ECHO = new RegExp(`${VOICE_PROMPT_PHRASE}[。．.，,、\\s]*`, "g");
+function stripPromptEcho(text) {
+  return text.replace(VOICE_PROMPT_ECHO, "").trim();
+}
+// 讀 request body 但最多讀 maxBytes：超過就中止並回傳 null，否則回傳 Buffer。不能直接 req.arrayBuffer()——沒有（或謊報）
+// Content-Length 的 chunked 請求會被整個讀進記憶體後才知道太大。
+async function readBodyCapped(req, maxBytes) {
+  if (!req.body) return Buffer.alloc(0);
+  const reader = req.body.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => {});
+      return null;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks, total);
+}
+// 全站每日轉錄次數（台灣日期當 key，TTL 兩天讓它自己過期）。
+function takeVoiceDailyBudget(env, ctx) {
+  return takeKvQuota(env, ctx, `voice-daily:${todayIsoTaipei()}`, VOICE_DAILY_LIMIT, 172800);
+}
+// token 驗證由 ROUTES 的 queryToken: true 在 fetch() 統一處理，這裡只管語音轉錄本身。
+async function handleTranscribeVoice({ req, env, ctx, origin }) {
+  if (!env.AI) {
+    console.error("AI binding 未設定，無法轉錄語音");
+    return json({ error: "ai not configured" }, 503, origin);
+  }
+  if (!/^(audio|video)\//i.test(req.headers.get("Content-Type") || "")) {
+    return json({ error: "invalid content type" }, 415, origin);
+  }
+  // 有 Content-Length 且明顯過大就直接擋，不用讀 body；沒有（chunked）或不可信時不拒絕，
+  // 改成邊讀邊算、超過上限就中止（readBodyCapped）。只量到位元組、量不到秒數，所以另有每日上限（takeVoiceDailyBudget）。
+  const declaredLength = parseInt(req.headers.get("Content-Length") || "", 10);
+  if (Number.isFinite(declaredLength) && declaredLength > VOICE_MAX_BYTES) return json({ error: "too large" }, 413, origin);
+  const audio = await readBodyCapped(req, VOICE_MAX_BYTES);
+  if (!audio) return json({ error: "too large" }, 413, origin);
+  if (audio.length < VOICE_MIN_BYTES) return json({ error: "too small" }, 400, origin);
+  // 放在大小／格式檢查之後：格式不對或太小的請求不會吃掉每日額度。
+  if (!(await takeVoiceDailyBudget(env, ctx))) return json({ error: "voice_daily_limit" }, 429, origin);
+  let result;
+  try {
+    result = await env.AI.run(VOICE_MODEL, {
+      audio: audio.toString("base64"),
+      task: "transcribe",
+      language: "zh",
+      vad_filter: true,
+      initial_prompt: VOICE_INITIAL_PROMPT,
+    });
+  } catch (e) {
+    console.error("語音轉錄失敗", e);
+    return json({ error: "transcribe_failed" }, 502, origin);
+  }
+  const text = stripPromptEcho(String(result?.text ?? "")).slice(0, VOICE_MAX_TEXT_LENGTH);
+  return json({ text }, 200, origin);
+}
+
 const ROUTES = {
   // 發短效 token 給前端：頁面載入時預熱拿一次，之後查詢帶著這個 token 打 /queryClasses。
   // 這個端點本身也有流量限制（獨立 key 前綴），避免有人瘋狂打這個端點換無限張票。
@@ -525,11 +617,10 @@ const ROUTES = {
     handler: async ({ env, origin }) => json({ token: await issueQueryToken(env) }, 200, origin),
   },
 
+  // queryToken: true ＝ 要帶 /issueToken 發的短效 token（X-Query-Token），fetch() 在限流之後、handler 之前統一驗證，沒帶對回 401。
   "POST /queryClasses": {
-    limit: 20, logAccess: true,
+    limit: 20, logAccess: true, queryToken: true,
     handler: async ({ req, env, origin }) => {
-      const verification = await verifyQueryToken(env, req.headers.get("X-Query-Token"));
-      if (!verification.ok) return json({ error: verification.reason }, 401, origin);
       const body = await readJson(req);
       return json(await queryClasses(env.DB, body || {}), 200, origin);
     },
@@ -573,6 +664,8 @@ const ROUTES = {
       return json({ ok: true }, 200, origin);
     },
   },
+
+  "POST /transcribeVoice": { limit: 10, queryToken: true, handler: handleTranscribeVoice },
 
   "POST /trackAdEvents": { limit: 20, handler: handleTrackAdEvents },
   "POST /trackSearchEvents": { limit: 20, handler: handleTrackSearchEvents },
@@ -765,6 +858,10 @@ export default {
       if (!allowed) return json({ error: "rate_limited" }, 429, origin);
       if (route.admin && !(await isAdminRequest(req, env))) {
         return json({ error: "forbidden" }, 403, origin);
+      }
+      if (route.queryToken) {
+        const verification = await verifyQueryToken(env, req.headers.get("X-Query-Token"));
+        if (!verification.ok) return json({ error: verification.reason }, 401, origin);
       }
       return await route.handler({ req, env, ctx, url, origin, ip });
     } catch (e) {
