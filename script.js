@@ -1555,11 +1555,19 @@ function refreshSubmitIcon(){
 }
 
 const voiceSearchToggleBtn = document.getElementById("voiceSearchToggleBtn");
+// 開關按鈕上順便顯示目前 script.js 的版號：直接讀這個 <script> 標籤自己的 src（document.currentScript
+// 只在最初同步執行這段程式碼時有效，不能搬到 callback 裡），不是另外手寫一個常數，版號一定跟實際
+// 載入的檔案一致，不會有「忘記同步」的風險——用來確認 push 後自動部署的新版本是否已經生效。
+const SCRIPT_VERSION_LABEL = (() => {
+  const m = (document.currentScript?.src || "").match(/[?&]v=([^&]+)/);
+  return m ? `v${m[1]}` : "";
+})();
 function renderVoiceSearchToggle(){
+  const suffix = SCRIPT_VERSION_LABEL ? `（測試 ${SCRIPT_VERSION_LABEL}）` : "（測試）";
   voiceSearchToggleBtn.innerHTML = voiceSearchEnabled
-    ? '<i class="fa-solid fa-fw fa-microphone-slash"></i>關閉語音搜尋功能（測試）'
-    : '<i class="fa-solid fa-fw fa-microphone"></i>開啟語音搜尋功能（測試）';
-  voiceSearchToggleBtn.setAttribute("aria-label", voiceSearchEnabled ? "關閉語音搜尋功能（測試）" : "開啟語音搜尋功能（測試）");
+    ? `<i class="fa-solid fa-fw fa-microphone-slash"></i>關閉語音搜尋功能${suffix}`
+    : `<i class="fa-solid fa-fw fa-microphone"></i>開啟語音搜尋功能${suffix}`;
+  voiceSearchToggleBtn.setAttribute("aria-label", voiceSearchEnabled ? `關閉語音搜尋功能${suffix}` : `開啟語音搜尋功能${suffix}`);
   voiceSearchToggleBtn.setAttribute("aria-pressed", String(voiceSearchEnabled));
 }
 voiceSearchToggleBtn.addEventListener("click", () => {
@@ -1590,6 +1598,15 @@ const loadVoiceSearch = createVendorScriptLoader("voice-search.js?v=4", () => !!
 let activeRecognition = null;
 let voiceTimeoutTimer = null;
 const VOICE_RECOGNITION_TIMEOUT_MS = 10000;
+// 上一個 session 真的被瀏覽器收尾完（麥克風資源釋放）了嗎——下一次 startVoiceSearch() 要等這個
+// resolve 才能開始新的收音。實機 iOS 測試發現：stop()／abort() 兩種寫法都一樣，使用者回報第二次
+// 語音查詢「完全沒聽到聲音」，懷疑是上一個 session 的底層音訊資源還沒真的釋放乾淨，新的
+// SpeechRecognition 就搶著 start()，結果根本沒拿到真正的收音。一開始預設 resolved（還沒有任何
+// session 跑過，不用等）。resolve function 故意不用模組層級變數存：1500ms 保險逾時先觸發、下一個
+// session 已經把 recognitionTornDown 換掉之後，萬一上一個 session 的 onend 才姍姍來遲，不能讓它
+// 呼叫到「新 session 的」resolve、把新 session 提早標記成收尾完成——所以每個 session 的 resolve
+// 都只存在 startVoiceSearch() 自己的區域變數（閉包）裡，跟其他 session 的完全獨立。
+let recognitionTornDown = Promise.resolve();
 
 // 聆聽／比對期間鎖住的不只是重設/通知兩顆按鈕，篩選 checkbox 本身也要鎖：不然使用者在這段期間
 // 手動勾選，會被語音結果套用時的 applyFilterState()（整組取代）悄悄蓋掉、毫無提示。
@@ -1639,13 +1656,20 @@ function reportVoiceFailure(reason, message){
   trackEvent("voice_search_failed", { reason });
   showPillWarning(document.getElementById("scheduleSubmitBtn"), message);
 }
-// 拔掉這個 recognition 物件的事件處理器：abort()/stop() 之後瀏覽器仍會非同步觸發 onerror("aborted")／
-// onend，不拔掉的話這些事後才到的事件會跟呼叫端自己的收尾重複處理（例如彈出第二次、矛盾的失敗訊息）。
+// 拔掉這個 recognition 物件「會顯示訊息／改狀態」的事件處理器：abort()/stop() 之後瀏覽器仍會非同步
+// 觸發 onerror("aborted")／onresult，不拔掉的話這些事後才到的事件會跟呼叫端自己的收尾重複處理
+// （例如彈出第二次、矛盾的失敗訊息）。onend 刻意不拔：它是瀏覽器唯一會告訴我們「這個 session 真的
+// 結束、麥克風資源釋放了」的信號，下一次 startVoiceSearch() 要等它才能開始新的收音（見
+// recognitionTornDown）。順便呼叫 recognition._markSettled()：這個 session 的使用者可見結果（訊息、
+// 狀態收尾）已經處理過了，之後才非同步觸發的 onend 只會呼叫 markTornDown()，不會再重複跳一次訊息。
+// _markSettled 是 startVoiceSearch() 建立這個 recognition 物件時掛上去的，特意存在物件本身（不是
+// 模組層級變數）：模組層級的共用旗標會被「下一個 session」的重設覆蓋，導致這個已經過期的 session
+// 事後才到的 onend 誤判成新 session 還沒處理過，把新 session 正在進行的聆聽狀態打斷、重複跳訊息。
 function detachRecognitionHandlers(recognition){
+  recognition._markSettled?.();
   recognition.onstart = null;
   recognition.onresult = null;
   recognition.onerror = null;
-  recognition.onend = null;
 }
 // 拔掉處理器＋abort() 這組動作 cancelVoiceSearch()／handleVoiceTimeout() 都要做，抽成一個共用函式；
 // 回傳「有沒有真的中止到什麼」，讓 handleVoiceTimeout() 可以沿用原本「沒有 session 就整個不做事」的行為。
@@ -1681,11 +1705,30 @@ async function startVoiceSearch(){
   setVoiceRecordingLock(true);
   refreshSubmitIcon();
   loadVoiceSearch().catch((e) => console.error("voice-search.js 載入失敗", e)); // 跟聆聽平行載入，不等它
+  // 等上一個 session 真的被瀏覽器收尾完（見 recognitionTornDown），才建立新的 SpeechRecognition。
+  // 1500ms 的上限只是保險：onend 理論上一定會觸發，萬一瀏覽器沒照規範來，也不要讓下一次永遠卡住；
+  // 用 clearTimeout 確保正常情況（recognitionTornDown 先 resolve）不會留著一顆用不到的計時器。
+  await new Promise((resolve) => {
+    const timer = setTimeout(resolve, 1500);
+    recognitionTornDown.then(() => { clearTimeout(timer); resolve(); });
+  });
+  // 等待期間使用者可能自己取消了（例如把開關關掉、按了清除所有篩選），不要在那之後還硬是開始聆聽。
+  if (voiceRecognitionState !== "starting") return;
   const recognition = new SpeechRecognitionCtor();
   recognition.lang = "zh-TW";
   recognition.continuous = false;
   recognition.interimResults = false;
   activeRecognition = recognition;
+  // settled／markTornDown 都刻意只存在這次呼叫的區域變數（閉包），不用模組層級變數共用：
+  // 1500ms 保險逾時先觸發、下一個 session 已經把這兩個狀態重新初始化之後，萬一上一個 session 的
+  // onend 才姍姍來遲，不能讓它讀到／改到「新 session 的」狀態——例如誤判新 session 還沒處理過，
+  // 把新 session 正在進行的聆聽打斷、重複跳一次「沒聽到聲音」。detachRecognitionHandlers() 需要從
+  // cancelVoiceSearch()／handleVoiceTimeout() 等外部函式呼叫，構不到這裡的區域變數，所以 settled
+  // 多掛一份在 recognition._markSettled（物件自己的屬性，一樣是每個 session 各自獨立）。
+  let settled = false;
+  recognition._markSettled = () => { settled = true; };
+  let markTornDown;
+  recognitionTornDown = new Promise((resolve) => { markTornDown = resolve; });
   voiceTimeoutTimer = setTimeout(handleVoiceTimeout, VOICE_RECOGNITION_TIMEOUT_MS);
   recognition.onstart = () => {
     voiceRecognitionState = "listening";
@@ -1699,12 +1742,15 @@ async function startVoiceSearch(){
     try{
       // 原本以為 continuous=false 收到結果後瀏覽器會自動停止收音、釋放麥克風，不用自己呼叫 stop()——
       // 實機 iOS 測試發現這個假設是錯的：畫面（含查詢鈕圖示）都已經正確切回待機狀態，但狀態列的錄音中
-      // 指示燈一直亮著。一開始補的是 stopVoiceSearchManually()（呼叫 stop()，温和結束），但使用者
-      // 接著實測發現：第一次語音查詢正常（狀態列麥克風圖示＋錄音中圓點都出現），查完返回再用第二次，
-      // 圓點卻不見了、只剩麥克風圖示——懷疑是 stop() 的「優雅結束」在 iOS 上釋放麥克風不夠即時，快速
-      // 連續使用時底層還沒真的收尾乾淨。這裡改呼叫 abortActiveRecognition()（跟 cancelVoiceSearch()／
-      // handleVoiceTimeout() 共用的那個，拔掉事件處理器再 abort()）：這個當下 transcript 已經拿到手，
-      // 沒有「還要優雅處理剩餘音訊」的需求，abort() 立即結束收音，釋放麥克風更明確、更不依賴瀏覽器自己的時機。
+      // 指示燈一直亮著。先後試過 stop()（溫和結束）跟 abort()（立即結束），兩種寫法效果一樣：第一次
+      // 語音查詢正常（狀態列麥克風圖示＋錄音中圓點都出現），查完返回再用第二次，圓點就不見了（只剩
+      // 麥克風圖示）；使用者後來更回報第二次「完全沒聽到聲音」，確定不只是燈號好不好看，是真的收音
+      // 出問題——改哪種結束方式都沒用，代表問題不在「怎麼結束這一個 session」，而在「上一個 session
+      // 真正被瀏覽器收尾（釋放麥克風資源）之前，下一個 session 就搶著開始」：iOS 快速連續使用時，新的
+      // SpeechRecognition.start() 可能在舊的底層音訊資源還沒真的釋放乾淨時就啟動，導致新的這次根本拿
+      // 不到真正的收音。真正的修法改在 startVoiceSearch()：等瀏覽器的 onend 事件（recognitionTornDown）
+      // 真的告訴我們上一個 session 結束了，才建立下一個 SpeechRecognition；這裡呼叫 abortActiveRecognition()
+      // 單純是讓這個已經有結果的 session 盡快進入收尾（反正 transcript 已經拿到手），不是這次修法的重點。
       abortActiveRecognition();
       clearRecognitionSession();
       voiceRecognitionState = "processing";
@@ -1727,7 +1773,7 @@ async function startVoiceSearch(){
   };
   recognition.onerror = (event) => {
     if (event.error === "aborted") return; // cancelVoiceSearch()/handleVoiceTimeout() 已經拔過處理器、收尾過了
-    detachRecognitionHandlers(recognition); // 避免這個已經處理過的 session 之後又觸發 onend 重複處理
+    detachRecognitionHandlers(recognition); // 連帶標記 settled，之後才到的 onend 不會再顯示一次訊息
     const permissionIssue = event.error === "not-allowed" || event.error === "service-not-allowed";
     // Permissions API 已經查得到真正狀態時（voiceMicPermission 不是 "unknown"）不要在這裡再自己猜——
     // 使用者只是把瀏覽器原生的麥克風權限視窗按掉，真正的權限狀態通常還是 "prompt"（不是 "denied"），
@@ -1742,10 +1788,21 @@ async function startVoiceSearch(){
   };
   // onresult 已經把狀態切出 "listening" 才會進到比對/收尾（見上面），所以這裡只要還是 "listening"
   // 就代表沒收到任何結果就結束了——不用另外維護一個 voiceResultPending 旗標來記同一件事。
+  // markTornDown() 不管哪條路徑都要呼叫到：這是唯一告訴下一次 startVoiceSearch()「這個 session 真的
+  // 結束、麥克風資源釋放了」的信號，漏呼叫會讓下一次語音查詢卡在等待（1500ms 逾時後才會繼續，但仍是
+  // 不必要的延遲）。
   recognition.onend = () => {
+    markTornDown();
+    if (settled) return; // 已經被 onresult/onerror/取消/逾時處理過，不用再顯示一次訊息
+    settled = true;
     if (voiceRecognitionState === "listening"){ resetVoiceUI(); reportVoiceFailure("no-speech", "沒聽到聲音，請再試一次"); }
   };
-  try{ recognition.start(); } catch(e){ console.error(e); resetVoiceUI(); }
+  try{ recognition.start(); } catch(e){
+    console.error(e);
+    settled = true;
+    markTornDown(); // start() 丟例外代表這個 session 根本沒真的開始，不會有 onend 來呼叫它
+    resetVoiceUI();
+  }
 }
 
 // voice-search.js 比對完篩選後呼叫這兩個函式（不要直接呼叫 applyFilterState）：room 若語音沒提到
