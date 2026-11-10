@@ -968,6 +968,7 @@ document.getElementById("teacherGrid").addEventListener("change", (e) => {
 
 document.getElementById("resetFiltersBtn").addEventListener("click", (e) => {
   trackEvent("reset_filters", {});
+  cancelVoiceSearch(); // 使用者要求：清除篩選順便把語音搜尋狀態也收乾淨——沒有進行中的語音也安全（內部已判斷）
   showPillWarning(e.currentTarget, "已清除所有篩選條件");
   FILTER_GROUPS.forEach(name => {
     document.querySelectorAll(`input[name="${name}"]`).forEach(input => { input.checked = false; });
@@ -1698,12 +1699,13 @@ async function startVoiceSearch(){
     try{
       // 原本以為 continuous=false 收到結果後瀏覽器會自動停止收音、釋放麥克風，不用自己呼叫 stop()——
       // 實機 iOS 測試發現這個假設是錯的：畫面（含查詢鈕圖示）都已經正確切回待機狀態，但狀態列的錄音中
-      // 指示燈一直亮著，代表底層的收音真的還沒停。handleVoiceTimeout()／cancelVoiceSearch()／
-      // stopVoiceSearchManually() 都有明確呼叫 stop()/abort()，只有這個「成功拿到結果」的路徑沒有、
-      // 只是被動等瀏覽器自己結束——這裡補上明確呼叫 stop()，不要依賴自動行為。重用
-      // stopVoiceSearchManually()（這裡 activeRecognition 還沒被下面的 clearRecognitionSession() 清空，
-      // 跟它直接呼叫 recognition.stop() 效果相同），不要再重複寫一次一樣的 try/stop/catch。
-      stopVoiceSearchManually();
+      // 指示燈一直亮著。一開始補的是 stopVoiceSearchManually()（呼叫 stop()，温和結束），但使用者
+      // 接著實測發現：第一次語音查詢正常（狀態列麥克風圖示＋錄音中圓點都出現），查完返回再用第二次，
+      // 圓點卻不見了、只剩麥克風圖示——懷疑是 stop() 的「優雅結束」在 iOS 上釋放麥克風不夠即時，快速
+      // 連續使用時底層還沒真的收尾乾淨。這裡改呼叫 abortActiveRecognition()（跟 cancelVoiceSearch()／
+      // handleVoiceTimeout() 共用的那個，拔掉事件處理器再 abort()）：這個當下 transcript 已經拿到手，
+      // 沒有「還要優雅處理剩餘音訊」的需求，abort() 立即結束收音，釋放麥克風更明確、更不依賴瀏覽器自己的時機。
+      abortActiveRecognition();
       clearRecognitionSession();
       voiceRecognitionState = "processing";
       refreshSubmitIcon();
