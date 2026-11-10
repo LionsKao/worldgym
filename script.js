@@ -1609,7 +1609,7 @@ if (isSpeechRecognitionSupported() && navigator.permissions?.query){
   }).catch(() => {}); // 查不到（例如 Safari 不支援 "microphone" descriptor）就維持 "unknown"，退回 onerror 的 fallback
 }
 
-const loadVoiceSearch = createVendorScriptLoader("voice-search.js?v=5", () => !!window.WGVoiceSearch);
+const loadVoiceSearch = createVendorScriptLoader("voice-search.js?v=7", () => !!window.WGVoiceSearch);
 let activeRecognition = null;
 let voiceTimeoutTimer = null;
 const VOICE_RECOGNITION_TIMEOUT_MS = 10000;

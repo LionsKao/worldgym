@@ -2,7 +2,18 @@
 // 不計入一般頁面載入的 JS 體積。純比對＋套用，不自己碰 SpeechRecognition（生命週期在 script.js）。
 // 執行環境跟 script.js 同一個全域（classic script，非 module），FILTER_GROUPS/checkedValues/
 // WEEKDAY_LABEL/TIME_OPTIONS/ROOM_URL_CODE/filterOptionsSettledPromise/applyVoiceFilters/
-// submitVoiceSearch 都是 script.js 已經宣告好的全域，這裡直接取用、不重複定義。
+// submitVoiceSearch/createVendorScriptLoader 都是 script.js 已經宣告好的全域，這裡直接取用、不重複定義。
+
+// 同音異字容錯用的拼音轉換（vendor/pinyin-pro.min.js，見 matchTranscript 下方說明）：
+// 跟 voice-search.js 本身平行背景載入、不等它（跟 script.js 的 loadVoiceSearch() 同一招），
+// 載入期間若使用者已經講完話，matchTranscript() 會偵測 window.pinyinPro 還沒就緒、
+// 自動跳過拼音比對（退回純精確字串比對，等同沒有這層容錯，不會報錯卡住）。
+// 原本先選了體積小很多的 tiny-pinyin（3.5KB gzip），但實測它「用 Intl.Collator 排序做二分搜尋」
+// 的設計在現代瀏覽器的 ICU 資料下對一般常用字就不準（例如「北」轉成 bao、「橋」「前」「錢」都
+// 轉成 qie，對照本站真實分店名稱「站前」「北投」「板橋」都轉錯），換成內建完整字典、不依賴
+// Intl.Collator 排序的 pinyin-pro（145KB gzip，準確率換來的體積代價，使用者 2026-11-10 確認要準確優先）。
+const loadPinyinPro = createVendorScriptLoader("vendor/pinyin-pro.min.js?v=1", () => !!window.pinyinPro);
+loadPinyinPro().catch((e) => console.error("pinyin-pro.min.js 載入失敗", e));
 
 // 口語別名表，對應到 index.html 既有的 checkbox value。別名的值可以是單一 value 或陣列
 // （例如「週末」同時代表六跟日）。day 刻意不含裸數字（"一".."日"）當別名 key：裸數字太容易
@@ -100,10 +111,13 @@ const CATEGORY_PRIORITY = { branch: 0, teacher: 1, course: 2, day: 3, time: 4, r
 function normalize(s){
   return s.replace(/[，,。.!！?？、\s]/g, "").toLowerCase();
 }
-function matchTranscript(transcript, vocabTerms){
-  const text = normalize(transcript);
+// 掃一遍：全部詞彙（跨所有類別）依長度排序，由長到短、用 indexOf 掃描整句（不需要分詞，中文
+// 逐字比對本來就可行）。字元一旦被較長的詞彙「佔用」，較短的詞彙就不能再用同一段文字——
+// 這樣才能正確解開「台南西門」（長度 4，整段先佔走）vs 裡面碰巧也存在的「西門」（長度 2，
+// 可能是另一間分店的別名）這種重疊。只有長度完全相同時才用類別優先權當 tie-break。
+// text／vocabTerms 的 term 都要是呼叫端已經轉換好（normalize 或轉拼音）的最終字串。
+function scanTerms(text, vocabTerms){
   const vocab = vocabTerms
-    .map((t) => ({ ...t, term: normalize(t.term) }))
     .filter((t) => t.term.length > 0)
     .sort((a, b) => b.term.length - a.term.length || CATEGORY_PRIORITY[a.category] - CATEGORY_PRIORITY[b.category]);
 
@@ -125,6 +139,32 @@ function matchTranscript(transcript, vocabTerms){
       matched[category].add(value);
     }
   });
+  return matched;
+}
+// 拼音比對只當作精確比對的補強：門檻刻意設 4 個字母（約兩個音節）以上才收，太短的拼音
+// （例如兩三個字母）在任意一段話裡剛好出現的機率高，容易誤判成不相關的分店/課程/老師。
+const MIN_PINYIN_TERM_LEN = 4;
+function matchTranscript(transcript, vocabTerms){
+  const text = normalize(transcript);
+  const normalizedVocab = vocabTerms.map((t) => ({ ...t, term: normalize(t.term) }));
+  const matched = scanTerms(text, normalizedVocab);
+
+  // 同音異字容錯：語音辨識把字聽成同音的別字時（例如「熊大」聽成「雄大」），上面的精確字串
+  // 比對比不出來；多轉一層拼音（vendor/pinyin-pro.min.js）再比對一次，兩次結果取聯集，不影響
+  // 精確比對原本就比得到的結果。pinyin-pro 還沒載入完成時直接跳過這段、退回純精確比對
+  // （跟沒有這層容錯以前行為相同，不報錯）。traditional:true 對應本站內容全是繁體中文；
+  // 轉出來的英文（分店/課程裡混的 BODYCOMBAT 之類）pinyin-pro 不會自動轉小寫，這裡額外
+  // .toLowerCase() 一次，跟 normalize() 的大小寫規則一致。
+  if (window.pinyinPro){
+    const toPinyin = (s) => window.pinyinPro.pinyin(s, { toneType: "none", type: "string", separator: "", traditional: true }).toLowerCase();
+    const pinyinText = toPinyin(text);
+    const pinyinVocab = normalizedVocab
+      .map((t) => ({ ...t, term: toPinyin(t.term) }))
+      .filter((t) => t.term.length >= MIN_PINYIN_TERM_LEN);
+    const pinyinMatched = scanTerms(pinyinText, pinyinVocab);
+    FILTER_GROUPS.forEach((name) => { pinyinMatched[name].forEach((v) => matched[name].add(v)); });
+  }
+
   return Object.fromEntries(Object.entries(matched).map(([k, v]) => [k, [...v]]));
 }
 
