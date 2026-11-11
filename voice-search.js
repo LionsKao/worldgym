@@ -56,9 +56,6 @@ const TEACHER_ALIASES = {
   "瘋子豪": ["小豪"],
   "鐵板燒": ["Zac Wu"],
 };
-// 這幾堂課只開在飛輪教室。使用者只說課名、沒提到教室時，教室預設會停在「團體教室」，查出來是空的，
-// 所以講到它們就自動補上「飛輪教室」（見 applyTranscript）。新增飛輪專屬課程時加在這裡，名稱要跟課程 checkbox 的 value 一致。
-const SPIN_ONLY_COURSES = ["燃脂訓練", "間歇訓練", "EOXi", "基礎訓練"];
 
 // 詞彙的 value 可以是單一值或陣列（一個詞同時代表好幾個值，例如「週末」＝六＋日、「台北」＝台北所有分店）。
 // 同一個詞只能有一筆：scanTerms 的「字元已被佔用就跳過」規則會讓同一個詞的第二筆永遠比對不到，所以不拆成多筆。
@@ -278,12 +275,10 @@ async function applyTranscript(transcript, isCurrent, onMatched){
   onMatched?.(spans);
 
   // room 語音沒提到的話，保留使用者目前已勾選的（room 本來就有「團體教室」預設值、不列入 isSearchValid()）。
-  // 例外：講到飛輪專屬課程（SPIN_ONLY_COURSES）時，教室改成飛輪教室；同一句還講了其他一般課程的話，團體與飛輪都選。
+  // 例外：講了課程、沒講教室時，兩種教室都選——課程名稱本身已經夠精準（BODYPUMP 只在團體教室、EOXi 只在飛輪教室），
+  // 再用預設的團體教室限制，只會讓飛輪課查出空結果，也不用維護「哪些課只開在飛輪」的清單。
   let room = matched.room.length ? matched.room : checkedValues("room");
-  if (!matched.room.length){
-    const spin = matched.course.filter((c) => SPIN_ONLY_COURSES.includes(c));
-    if (spin.length) room = spin.length === matched.course.length ? ["飛輪教室"] : ["團體教室", "飛輪教室"];
-  }
+  if (!matched.room.length && matched.course.length) room = Object.keys(ROOM_URL_CODE);
   const state = { ...matched, room };
   const sufficient = matched.branch.length > 0 || matched.teacher.length > 0;
   if (sufficient){
