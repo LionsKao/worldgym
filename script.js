@@ -523,6 +523,12 @@ function trackTeacherEventOncePerSession(name, teacherName){
 
 // 下一次 search_schedule 事件的觸發來源；送出後會重置回 "manual"。
 let searchTriggerSource = "manual";
+// 語音查詢的原句顯示在結果頁篩選標籤列最前面（renderActiveFilters）。pendingVoiceTranscript 是語音比對完、
+// 尚未送出時暫存的原句（runVoiceProcessing 設定）；resultVoiceTranscript 是這次結果頁要顯示的原句，
+// 由 performSearch 決定：只有 triggerSource 是 "voice" 才有值，其他任何查詢（手動、最愛、老師連結）都清成 null。
+// 兩者都是 { text: 原句, spans: [[start, end], ...] }，spans 是聽懂的關鍵字在原句裡的字元範圍。
+let pendingVoiceTranscript = null;
+let resultVoiceTranscript = null;
 
 // 台灣今天的日期 todayIso() 在 common.js（前後台共用）。
 function addDaysIso(iso, days){
@@ -1606,7 +1612,7 @@ if (isVoiceSupported() && navigator.permissions?.query){
   }).catch(() => {}); // 查不到（例如 Safari 不支援 "microphone" descriptor）就維持 "unknown"，退回 onerror 的 fallback
 }
 
-const loadVoiceSearch = createVendorScriptLoader("voice-search.js?v=9", () => !!window.WGVoiceSearch);
+const loadVoiceSearch = createVendorScriptLoader("voice-search.js?v=14", () => !!window.WGVoiceSearch);
 let activeRecognition = null;
 let voiceTimeoutTimer = null;
 const VOICE_RECOGNITION_TIMEOUT_MS = 6000;
@@ -1796,7 +1802,10 @@ async function runVoiceProcessing(getTranscript){
     await loadVoiceSearch();
     // isCurrent 傳進去：載入引擎之後、applyTranscript 內部等篩選選項／建詞彙表還有一段非同步，取消可能發生在那裡
     // （例如被取消後又馬上開始新的一輪），voice-search.js 在那段之後檢查一次，過期就什麼都不套用、不送出。
-    const outcome = await window.WGVoiceSearch.applyTranscript(transcript, isCurrent);
+    // 聽懂的範圍（spans）由 applyTranscript 在送出之前交過來，結果頁用它把原句裡的關鍵字標色。
+    const spoken = { text: transcript, spans: [] };
+    pendingVoiceTranscript = spoken;
+    const outcome = await window.WGVoiceSearch.applyTranscript(transcript, isCurrent, (spans) => { spoken.spans = spans; });
     if (outcome === "submitted") trackEvent("voice_search_matched", {});
     else if (outcome === "insufficient") reportVoiceFailure("insufficient", "請補充分店或老師名稱再試一次");
     else if (outcome === "no-match") reportVoiceFailure("no-match", "聽不懂這個條件，請再試一次");
@@ -2202,6 +2211,19 @@ const WEEKDAY_LABEL = { today: "今天", tomorrow: "明天", 1: "一", 2: "二",
 function branchSlugToName(slug){
   return BRANCH_NAMES.get(slug) ?? slug;
 }
+// 篩選標籤顯示不完時（「等 N 間」、語音原句被截斷），點一下在標籤旁邊跳出完整內容，再點一下收起。
+function bindTagTooltip(tag, fullText){
+  tag.classList.add("has-tooltip");
+  tag.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (activeTooltipAnchor === tag){
+      hideHoverTooltip();
+    } else {
+      showHoverTooltip(tag, fullText);
+      activeTooltipAnchor = tag;
+    }
+  });
+}
 function renderActiveFilters(state){
   const box = document.getElementById("activeFiltersBox");
   const groups = [
@@ -2216,6 +2238,33 @@ function renderActiveFilters(state){
   const labelMaps = { day: WEEKDAY_LABEL, room: roomLabelMap, time: TIME_LABEL };
   box.innerHTML = "";
   let any = false;
+  if (resultVoiceTranscript){
+    // 語音查詢：最前面多一顆灰底標籤顯示轉出來的原句（尾端的句號之類標點拿掉）。太長用「…」截斷，
+    // 截斷時點一下可看全文（跟下面「等 N 間」的標籤同一個提示框）。下載圖片不要這顆（data-export-exclude）。
+    const spoken = resultVoiceTranscript.text.replace(/[\s。.!！?？,，、]+$/, "");
+    const tag = document.createElement("span");
+    tag.className = "active-filter-tag voice-transcript-tag";
+    tag.setAttribute("data-export-exclude", "");
+    const iconEl = document.createElement("i");
+    iconEl.className = "fa-solid fa-microphone";
+    const textEl = document.createElement("span");
+    textEl.className = "voice-transcript-text";
+    // 聽懂的關鍵字換個顏色（.voice-hit）。範圍已合併、由小到大排序，且不含標點，裁掉尾端標點不影響位置。
+    let pos = 0;
+    resultVoiceTranscript.spans.forEach(([start, end]) => {
+      if (start >= spoken.length) return;
+      if (start > pos) textEl.appendChild(document.createTextNode(spoken.slice(pos, start)));
+      const hit = document.createElement("span");
+      hit.className = "voice-hit";
+      hit.textContent = spoken.slice(start, Math.min(end, spoken.length));
+      textEl.appendChild(hit);
+      pos = Math.min(end, spoken.length);
+    });
+    if (pos < spoken.length) textEl.appendChild(document.createTextNode(spoken.slice(pos)));
+    tag.append(iconEl, textEl);
+    box.appendChild(tag);
+    if (textEl.scrollWidth > textEl.clientWidth) bindTagTooltip(tag, spoken);
+  }
   groups.forEach(([key, icon, unit, maxShown]) => {
     const values = state[key] || [];
     if (values.length === 0) return;
@@ -2253,19 +2302,7 @@ function renderActiveFilters(state){
         : labels.join("、");
       tag.appendChild(document.createTextNode(displayText));
     }
-    if (labels.length > maxShown){
-      const fullList = labels.join("、");
-      tag.classList.add("has-tooltip");
-      tag.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (activeTooltipAnchor === tag){
-          hideHoverTooltip();
-        } else {
-          showHoverTooltip(tag, fullList);
-          activeTooltipAnchor = tag;
-        }
-      });
-    }
+    if (labels.length > maxShown) bindTagTooltip(tag, labels.join("、"));
     box.appendChild(tag);
   });
   if (!any) box.insertAdjacentHTML("beforeend", '<span class="active-filter-tag">未設定篩選條件，顯示全部</span>');
@@ -2675,6 +2712,8 @@ async function performSearch(triggerSource){
     return;
   }
   searchTriggerSource = triggerSource;
+  resultVoiceTranscript = triggerSource === "voice" ? pendingVoiceTranscript : null;
+  pendingVoiceTranscript = null;
   const state = currentFilterState();
   const filterKey = JSON.stringify(state);
   if (filterKey === lastManualQueryKey){

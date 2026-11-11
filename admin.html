@@ -27,7 +27,7 @@
 <link rel="preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha384-PPIZEGYM1v8zp5Py7UjFb79S58UeqCL9pYVnVPURKEqvioPROaVAJKKLzvH2rDnI" crossorigin="anonymous">
 <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha384-PPIZEGYM1v8zp5Py7UjFb79S58UeqCL9pYVnVPURKEqvioPROaVAJKKLzvH2rDnI" crossorigin="anonymous"></noscript>
 <script src="css-async.js?v=1"></script>
-<link rel="stylesheet" href="style.css?v=143">
+<link rel="stylesheet" href="style.css?v=145">
 <style>
   .admin-link-row{ display:flex; gap:6px; flex-wrap:wrap; margin-top:14px; }
   .admin-link-btn{
@@ -82,9 +82,8 @@
   .favorite-stats-label{ font-size:11.5px; color:var(--sub); }
   .voice-stats-summary{ flex-wrap:wrap; row-gap:12px; }
   .voice-stats-summary .favorite-stats-item{ flex:1 1 30%; min-width:90px; }
-  .voice-usage-link{ font-size:12px; color:var(--sub); text-decoration:none; }
+  #voiceUsageLink{ cursor:pointer; text-decoration:none; }
   .voice-stats-table-wrap{ margin-top:14px; }
-  .voice-stats-note{ margin:10px 0 0; font-size:11.5px; color:var(--sub); line-height:1.5; }
 
   .ad-chart-wrap{ display:flex; align-items:center; gap:6px; margin-top:12px; }
   .ad-chart-nav{
@@ -214,8 +213,7 @@
     <div class="sheet admin-col">
       <div class="field-block" style="--accent:var(--purple)">
         <div class="section-head">
-          <span class="section-tag"><i class="fa-solid fa-fw fa-microphone"></i>語音</span>
-          <a class="voice-usage-link" href="https://dash.cloudflare.com/?to=/:account/ai/workers-ai" target="_blank" rel="noopener">Cloudflare 用量 <i class="fa-solid fa-arrow-up-right-from-square"></i></a>
+          <a class="section-tag" id="voiceUsageLink" href="https://dash.cloudflare.com/?to=/:account/ai/workers-ai" target="_blank" rel="noopener" title="開啟 Cloudflare Workers AI 用量"><i class="fa-solid fa-fw fa-microphone"></i>語音</a>
         </div>
         <div id="voiceStatsSummary" class="favorite-stats-summary voice-stats-summary"></div>
         <div id="voiceTrendWrap"></div>
@@ -224,7 +222,6 @@
           <span class="stats-chart-legend-item"><span class="stats-chart-legend-swatch" style="background:#eb6834"></span>其他結果</span>
         </div>
         <div id="voiceOutcomeTableWrap" class="access-log-table-wrap voice-stats-table-wrap"></div>
-        <p class="voice-stats-note">只涵蓋送到 Worker 的錄音上傳，也就是 iPhone／iPad；桌面與 Android 的瀏覽器內建辨識不經過 Worker，看不到（那邊看 GA）。實際花費以 Cloudflare 的 Workers AI 用量為準。</p>
       </div>
     </div>
 

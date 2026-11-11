@@ -528,6 +528,11 @@ html:not(.xmas) .fav-color-pill.xmas-only, html.xmas .fav-color-pill.xmas-replac
 }
 .active-filter-tag i{ padding-right:7px; font-size:12px; }
 .active-filter-tag.has-tooltip{ cursor:pointer; }
+/* 語音查詢的原句標籤：太長用「…」截斷（外層縮得進去、文字那層 overflow:hidden），圖示不縮 */
+.voice-transcript-tag{ max-width:100%; flex-shrink:1; min-width:0; }
+.voice-transcript-tag i{ flex-shrink:0; }
+.voice-hit{ color:var(--coral); } /* 原句裡聽懂的關鍵字，跟麥克風鈕同一個紅 */
+.voice-transcript-text{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .mail-disclaimer{
   display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-start; gap:12px;
   color:var(--sub); font-size:14px; font-weight:600; line-height:1.6;
