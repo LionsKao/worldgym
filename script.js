@@ -1080,7 +1080,6 @@ function favoriteLabel(state){
   }
   return randomFunnyFavoriteLabel();
 }
-const FAVORITE_EMPTY_HINT = '查詢後按結果頁下方的 <i class="fa-solid fa-heart"></i> 加入最愛，長按最愛可編輯。';
 function applyFavorite(fav){
   applyFilterState(fav.state);
   SELECTION_STORAGE_KEYS.forEach(removeStored);
@@ -1154,12 +1153,12 @@ const FAV_RAINBOW_CLASSES = new Map([
 function renderFavorites(){
   updateFavoriteHeart();
   const grid = document.getElementById("favoriteGrid");
-  grid.querySelectorAll(".fav-item, .empty-hint").forEach(el => el.remove());
+  grid.querySelectorAll(".fav-item").forEach(el => el.remove());
   const favs = getFavorites();
-  if (favs.length === 0){
-    grid.insertAdjacentHTML("beforeend", `<span class="empty-hint fav-empty-hint">${FAVORITE_EMPTY_HINT}</span>`);
-    return;
-  }
+  // 沒有最愛就整張卡隱藏（用獨立的 class、不碰 hidden：showFilterView 等處會直接切 hidden，
+  // 不能因此又把空卡片翻出來）；index.html 預設就帶 fav-none，所以載入時不會先閃一下再消失。
+  document.getElementById("favoriteSheet").classList.toggle("fav-none", favs.length === 0);
+  if (favs.length === 0) return;
   favs.forEach((fav, index) => {
     const btn = document.createElement("button");
     btn.type = "button";

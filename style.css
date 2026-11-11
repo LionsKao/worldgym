@@ -200,7 +200,7 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
 .stats-chart-legend{ display:flex; justify-content:center; gap:16px; margin-top:14px; font-size:12px; color:var(--sub); }
 .stats-chart-legend-item{ display:flex; align-items:center; gap:6px; }
 .stats-chart-legend-swatch{ width:14px; height:5px; border-radius:3px; display:inline-block; }
-.fav-empty-hint{ flex:1; min-width:0; font-size:12.5px; }
+#favoriteSheet.fav-none{ display:none; } /* 沒有最愛時整張卡隱藏，script.js 的 renderFavorites() 決定要不要加這個 class */
 
 .collapsible{
   position:relative; max-height:160px; overflow:hidden;
