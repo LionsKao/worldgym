@@ -53,7 +53,6 @@ const COURSE_ALIASES = {
 // 老師的綽號／組合：一個詞可以對應好幾位老師（值是老師名稱陣列，要跟老師 checkbox 的 value 一致）。
 const TEACHER_ALIASES = {
   "破音": ["黑黑", "Shawn"],
-  "瘋子豪": ["小豪"],
   "鐵板燒": ["Zac Wu"],
 };
 
@@ -275,10 +274,11 @@ async function applyTranscript(transcript, isCurrent, onMatched){
   onMatched?.(spans);
 
   // room 語音沒提到的話，保留使用者目前已勾選的（room 本來就有「團體教室」預設值、不列入 isSearchValid()）。
-  // 例外：講了課程、沒講教室時，兩種教室都選——課程名稱本身已經夠精準（BODYPUMP 只在團體教室、EOXi 只在飛輪教室），
-  // 再用預設的團體教室限制，只會讓飛輪課查出空結果，也不用維護「哪些課只開在飛輪」的清單。
+  // 例外：講了課程或老師、沒講教室時，兩種教室都選——課程、老師名稱本身已經夠精準（BODYPUMP 只在團體教室、
+  // EOXi 只在飛輪教室，老師也可能兩種教室都教），再用預設的團體教室限制，只會漏掉飛輪課，
+  // 也不用維護「哪些課／老師只開在飛輪」的清單。只講分店、星期、時段不算（範圍太大，維持預設團體教室）。
   let room = matched.room.length ? matched.room : checkedValues("room");
-  if (!matched.room.length && matched.course.length) room = Object.keys(ROOM_URL_CODE);
+  if (!matched.room.length && (matched.course.length || matched.teacher.length)) room = Object.keys(ROOM_URL_CODE);
   const state = { ...matched, room };
   const sufficient = matched.branch.length > 0 || matched.teacher.length > 0;
   if (sufficient){
