@@ -122,11 +122,13 @@ const CHART_TOOLTIP_STYLE = {
 };
 
 function monthTickLabel(d){
-  const [yyyy, mm] = d.month.split("-");
-  return [yyyy, mm];
+  const parts = d.month.split("-");
+  // 每日資料（YYYY-MM-DD，後台語音面板）只顯示「月/日」；月度資料（YYYY-MM）維持上下兩行「年／月」。
+  if (parts.length === 3) return [`${parts[1]}/${parts[2]}`];
+  return [parts[0], parts[1]];
 }
 
-// 月度折線圖工廠：data 是 [{ month: "YYYY-MM", ...數值欄位 }]，series 是 [{ key, label, color }]（一或兩條）。
+// 月度折線圖工廠：data 是 [{ month: "YYYY-MM", ...數值欄位 }]（後台語音面板傳每日資料，month 放 "YYYY-MM-DD"），series 是 [{ key, label, color }]（一或兩條）。
 // 兩條線時用左右各自獨立的座標軸（yA、yB），避免量級差太大時其中一條線貼著 0 看不出變化；
 // ticks.count 固定成一樣的格線數，讓左右座標的刻度對齊同一條水平格線。
 // aspectRatio 有給就固定寬高比；不給就撐滿容器（高度由 CSS 的 min-height 決定，才不會動態改高度造成 CLS）。

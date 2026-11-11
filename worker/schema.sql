@@ -270,3 +270,14 @@ CREATE TABLE ad_monthly (
   cnt INTEGER NOT NULL,
   PRIMARY KEY (month, adId, type)
 );
+
+-- 語音搜尋每日計數（見 migrations/022_voice_daily.sql 的說明：不留單筆資料，直接存每天的次數）。
+DROP TABLE IF EXISTS voice_daily;
+CREATE TABLE voice_daily (
+  day TEXT NOT NULL,
+  outcome TEXT NOT NULL,
+  cnt INTEGER NOT NULL DEFAULT 0,
+  bytes_sum INTEGER NOT NULL DEFAULT 0,
+  ms_sum INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, outcome)
+);

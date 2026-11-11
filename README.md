@@ -86,7 +86,7 @@
 | 推播提醒 | `POST /registerReminder`、`/cancelReminder`、`GET /myReminders`（各 60） | 見「推播提醒」 |
 | 其他 | `POST /sendMessageToAuthor`（5） | 留言轉發到 Teams |
 | 語音搜尋 | `POST /transcribeVoice`（10） | 只有 iOS／iPadOS 用：前端錄最長 8 秒音訊上傳，Worker 用 Workers AI（`AI` binding，Whisper）轉成文字回傳；要帶 `/issueToken` 的 token，音檔不儲存（上限 256KB，另有全站每日 2000 次的額度，超過回 429）。其他裝置用瀏覽器內建語音辨識，不經過這個端點 |
-| 後台 | `POST /verifyAdminToken`（10）、`GET /adStats`、`/favoriteStats`、`/reminderStats`、`/queryAccessStats`（各 30）、`GET /scrapeManual`、`POST /scanNewBranches`、`/cleanupStaleBranches`、`/rollupAnalyticsManual`（各 5） | 除登入外都要帶 session token；`/scrapeManual` 以串流回傳進度 |
+| 後台 | `POST /verifyAdminToken`（10）、`GET /adStats`、`/favoriteStats`、`/reminderStats`、`/voiceStats`、`/queryAccessStats`（各 30）、`GET /scrapeManual`、`POST /scanNewBranches`、`/cleanupStaleBranches`、`/rollupAnalyticsManual`（各 5） | 除登入外都要帶 session token；`/scrapeManual` 以串流回傳進度 |
 
 ## 🗄️ 資料表總覽
 
@@ -99,6 +99,7 @@ D1（`worldgym-schedule`）的 table，完整欄位以 [`worker/schema.sql`](wor
 | `meta_filter_options` | 篩選用的課程／老師名稱清單快取（爬蟲跑完才更新） |
 | `reminders` | 課前推播提醒的登記與發送狀態 |
 | `reminder_add_events` / `reminder_add_monthly` | 提醒功能使用量：只記「登記」被觸發幾次，不分辨是不是同一人、不追蹤取消 |
+| `voice_daily` | 語音搜尋（`POST /transcribeVoice`，只有 iOS／iPadOS）每天各種結果的次數、音檔位元組與耗時總和；不記 IP、轉錄文字、音檔，直接存每日計數（不走 events＋monthly），給後台「語音」面板用 |
 | `ads` | 首頁廣告內容與上下架時間（`schema.sql` 末尾有初始廣告的 INSERT） |
 | `ad_events` / `ad_monthly` | 廣告曝光／點擊明細與月度彙總 |
 | `teacher_search_events` / `course_search_events` / `branch_search_events`（各有 `*_monthly`） | 老師／課程／分店被查詢的次數 |
@@ -161,6 +162,7 @@ npx wrangler d1 execute worldgym-schedule --remote --command="UPDATE ads SET ena
 | 廣告 | `ad_events` / `ad_monthly` | 每則廣告（或全部加總）近 12 個月的曝光／點擊折線圖，可翻頁切換月份視窗 |
 | 最愛 | `favorite_events` / `favorite_monthly` / `favorite_client_seen` | 累積建立人數（全時間去重）、累積使用次數，近 12 個月折線圖 |
 | 提醒 | `reminder_add_events` / `reminder_add_monthly` | 累積登記次數，近 12 個月折線圖（沒紀錄的月份補 0），用來評估功能有沒有人用 |
+| 語音 | `voice_daily` | 今日／近 7 天請求數、成功率、平均音檔大小與耗時、今日額度（N／2000），近 30 天每日折線圖與依結果分類的表格；只涵蓋 iPhone／iPad 的錄音上傳 |
 | 存取紀錄 | `query_access_log` | 依 IP 分組列出 `/issueToken`、`/queryClasses` 的次數與被限流次數，可切換 7／14／30 天；請求間隔過於規律的 IP 會標色 |
 
 折線圖用 [Chart.js](https://www.chartjs.org/)（`vendor/chart.umd.min.js`），共用的 `createLineChart()` 在 `common.js`。另有一個終端機面板：「重抓全部分店」（需二次確認，進度即時串流顯示）、「清除已停用分店的舊資料」，以及 Cloudflare 資料庫、Google Analytics、Cloudflare Web Analytics 的快速連結。

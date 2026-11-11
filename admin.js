@@ -67,6 +67,7 @@ function enterAdmin(sessionToken){
   loadAdStats();
   loadFavoriteStats();
   loadReminderStats();
+  loadVoiceStats();
   loadQueryAccessStats();
 }
 let loginErrorTimer = null;
@@ -383,6 +384,118 @@ async function loadReminderStats(){
     console.error(e);
     reminderStatsSummary.textContent = "";
     reminderTrendWrap.textContent = "載入失敗，請重新登入";
+  }
+}
+
+// --- 語音面板：近 30 天每日請求數（折線圖）＋幾個摘要數字＋依結果分類的表格，資料來自 GET /voiceStats（見 worker 的
+// voice_daily）。只涵蓋 iOS／iPadOS 的錄音上傳；桌面與 Android 的原生辨識不經過 Worker。 ---
+const voiceStatsSummary = document.getElementById("voiceStatsSummary");
+const voiceTrendWrap = document.getElementById("voiceTrendWrap");
+const voiceOutcomeTableWrap = document.getElementById("voiceOutcomeTableWrap");
+let voiceTrendChartInstance = null;
+
+// 順序就是表格的列順序。key 要跟 worker 的 recordVoiceOutcome() 寫入的 outcome 一致。
+const VOICE_OUTCOMES = [
+  { key: "ok", label: "成功轉出文字" },
+  { key: "empty", label: "沒有內容（靜音）" },
+  { key: "ai_error", label: "Workers AI 出錯" },
+  { key: "too_large", label: "音檔過大" },
+  { key: "too_small", label: "音檔過小" },
+  { key: "daily_limit", label: "撞到每日上限" },
+];
+// 真的送進 Workers AI 的結果：只有這些才花 Neurons、才有意義的音檔大小與耗時，也是計入每日額度的那些。
+const VOICE_AI_OUTCOMES = ["ok", "empty", "ai_error"];
+
+function addDays(dateStr, delta){
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
+
+// 由舊到新的每日視窗（以 endDay 為最右邊），沒紀錄的日期補 0，跟月度圖一樣不會因為沒資料就整個面板空著。
+// month 欄位放日期（YYYY-MM-DD）：createLineChart 的資料格式叫 month，見 common.js 的 monthTickLabel。
+function buildVoiceDayWindow(rows, endDay, days){
+  const byDay = {};
+  for (const r of rows){
+    (byDay[r.day] ||= {})[r.outcome] = r;
+  }
+  const entries = [];
+  for (let i = days - 1; i >= 0; i--){
+    const day = addDays(endDay, -i);
+    const outcomes = byDay[day] || {};
+    const count = (key) => outcomes[key]?.cnt || 0;
+    const total = VOICE_OUTCOMES.reduce((sum, o) => sum + count(o.key), 0);
+    entries.push({ month: day, ok: count("ok"), other: total - count("ok"), total, count });
+  }
+  return entries;
+}
+
+function sumVoiceWindow(entries, pick){
+  return entries.reduce((sum, d) => sum + pick(d), 0);
+}
+
+function voiceStatItem(num, label){
+  return `<div class="favorite-stats-item"><div class="favorite-stats-num">${num}</div><div class="favorite-stats-label">${label}</div></div>`;
+}
+
+function renderVoiceStats(data){
+  const days = data.days || 30;
+  const entries = buildVoiceDayWindow(data.rows || [], data.today, days);
+  const last7 = entries.slice(-7);
+  const todayEntry = entries[entries.length - 1];
+
+  const total7 = sumVoiceWindow(last7, (d) => d.total);
+  const ok7 = sumVoiceWindow(last7, (d) => d.ok);
+  // 平均音檔大小與 Whisper 耗時：只算真的送進 Workers AI 的請求（被擋下的請求位元組不準、也沒有耗時），用整個 30 天視窗讓樣本多一點。
+  let aiCnt = 0, aiBytes = 0, aiMs = 0;
+  for (const r of data.rows || []){
+    if (!VOICE_AI_OUTCOMES.includes(r.outcome)) continue;
+    aiCnt += r.cnt; aiBytes += r.bytesSum; aiMs += r.msSum;
+  }
+  const todayAi = sumVoiceWindow([todayEntry], (d) => VOICE_AI_OUTCOMES.reduce((s, k) => s + d.count(k), 0));
+
+  voiceStatsSummary.innerHTML = [
+    voiceStatItem(todayEntry.total, "今日請求"),
+    voiceStatItem(total7, "近 7 天請求"),
+    voiceStatItem(total7 ? `${Math.round((ok7 / total7) * 100)}%` : "—", "近 7 天成功率"),
+    voiceStatItem(aiCnt ? `${(aiBytes / aiCnt / 1024).toFixed(0)} KB` : "—", `平均音檔（近 ${days} 天）`),
+    voiceStatItem(aiCnt ? `${(aiMs / aiCnt / 1000).toFixed(1)} 秒` : "—", `平均耗時（近 ${days} 天）`),
+    voiceStatItem(`${todayAi}／${data.dailyLimit}`, "今日額度"),
+  ].join("");
+
+  voiceTrendChartInstance = renderTrendChart(voiceTrendWrap, voiceTrendChartInstance, {
+    data: entries,
+    series: [
+      { key: "ok", label: "成功轉出文字", color: "#2a78d6" },
+      { key: "other", label: "其他結果", color: "#eb6834" },
+    ],
+    ariaLabel: `近 ${days} 天語音搜尋每日請求數趨勢`,
+  });
+
+  const rowHtml = (label, today, week, month) =>
+    `<tr><td>${label}</td><td>${today}</td><td>${week}</td><td>${month}</td></tr>`;
+  const rows = VOICE_OUTCOMES.map(({ key, label }) => rowHtml(
+    label,
+    todayEntry.count(key),
+    sumVoiceWindow(last7, (d) => d.count(key)),
+    sumVoiceWindow(entries, (d) => d.count(key)),
+  )).join("");
+  voiceOutcomeTableWrap.innerHTML = `
+    <table class="access-log-table">
+      <thead><tr><th>結果</th><th>今日</th><th>近 7 天</th><th>近 ${days} 天</th></tr></thead>
+      <tbody>${rows}${rowHtml("<b>合計</b>", todayEntry.total, total7, sumVoiceWindow(entries, (d) => d.total))}</tbody>
+    </table>
+  `;
+}
+
+async function loadVoiceStats(){
+  try{
+    renderVoiceStats(await adminJson("/voiceStats"));
+  } catch(e){
+    console.error(e);
+    voiceStatsSummary.textContent = "";
+    voiceTrendWrap.textContent = "載入失敗，請重新登入";
+    voiceOutcomeTableWrap.textContent = "";
   }
 }
 

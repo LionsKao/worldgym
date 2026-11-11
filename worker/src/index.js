@@ -541,6 +541,7 @@ const VOICE_MAX_TEXT_LENGTH = 200;
 // 超過回 429，前端會顯示「操作太頻繁」，使用者仍可手動查詢。計數用 takeKvQuota（非原子、爆量時可能少算），
 // 所以這是「大致的」上限、不是硬性保證；要硬上限得改用原子計數（D1）或 AI Gateway，目前流量不值得。
 const VOICE_DAILY_LIMIT = 2000;
+const VOICE_STATS_DAYS = 30; // 後台「語音」面板顯示近幾天（GET /voiceStats）
 // 提示語氣：Whisper 預設中文常輸出簡體，這句用繁體寫，把輸出往繁體拉。
 // **刻意不放任何具體的分店／星期／課程**：Whisper 遇到太短、太吵或聽不清的音訊時，常會把提示語原句吐回來，
 // 而語音搜尋比對到完整條件就會「不經確認直接送出查詢」——提示語若是一個有效查詢，使用者就會莫名其妙看到一組沒講過的結果。
@@ -574,6 +575,22 @@ async function readBodyCapped(req, maxBytes) {
 function takeVoiceDailyBudget(env, ctx) {
   return takeKvQuota(env, ctx, `voice-daily:${todayIsoTaipei()}`, VOICE_DAILY_LIMIT, 172800);
 }
+// 每日計數（給後台「語音」面板，見 migrations/022_voice_daily.sql）：只記次數、音檔位元組與 Whisper 耗時，
+// 不記 IP、轉錄文字、音檔、clientId。放 waitUntil 背景寫入，而且寫入失敗（例如還沒跑 migration、D1 暫時出錯）
+// 只記 log、絕不影響使用者的轉錄結果。遞增用 ON CONFLICT DO UPDATE，是原子的。
+// token 錯誤、格式不對（415）、每 IP 限流在進到 handler 之前就被擋掉，不計入。
+function recordVoiceOutcome(env, ctx, outcome, bytes = 0, ms = 0) {
+  try {
+    ctx.waitUntil(
+      env.DB.prepare(
+        `INSERT INTO voice_daily (day, outcome, cnt, bytes_sum, ms_sum) VALUES (?, ?, 1, ?, ?)
+         ON CONFLICT(day, outcome) DO UPDATE SET cnt = cnt + 1, bytes_sum = bytes_sum + excluded.bytes_sum, ms_sum = ms_sum + excluded.ms_sum`
+      ).bind(todayIsoTaipei(), outcome, bytes, ms).run().catch((e) => console.error("voice_daily 寫入失敗", e))
+    );
+  } catch (e) {
+    console.error("voice_daily 寫入失敗", e); // 同步丟出的錯誤（例如沒有 DB 綁定）也不能讓轉錄回 500
+  }
+}
 // token 驗證由 ROUTES 的 queryToken: true 在 fetch() 統一處理，這裡只管語音轉錄本身。
 async function handleTranscribeVoice({ req, env, ctx, origin }) {
   if (!env.AI) {
@@ -586,13 +603,26 @@ async function handleTranscribeVoice({ req, env, ctx, origin }) {
   // 有 Content-Length 且明顯過大就直接擋，不用讀 body；沒有（chunked）或不可信時不拒絕，
   // 改成邊讀邊算、超過上限就中止（readBodyCapped）。只量到位元組、量不到秒數，所以另有每日上限（takeVoiceDailyBudget）。
   const declaredLength = parseInt(req.headers.get("Content-Length") || "", 10);
-  if (Number.isFinite(declaredLength) && declaredLength > VOICE_MAX_BYTES) return json({ error: "too large" }, 413, origin);
+  if (Number.isFinite(declaredLength) && declaredLength > VOICE_MAX_BYTES) {
+    recordVoiceOutcome(env, ctx, "too_large", declaredLength);
+    return json({ error: "too large" }, 413, origin);
+  }
   const audio = await readBodyCapped(req, VOICE_MAX_BYTES);
-  if (!audio) return json({ error: "too large" }, 413, origin);
-  if (audio.length < VOICE_MIN_BYTES) return json({ error: "too small" }, 400, origin);
+  if (!audio) {
+    recordVoiceOutcome(env, ctx, "too_large"); // 沒有 Content-Length 的過大請求量不到實際大小，位元組記 0
+    return json({ error: "too large" }, 413, origin);
+  }
+  if (audio.length < VOICE_MIN_BYTES) {
+    recordVoiceOutcome(env, ctx, "too_small", audio.length);
+    return json({ error: "too small" }, 400, origin);
+  }
   // 放在大小／格式檢查之後：格式不對或太小的請求不會吃掉每日額度。
-  if (!(await takeVoiceDailyBudget(env, ctx))) return json({ error: "voice_daily_limit" }, 429, origin);
+  if (!(await takeVoiceDailyBudget(env, ctx))) {
+    recordVoiceOutcome(env, ctx, "daily_limit", audio.length);
+    return json({ error: "voice_daily_limit" }, 429, origin);
+  }
   let result;
+  const startedAt = Date.now();
   try {
     result = await env.AI.run(VOICE_MODEL, {
       audio: audio.toString("base64"),
@@ -603,9 +633,11 @@ async function handleTranscribeVoice({ req, env, ctx, origin }) {
     });
   } catch (e) {
     console.error("語音轉錄失敗", e);
+    recordVoiceOutcome(env, ctx, "ai_error", audio.length, Date.now() - startedAt);
     return json({ error: "transcribe_failed" }, 502, origin);
   }
   const text = stripPromptEcho(String(result?.text ?? "")).slice(0, VOICE_MAX_TEXT_LENGTH);
+  recordVoiceOutcome(env, ctx, text ? "ok" : "empty", audio.length, Date.now() - startedAt);
   return json({ text }, 200, origin);
 }
 
@@ -758,6 +790,20 @@ const ROUTES = {
   "GET /reminderStats": {
     limit: 30, admin: true,
     handler: async ({ env, origin }) => json(await reminderStatsCombined(env.DB), 200, origin),
+  },
+
+  // admin.html「語音」面板：近 30 天（含今天）的每日計數，原樣回傳 voice_daily 的列，加總、補 0 的日期、
+  // 成功率與平均值都交給前端算（資料量只有 30 天 × 幾種結果，很小）。只涵蓋 /transcribeVoice 實際收到的請求，
+  // 也就是只有 iOS／iPadOS；桌面與 Android 的原生辨識不經過 Worker，看不到（那邊看 GA）。
+  "GET /voiceStats": {
+    limit: 30, admin: true,
+    handler: async ({ env, origin }) => {
+      const since = taiwanIso(-(VOICE_STATS_DAYS - 1) * 86400000).slice(0, 10);
+      const { results } = await env.DB.prepare(
+        "SELECT day, outcome, cnt, bytes_sum AS bytesSum, ms_sum AS msSum FROM voice_daily WHERE day >= ? ORDER BY day"
+      ).bind(since).all();
+      return json({ today: todayIsoTaipei(), days: VOICE_STATS_DAYS, dailyLimit: VOICE_DAILY_LIMIT, rows: results }, 200, origin);
+    },
   },
 
   // 讀 meta_filter_options 快取（一列資料），不用每次頁面載入都對 classes 全表重新 GROUP BY。
