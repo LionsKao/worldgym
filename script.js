@@ -1611,7 +1611,7 @@ if (isVoiceSupported() && navigator.permissions?.query){
   }).catch(() => {}); // 查不到（例如 Safari 不支援 "microphone" descriptor）就維持 "unknown"，退回 onerror 的 fallback
 }
 
-const loadVoiceSearch = createVendorScriptLoader("voice-search.js?v=16", () => !!window.WGVoiceSearch);
+const loadVoiceSearch = createVendorScriptLoader("voice-search.js?v=18", () => !!window.WGVoiceSearch);
 let activeRecognition = null;
 let voiceTimeoutTimer = null;
 const VOICE_RECOGNITION_TIMEOUT_MS = 6000;
@@ -2056,13 +2056,21 @@ function startVoiceSearch(){
 // 教室類型，voice-search.js 會自己補目前勾選的值，這裡只負責套用＋存＋（送出版）直接呼叫共用的
 // performSearch()（見 filterForm 的 submit 監聽器旁邊）——不透過 requestSubmit() 重新進入表單監聽器，
 // 這樣 searchTriggerSource 不會被誤判，也不需要任何旗標去猜「這次重入是不是語音觸發的」。
-function applyVoiceFilters(state){
+// named：語音明確講到的單一分店／課程／老師（整區全選詞不算，見 voice-search.js 的 matchTranscript），
+// 語音等於替使用者勾起來，所以各加一次常用排序次數，跟手動點選 checkbox 一樣；返回篩選頁時 showFilterView()
+// 會依這些次數重排，被講到的項目就會排到前面。
+function applyVoiceFilters(state, named){
   applyFilterState(state); // 內部已呼叫 updateSubmitState()
   FILTER_GROUPS.forEach(name => saveSelection(`wg_selected_${name}`, [name]));
   updateResetButtonState();
+  if (named){
+    named.branch?.forEach(v => incrementClickCount("wg_branch_clicks", v));
+    named.course?.forEach(v => incrementClickCount("wg_course_clicks", v));
+    named.teacher?.forEach(v => incrementClickCount("wg_teacher_clicks", v));
+  }
 }
-function submitVoiceSearch(state){
-  applyVoiceFilters(state);
+function submitVoiceSearch(state, named){
+  applyVoiceFilters(state, named);
   performSearch("voice");
 }
 window.applyVoiceFilters = applyVoiceFilters;
@@ -2458,6 +2466,13 @@ function renderTeacherGrid(){
 function reorderTeacherGrid(){
   reorderPillsByClicks(document.getElementById("teacherGrid"), "wg_teacher_clicks");
 }
+// 返回篩選頁時，分店（各分區內）、課程、老師三組都依最新的常用次數重排：手動點選與語音勾選都會加次數，
+// 被查過的項目返回後排到前面。只搬動既有節點，順序沒變就不搬。
+function reorderFilterGrids(){
+  document.querySelectorAll("#branchGrid .zone-group").forEach(group => reorderPillsByClicks(group, "wg_branch_clicks"));
+  reorderPillsByClicks(document.getElementById("courseGrid"), "wg_course_clicks");
+  reorderTeacherGrid();
+}
 // 縮課日：國定假日（含補假）當天，分店改用假日課表，開課時間大多落在整點或 30 分（平常的平日是每堂隔 10 分鐘，
 // 例如 08:40、09:50）。官方資料沒有任何標記，開課時間也不是可靠的條件（10/26 實測有 16 間分店、33 堂課
 // 在 :10／:20／:40／:50 開始，例如長春 09:40 的瑜伽球，但整天仍是假日課表），所以只靠人工維護的日期：
@@ -2598,10 +2613,10 @@ function showFilterView(){
   document.getElementById("mailContent").disabled = false;
   setHidden(["mailSentOverlay"], true);
   document.getElementById("mailSendBtn").disabled = false;
-  // reorderTeacherGrid() 用 appendChild 重排 #teacherGrid 裡寬度不一的 pill（flex-wrap），
+  // reorderFilterGrids() 用 appendChild 重排分店／課程／老師 grid 裡寬度不一的 pill（flex-wrap），
   // 排序結果會改變換行位置、進而改變 grid 高度；一定要趁 mainFormSheet 還是 display:none
   // 時排完，翻牌後才不會又造成一次 Cloudflare Web Analytics 抓到的 #mainFormSheet CLS。
-  reorderTeacherGrid();
+  reorderFilterGrids();
   // favoriteSheet 在 DOM 順序上排在 mainFormSheet 前面，
   // 要先讓它們恢復顯示、版面高度定案，mainFormSheet 才不會在自己淡入之後又被
   // 前面冒出來的 favoriteSheet 推擠位置，造成 Cloudflare Web Analytics 抓到的

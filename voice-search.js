@@ -88,6 +88,23 @@ function branchTerms(){
     terms.push({ category: "branch", value: input.value, term: label + "分店" });
     if (city && !label.startsWith(city)) terms.push({ category: "branch", value: input.value, term: city + label });
   });
+  // 同前綴分店：好幾間分店名稱開頭相同（板橋雙十／板橋中山／板橋府中／板橋重慶、鳳山五甲／鳳山中山），
+  // 講「板橋」「鳳山」就是整組一起選。前綴取前 2 個字、至少 2 間分店共用，而且前綴本身不是某間分店的名稱
+  // （「永和」「土城」本身就是一間分店，不能變成整組）。一樣標 group:true，講了單一分店就不整組生效。
+  const byPrefix = new Map();
+  const allLabels = new Set();
+  document.querySelectorAll('#branchGrid input[name="branch"]').forEach((input) => {
+    const label = input.nextElementSibling ? input.nextElementSibling.textContent : "";
+    if (!label) return;
+    allLabels.add(label);
+    if (label.length < 3) return;
+    const prefix = label.slice(0, 2);
+    if (!byPrefix.has(prefix)) byPrefix.set(prefix, []);
+    byPrefix.get(prefix).push(input.value);
+  });
+  byPrefix.forEach((values, prefix) => {
+    if (values.length >= 2 && !allLabels.has(prefix)) terms.push({ category: "branch", value: values, term: prefix, group: true });
+  });
   // 「台北」「新北」「台中」「台南」「高屏」：等於按下分店區塊的「xx全選」按鈕，一個詞選起該區所有分店。
   // 直接讀那排按鈕的 data 屬性，範圍跟按鈕完全一致（台北／新北是單一縣市，台中／台南／高屏是官方分區，
   // 台中區含彰化南投雲林、台南區含嘉義、高屏區含高雄屏東），不另外手寫一份。
@@ -165,7 +182,10 @@ function normalizeWithMap(s){
 // 這樣才能正確解開「台南西門」（長度 4，整段先佔走）vs 裡面碰巧也存在的「西門」（長度 2，
 // 可能是另一間分店的別名）這種重疊。只有長度完全相同時才用類別優先權當 tie-break。
 // text／vocabTerms 的 term 都要是呼叫端已經轉換好（normalize 或轉拼音）的最終字串。
-function scanTerms(text, vocabTerms){
+// boundaries（選填）：允許的切點位置集合；有給的話，比對的起點與終點都必須落在切點上。拼音比對用它，
+// 限制只能從「一個字的開頭」比到「一個字的結尾」：不然「板橋」(banqiao) 會從 ban|qiao 中間切進去，
+// 誤中老師「安起」(anqi)。
+function scanTerms(text, vocabTerms, boundaries){
   const vocab = vocabTerms
     .filter((t) => t.term.length > 0)
     .sort((a, b) => b.term.length - a.term.length || CATEGORY_PRIORITY[a.category] - CATEGORY_PRIORITY[b.category]);
@@ -183,6 +203,7 @@ function scanTerms(text, vocabTerms){
     while ((idx = text.indexOf(term, from)) !== -1){
       from = idx + 1;
       const end = idx + term.length;
+      if (boundaries && !(boundaries.has(idx) && boundaries.has(end))) continue;
       let overlap = false;
       for (let i = idx; i < end; i++){ if (claimed[i]){ overlap = true; break; } }
       if (overlap) continue;
@@ -217,7 +238,9 @@ function matchTranscript(transcript, vocabTerms){
     const pinyinVocab = normalizedVocab
       .map((t) => ({ ...t, term: toPinyin(t.term) }))
       .filter((t) => t.term.length >= MIN_PINYIN_TERM_LEN);
-    const pinyinScan = scanTerms(pinyinText, pinyinVocab);
+    const boundaries = new Set([0]);
+    syllables.reduce((pos, s) => { boundaries.add(pos + s.length); return pos + s.length; }, 0);
+    const pinyinScan = scanTerms(pinyinText, pinyinVocab, boundaries);
     FILTER_GROUPS.forEach((name) => { pinyinScan.matched[name].forEach((v) => matched[name].add(v)); });
     groups.push(...pinyinScan.groups);
     if (syllables.length === text.length){
@@ -234,6 +257,10 @@ function matchTranscript(transcript, vocabTerms){
       });
     }
   }
+
+  // 明確講到的單一分店／課程／老師（還沒加入整區全選與同前綴的整組分店）：script.js 用它替常用排序
+  // （wg_*_clicks）各加一次，跟使用者手動點選一樣。整組詞不算，因為手動按「xx全選」也不會加。
+  const named = { branch: [...matched.branch], course: [...matched.course], teacher: [...matched.teacher] };
 
   // 整區全選（「台北」「台中」…）：這句話已經講到該區的某間分店，就只算那間，不整區全選。
   groups.forEach((values) => {
@@ -252,7 +279,7 @@ function matchTranscript(transcript, vocabTerms){
     else spans.push([start, end]);
   });
 
-  return { matched: Object.fromEntries(Object.entries(matched).map(([k, v]) => [k, [...v]])), spans };
+  return { matched: Object.fromEntries(Object.entries(matched).map(([k, v]) => [k, [...v]])), spans, named };
 }
 
 // 三種結果，對應語音搜尋「不經確認直接動作」的三個出口：
@@ -268,7 +295,7 @@ function matchTranscript(transcript, vocabTerms){
 async function applyTranscript(transcript, isCurrent, onMatched){
   const vocab = await buildVocabulary();
   if (!isCurrent()) return "cancelled";
-  const { matched, spans } = matchTranscript(transcript, vocab);
+  const { matched, spans, named } = matchTranscript(transcript, vocab);
   const hitAny = FILTER_GROUPS.some((name) => matched[name].length > 0);
   if (!hitAny) return "no-match";
   onMatched?.(spans);
@@ -282,10 +309,10 @@ async function applyTranscript(transcript, isCurrent, onMatched){
   const state = { ...matched, room };
   const sufficient = matched.branch.length > 0 || matched.teacher.length > 0;
   if (sufficient){
-    window.submitVoiceSearch(state);
+    window.submitVoiceSearch(state, named);
     return "submitted";
   }
-  window.applyVoiceFilters(state);
+  window.applyVoiceFilters(state, named);
   return "insufficient";
 }
 
