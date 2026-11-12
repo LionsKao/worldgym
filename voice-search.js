@@ -190,6 +190,9 @@ function normalizeWithMap(s){
 // boundaries（選填）：允許的切點位置集合；有給的話，比對的起點與終點都必須落在切點上。拼音比對用它，
 // 限制只能從「一個字的開頭」比到「一個字的結尾」：不然「板橋」(banqiao) 會從 ban|qiao 中間切進去，
 // 誤中老師「安起」(anqi)。
+// vocabTerms 的項目可以帶 inner（選填）：詞自己的音節切點（不含頭尾）相對詞開頭的位置集合；有帶的話，比對範圍
+// 裡句子的切點必須跟它完全一致。不然兩個音節接起來剛好等於另一個字的單一音節時會撞到：
+// 吉安 (ji|an) 的拼音 jian 會被任何念 jian 的字（健／間／見）誤中。
 function scanTerms(text, vocabTerms, boundaries){
   const vocab = vocabTerms
     .filter((t) => t.term.length > 0)
@@ -202,13 +205,22 @@ function scanTerms(text, vocabTerms, boundaries){
   const groups = []; // group:true 的詞（整區全選）先不直接算，交給 matchTranscript 決定
   const spans = [];  // 每個成功比對的範圍 { start, end, group }（group 是整區全選詞的 value 陣列，其餘 null）
 
-  vocab.forEach(({ category, value, term, group }) => {
+  vocab.forEach(({ category, value, term, group, inner }) => {
     let from = 0;
     let idx;
     while ((idx = text.indexOf(term, from)) !== -1){
       from = idx + 1;
       const end = idx + term.length;
-      if (boundaries && !(boundaries.has(idx) && boundaries.has(end))) continue;
+      if (boundaries){
+        if (!(boundaries.has(idx) && boundaries.has(end))) continue;
+        if (inner){
+          let sameSplit = true;
+          for (let i = idx + 1; i < end; i++){
+            if (boundaries.has(i) !== inner.has(i - idx)){ sameSplit = false; break; }
+          }
+          if (!sameSplit) continue;
+        }
+      }
       let overlap = false;
       for (let i = idx; i < end; i++){ if (claimed[i]){ overlap = true; break; } }
       if (overlap) continue;
@@ -223,6 +235,8 @@ function scanTerms(text, vocabTerms, boundaries){
 // 拼音比對只當作精確比對的補強：門檻刻意設 4 個字母（約兩個音節）以上才收，太短的拼音
 // （例如兩三個字母）在任意一段話裡剛好出現的機率高，容易誤判成不相關的分店/課程/老師。
 const MIN_PINYIN_TERM_LEN = 4;
+// 純中文的詞至少要有 2 個字（2 個音節）才參加拼音比對；字母數門檻擋不住單音節的長拼音（xuan、zhuang…）。
+const MIN_PINYIN_SYLLABLES = 2;
 function matchTranscript(transcript, vocabTerms){
   const { text, map } = normalizeWithMap(transcript);
   const normalizedVocab = vocabTerms.map((t) => ({ ...t, term: normalize(t.term) }));
@@ -240,8 +254,29 @@ function matchTranscript(transcript, vocabTerms){
     // 逐字的拼音（每個字元一個元素，接起來等於整串轉換的結果）：用來把拼音比對到的範圍換回句子的第幾個字。
     const syllables = window.pinyinPro.pinyin(text, { ...pinyinOpts, type: "array" }).map((s) => s.toLowerCase());
     const pinyinText = syllables.join("");
+    // 純中文的詞另外記下自己的音節切點（inner，見 scanTerms）。夾有英文的詞（小Ben）英文字母在逐字拼音裡
+    // 每個字母各算一個元素，跟句子裡的中文音節切法對不上，所以不核對切點，只比起點與終點。
+    const HAN_ONLY = /^[一-鿿]+$/;
+    const syllableSplit = (s, joined) => {
+      if (!HAN_ONLY.test(s)) return null;
+      const parts = window.pinyinPro.pinyin(s, { ...pinyinOpts, type: "array" }).map((x) => x.toLowerCase());
+      if (parts.length !== s.length || parts.join("") !== joined) return null;
+      const inner = new Set();
+      let at = 0;
+      parts.slice(0, -1).forEach((x) => { at += x.length; inner.add(at); });
+      return inner;
+    };
+    // 兩種詞不參加拼音比對，都是因為拿它們的拼音去比，只會撞到句子裡不相干的字：
+    // ① 純英文／數字的詞（老師 Bang、BODYPUMP、SOGO、別名 pump）：它們的「拼音」就是自己，
+    //    撞到的是中文音節的巧合（「請幫我找…」的「幫」bang 會誤中老師 Bang）。講的就是英文，精確比對本來就比得到。
+    //    夾有中文的（小Ben、翔翔H）仍照轉。
+    // ② 只有一個字的中文名字（老師「炫」「軒」，xuan）：門檻 MIN_PINYIN_TERM_LEN 是算字母，單音節的長拼音
+    //    （xuan、zhuang、shuang…）會漏網，任何念 xuan 的常用字（選／宣／玄）都中，「我想選課」就變成查老師炫。
+    //    真的講「炫」，精確比對照樣比得到。
     const pinyinVocab = normalizedVocab
-      .map((t) => ({ ...t, term: toPinyin(t.term) }))
+      .filter((t) => /[^\x00-\x7f]/.test(t.term))
+      .filter((t) => !HAN_ONLY.test(t.term) || t.term.length >= MIN_PINYIN_SYLLABLES)
+      .map((t) => { const term = toPinyin(t.term); return { ...t, term, inner: syllableSplit(t.term, term) }; })
       .filter((t) => t.term.length >= MIN_PINYIN_TERM_LEN);
     // starts[i]：第 i 個字的拼音從 pinyinText 的第幾個字母開始；boundaries：所有「字的邊界」（每個字的開頭＋整串結尾），
     // 拼音比對只能從邊界比到邊界，不能從一個字的中間切進去。
