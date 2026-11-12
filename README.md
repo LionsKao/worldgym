@@ -52,6 +52,7 @@
     ├── migrations/                      #   針對既有正式資料庫的單張 table migration
     ├── scripts/check-branches.mjs       #   分店清單一致性檢查（npm run check:branches）
     ├── scripts/check-versions.mjs       #   靜態資源 ?v= 版號檢查（npm run check:versions）
+    ├── scripts/test-voice.mjs           #   語音搜尋比對引擎的回歸測試（npm run test:voice；案例 voice-cases.mjs、課程老師快照 voice-fixtures.json）
     └── src/
         ├── index.js                     #   路由表 ROUTES（限流、後台驗證統一處理）、CORS、入口、cron scheduled()
         ├── queryClasses.js              #   課表查詢邏輯
@@ -85,7 +86,7 @@
 | 打點 | `POST /trackAdEvent`（60）、`/trackAdEvents`（20）、`/trackSearchEvents`（20）、`/trackSearch`（60）、`/trackFavorite`（60） | 使用量統計，內容會驗證（見「防濫用機制」） |
 | 推播提醒 | `POST /registerReminder`、`/cancelReminder`、`GET /myReminders`（各 60） | 見「推播提醒」 |
 | 其他 | `POST /sendMessageToAuthor`（5） | 留言轉發到 Teams |
-| 語音搜尋 | `POST /transcribeVoice`（10） | 只有 iOS／iPadOS 用：前端錄最長 8 秒音訊上傳，Worker 用 Workers AI（`AI` binding，Whisper）轉成文字回傳；要帶 `/issueToken` 的 token，音檔不儲存（上限 256KB，另有全站每日 2000 次的額度，超過回 429）。其他裝置用瀏覽器內建語音辨識，不經過這個端點 |
+| 語音搜尋 | `POST /transcribeVoice`（10） | 只有 iOS／iPadOS 用：前端錄最長 7 秒音訊上傳，Worker 用 Workers AI（`AI` binding，Whisper）轉成文字回傳；要帶 `/issueToken` 的 token，音檔不儲存（上限 256KB，另有全站每日 2000 次的額度，超過回 429）。其他裝置用瀏覽器內建語音辨識，不經過這個端點 |
 | 後台 | `POST /verifyAdminToken`（10）、`GET /adStats`、`/favoriteStats`、`/reminderStats`、`/voiceStats`、`/queryAccessStats`（各 30）、`GET /scrapeManual`、`POST /scanNewBranches`、`/cleanupStaleBranches`、`/rollupAnalyticsManual`（各 5） | 除登入外都要帶 session token；`/scrapeManual` 以串流回傳進度 |
 
 ## 🗄️ 資料表總覽

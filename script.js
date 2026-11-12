@@ -1622,11 +1622,12 @@ const loadVoiceSearch = createVendorScriptLoader("voice-search.js?v=22", () => !
 let activeRecognition = null;
 let voiceTimeoutTimer = null;
 const VOICE_RECOGNITION_TIMEOUT_MS = 6000;
-// iOS 錄音路徑（useRecorderVoice）：一次最長錄 8 秒（原本 6 秒，使用者 2026-11-10 依「一句話約 3～4 秒、扣掉開口前的停頓、
-// 講兩個條件會逼近 6 秒、滿了又被無聲截斷」的考量改成 8 秒；它同時是成本與上傳量的天花板，也是沒再點一下時要等的時間）；
+// iOS 錄音路徑（useRecorderVoice）：一次最長錄 7 秒（6 秒 → 8 秒 → 7 秒：2026-11-10 嫌 6 秒太短，一句話約 3～4 秒、扣掉開口前的停頓、
+// 講兩個條件會逼近 6 秒、滿了又被無聲截斷，所以放寬到 8 秒；2026-11-12 看後台平均音檔 148KB 已逼近 Worker 的 256KB 上限，
+// 使用者決定縮到 7 秒；它同時是成本與上傳量的天花板，也是沒再點一下時要等的時間）；
 // 點下麥克風到真的拿到麥克風（getUserMedia 回來，中間可能卡在權限視窗）最多等 10 秒，比錄音上限寬，因為第一次要讓人看懂並按下權限視窗；
 // 上傳＋轉錄最多等 15 秒。三個時間都是起始值，沒有精確測試依據。
-const VOICE_RECORD_MAX_MS = 8000;
+const VOICE_RECORD_MAX_MS = 7000;
 const VOICE_RECORD_START_TIMEOUT_MS = 10000;
 const VOICE_TRANSCRIBE_TIMEOUT_MS = 15000;
 let activeRecorderSession = null; // iOS 錄音路徑目前這一次的 session（見 startRecorderVoiceSearch）
@@ -1919,7 +1920,7 @@ async function startRecorderVoiceSearch(){
   voiceTimeoutTimer = setTimeout(() => stopRecorderSession(session), VOICE_RECORD_MAX_MS);
   voiceRecognitionState = "listening";
   // 只顯示「聆聽中」、不加任何說明，提示框也縮到剛好包住文字：使用者 2026-11-10 要求 iOS 的實作差異
-  // （錄音上傳、8 秒上限、平台 bug）不用讓使用者知道，這個網站靠圖示就看得懂怎麼操作。
+  // （錄音上傳、7 秒上限、平台 bug）不用讓使用者知道，這個網站靠圖示就看得懂怎麼操作。
   showVoiceTooltip(true);
   refreshSubmitIcon();
   trackEvent("start_voice_search", { engine: "recorder" });
@@ -1957,7 +1958,7 @@ async function transcribeVoiceBlob(blob){
 function startVoiceSearch(){
   if (useRecorderVoice()){
     // 兜底：任何沒被內部 try/catch 接住的例外（例如開始錄音之後才丟的）都走 resetVoiceUI()——
-    // 它會連錄音與麥克風串流一起收掉（不然 8 秒計時器被清掉、錄音卻繼續開著，iOS 橘點一直亮）。
+    // 它會連錄音與麥克風串流一起收掉（不然錄音上限的計時器被清掉、錄音卻繼續開著，iOS 橘點一直亮）。
     startRecorderVoiceSearch().catch((e) => { console.error(e); resetVoiceUI(); });
     return;
   }

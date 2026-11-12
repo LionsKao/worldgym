@@ -524,14 +524,15 @@ async function handleRegisterReminder({ req, env, ctx, origin }) {
 }
 
 // 語音搜尋的雲端轉文字：只給 iOS／iPadOS 用（Safari 的 SpeechRecognition 第二次之後收不到音，是 WebKit 平台 bug，
-// 前端改成用 MediaRecorder 錄最長 8 秒、上傳到這裡，見 script.js 的 startRecorderVoiceSearch）。其他裝置照舊用瀏覽器內建辨識，不經過這裡。
+// 前端改成用 MediaRecorder 錄最長 7 秒、上傳到這裡，見 script.js 的 startRecorderVoiceSearch）。其他裝置照舊用瀏覽器內建辨識，不經過這裡。
 // 音檔只在這次請求的記憶體裡，送進 Workers AI 轉成文字就丟掉，不寫 D1／KV、也不進 log。
 // 防濫用（成本是照「音訊秒數」算的，但 Worker 只量得到位元組，所以靠三道一起擋）：
 //   ①要帶 /issueToken 發的短效 token（跟 /queryClasses 同一套）＋每 IP 每分鐘 10 次；
 //   ②音檔大小上限 VOICE_MAX_BYTES：限制單次請求最多能塞多少秒（位元率越低同樣位元組能塞越久，所以上限抓得貼近正常錄音）；
 //   ③全站每天的轉錄次數上限 VOICE_DAILY_LIMIT：前兩道擋不住「很多個 IP 各自小量」，這道把最壞情況的花費變成有上限的數字。
 const VOICE_MODEL = "@cf/openai/whisper-large-v3-turbo";
-// 8 秒的 audio/mp4 約 70～170KB（實測 100～170KB）；256KB 留一點餘裕又不讓單次請求能塞幾分鐘的音訊。
+// 錄音上限原本 8 秒時，audio/mp4 實測約 100～170KB（後台平均 148KB），已逼近上限，所以前端縮成 7 秒；
+// 256KB 留一點餘裕又不讓單次請求能塞幾分鐘的音訊。
 // 若 iOS 實機錄出來的檔案經常超過這個值，先確認原因（位元率、立體聲）再調，不要直接放寬回 1MB。
 const VOICE_MAX_BYTES = 256 * 1024;
 const VOICE_MIN_BYTES = 200; // 小於這個一定不是一段真的錄音
