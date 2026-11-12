@@ -79,6 +79,7 @@ function roomBaseTerms(){
 // 涵蓋「大安分店」「台北站前」這類口語說法，不用手動列舉 100 多間分店。
 function branchTerms(){
   const terms = [];
+  const byPrefix = new Map(); // 前 2 個字 → 分店 value 陣列（給下面的同前綴分店用）
   document.querySelectorAll('#branchGrid input[name="branch"]').forEach((input) => {
     const label = input.nextElementSibling ? input.nextElementSibling.textContent : "";
     if (!label) return;
@@ -87,23 +88,9 @@ function branchTerms(){
     terms.push({ category: "branch", value: input.value, term: label + "店" });
     terms.push({ category: "branch", value: input.value, term: label + "分店" });
     if (city && !label.startsWith(city)) terms.push({ category: "branch", value: input.value, term: city + label });
-  });
-  // 同前綴分店：好幾間分店名稱開頭相同（板橋雙十／板橋中山／板橋府中／板橋重慶、鳳山五甲／鳳山中山），
-  // 講「板橋」「鳳山」就是整組一起選。前綴取前 2 個字、至少 2 間分店共用，而且前綴本身不是某間分店的名稱
-  // （「永和」「土城」本身就是一間分店，不能變成整組）。一樣標 group:true，講了單一分店就不整組生效。
-  const byPrefix = new Map();
-  const allLabels = new Set();
-  document.querySelectorAll('#branchGrid input[name="branch"]').forEach((input) => {
-    const label = input.nextElementSibling ? input.nextElementSibling.textContent : "";
-    if (!label) return;
-    allLabels.add(label);
-    if (label.length < 3) return;
     const prefix = label.slice(0, 2);
     if (!byPrefix.has(prefix)) byPrefix.set(prefix, []);
     byPrefix.get(prefix).push(input.value);
-  });
-  byPrefix.forEach((values, prefix) => {
-    if (values.length >= 2 && !allLabels.has(prefix)) terms.push({ category: "branch", value: values, term: prefix, group: true });
   });
   // 「台北」「新北」「台中」「台南」「高屏」：等於按下分店區塊的「xx全選」按鈕，一個詞選起該區所有分店。
   // 直接讀那排按鈕的 data 屬性，範圍跟按鈕完全一致（台北／新北是單一縣市，台中／台南／高屏是官方分區，
@@ -124,6 +111,16 @@ function branchTerms(){
       if (values.length) terms.push({ category: "branch", value: values, term: btn.dataset.selectAllLabel, group: true });
     });
   }
+  // 同前綴分店：好幾間分店名稱開頭相同（板橋雙十／板橋中山／板橋府中／板橋重慶、鳳山五甲／鳳山中山），
+  // 講「板橋」「鳳山」就是整組一起選。前綴取前 2 個字、至少 2 間分店共用，而且前綴本身不是某間分店的名稱
+  // （「永和」「土城」本身就是一間分店，不能變成整組）。一樣標 group:true，講了單一分店就不整組生效。
+  // 前綴若已經是 terms 裡的詞就不再加：可能是某間分店的名稱，也可能是城市／整區全選詞（例如多收一間「台南xx」，
+  // 前綴「台南」要讓位給整區全選，不然「台南」只會選那幾間；兩個詞文字、長度、類別都相同，scanTerms 只處理先排到的）。
+  // 兩個字的詞只可能是分店名稱或整區全選詞，所以用「目前 terms 的全部詞」一個集合判斷，不靠詞的排列順序。
+  const taken = new Set(terms.map((t) => t.term));
+  byPrefix.forEach((values, prefix) => {
+    if (values.length >= 2 && !taken.has(prefix)) terms.push({ category: "branch", value: values, term: prefix, group: true });
+  });
   return terms;
 }
 // 課程/老師是動態填入的，直接讀現場 DOM（呼叫端已經等過 filterOptionsSettledPromise 才會呼叫這裡）。
@@ -238,15 +235,16 @@ function matchTranscript(transcript, vocabTerms){
     const pinyinVocab = normalizedVocab
       .map((t) => ({ ...t, term: toPinyin(t.term) }))
       .filter((t) => t.term.length >= MIN_PINYIN_TERM_LEN);
-    const boundaries = new Set([0]);
-    syllables.reduce((pos, s) => { boundaries.add(pos + s.length); return pos + s.length; }, 0);
+    // starts[i]：第 i 個字的拼音從 pinyinText 的第幾個字母開始；boundaries：所有「字的邊界」（每個字的開頭＋整串結尾），
+    // 拼音比對只能從邊界比到邊界，不能從一個字的中間切進去。
+    const starts = [];
+    let pos = 0;
+    syllables.forEach((s) => { starts.push(pos); pos += s.length; });
+    const boundaries = new Set([...starts, pos]);
     const pinyinScan = scanTerms(pinyinText, pinyinVocab, boundaries);
     FILTER_GROUPS.forEach((name) => { pinyinScan.matched[name].forEach((v) => matched[name].add(v)); });
     groups.push(...pinyinScan.groups);
     if (syllables.length === text.length){
-      const starts = [];
-      let pos = 0;
-      syllables.forEach((s) => { starts.push(pos); pos += s.length; });
       pinyinScan.spans.forEach(({ start, end, group }) => {
         let first = -1;
         let last = -1;

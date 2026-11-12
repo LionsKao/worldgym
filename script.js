@@ -609,10 +609,15 @@ function saveZoneState(zoneName, isExpanded) {
 function getClickCounts(key) {
   return readStoredJson(key, {});
 }
-function incrementClickCount(key, value) {
+// 一次替好幾個值各加一次（整份次數表只讀一次、寫一次）：語音一句話可能勾起好幾個項目（別名對應多位老師、多門課）。
+function incrementClickCounts(key, values) {
+  if (!values || values.length === 0) return;
   const counts = getClickCounts(key);
-  counts[value] = (counts[value] || 0) + 1;
+  values.forEach(value => { counts[value] = (counts[value] || 0) + 1; });
   writeStoredJson(key, counts);
+}
+function incrementClickCount(key, value) {
+  incrementClickCounts(key, [value]);
 }
 function sortByClickCount(items, key, getValue = (x) => x) {
   const counts = getClickCounts(key);
@@ -620,8 +625,8 @@ function sortByClickCount(items, key, getValue = (x) => x) {
 }
 // 把 container 底下的 .pill 依點擊次數由多到少重排（常用的排前面）：搬動既有節點，不重新產生 DOM。
 // 每個 pill 只讀一次它的 input 值（排序時不再重複 querySelector；老師有一千多個 pill），順序沒變就不搬。
-function reorderPillsByClicks(container, key){
-  const counts = getClickCounts(key);
+// counts：選填，已經解析好的次數表；同一個 key 要重排好幾個容器時（分店的各個分區）傳進來，不用每個容器各解析一次。
+function reorderPillsByClicks(container, key, counts = getClickCounts(key)){
   const pills = [...container.querySelectorAll(".pill")];
   const ranked = pills
     .map(pill => [pill, counts[pill.querySelector("input").value] || 0])
@@ -714,7 +719,12 @@ function initBranchGrid(){
   });
 
   // 分店在各分區內再依使用者點擊次數重排（常用分店排前面），改成搬動既有節點，不用重新產生 DOM。
-  grid.querySelectorAll(".zone-group").forEach(group => reorderPillsByClicks(group, "wg_branch_clicks"));
+  reorderBranchGrids();
+}
+// 分店各分區內依常用次數重排；分店有好幾個分區，次數表只解析一次（載入時與返回篩選頁時共用）。
+function reorderBranchGrids(){
+  const counts = getClickCounts("wg_branch_clicks");
+  document.querySelectorAll("#branchGrid .zone-group").forEach(group => reorderPillsByClicks(group, "wg_branch_clicks", counts));
 }
 
 // 每個 pill 的 label 小寫文字只算一次：老師有一千多個 pill，打字時每個按鍵（輸入法組字時更密集）都要比對一遍，
@@ -729,6 +739,15 @@ function pillLabelText(pill){
   }
   return text;
 }
+// 課程／老師的「展開全部」區塊（.collapsible）一次設好四件事：inline max-height（展開時是當下 scrollHeight 的快照，
+// 收合時清掉回到 CSS 的 160px）、wrap 的 expanded class、按鈕的 expanded class 與 aria-expanded。
+// 搜尋框輸入、點「展開」按鈕、返回篩選頁時的收合（collapseFilterSections）都走這一個，btn 可以是 null。
+function setSectionExpanded(wrap, btn, expanding){
+  wrap.style.maxHeight = expanding ? wrap.scrollHeight + "px" : "";
+  wrap.classList.toggle("expanded", expanding);
+  btn?.classList.toggle("expanded", expanding);
+  btn?.setAttribute("aria-expanded", expanding);
+}
 document.querySelectorAll(".section-search").forEach(input => {
   if (!input.dataset.searchFor) return;
   const clearBtn = input.closest(".search-wrap")?.querySelector(".search-clear");
@@ -741,15 +760,7 @@ document.querySelectorAll(".section-search").forEach(input => {
     });
     const wrapId = input.dataset.collapsible;
     if (!wrapId) return;
-    const wrap = document.getElementById(wrapId);
-    const moreBtn = document.querySelector(`.more-btn[data-target="${wrapId}"]`);
-    const expanding = text !== "";
-    wrap.style.maxHeight = expanding ? wrap.scrollHeight + "px" : "";
-    wrap.classList.toggle("expanded", expanding);
-    if (moreBtn){
-      moreBtn.classList.toggle("expanded", expanding);
-      moreBtn.setAttribute("aria-expanded", expanding);
-    }
+    setSectionExpanded(document.getElementById(wrapId), document.querySelector(`.more-btn[data-target="${wrapId}"]`), text !== "");
   });
   clearBtn?.addEventListener("click", () => {
     input.value = "";
@@ -761,11 +772,7 @@ document.querySelectorAll(".section-search").forEach(input => {
 document.querySelectorAll(".more-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     const wrap = document.getElementById(btn.dataset.target);
-    const expanding = !wrap.classList.contains("expanded");
-    wrap.style.maxHeight = expanding ? wrap.scrollHeight + "px" : "";
-    wrap.classList.toggle("expanded", expanding);
-    btn.classList.toggle("expanded", expanding);
-    btn.setAttribute("aria-expanded", expanding);
+    setSectionExpanded(wrap, btn, !wrap.classList.contains("expanded"));
   });
 });
 
@@ -1611,7 +1618,7 @@ if (isVoiceSupported() && navigator.permissions?.query){
   }).catch(() => {}); // 查不到（例如 Safari 不支援 "microphone" descriptor）就維持 "unknown"，退回 onerror 的 fallback
 }
 
-const loadVoiceSearch = createVendorScriptLoader("voice-search.js?v=18", () => !!window.WGVoiceSearch);
+const loadVoiceSearch = createVendorScriptLoader("voice-search.js?v=21", () => !!window.WGVoiceSearch);
 let activeRecognition = null;
 let voiceTimeoutTimer = null;
 const VOICE_RECOGNITION_TIMEOUT_MS = 6000;
@@ -2064,9 +2071,9 @@ function applyVoiceFilters(state, named){
   FILTER_GROUPS.forEach(name => saveSelection(`wg_selected_${name}`, [name]));
   updateResetButtonState();
   if (named){
-    named.branch?.forEach(v => incrementClickCount("wg_branch_clicks", v));
-    named.course?.forEach(v => incrementClickCount("wg_course_clicks", v));
-    named.teacher?.forEach(v => incrementClickCount("wg_teacher_clicks", v));
+    incrementClickCounts("wg_branch_clicks", named.branch);
+    incrementClickCounts("wg_course_clicks", named.course);
+    incrementClickCounts("wg_teacher_clicks", named.teacher);
   }
 }
 function submitVoiceSearch(state, named){
@@ -2469,9 +2476,21 @@ function reorderTeacherGrid(){
 // 返回篩選頁時，分店（各分區內）、課程、老師三組都依最新的常用次數重排：手動點選與語音勾選都會加次數，
 // 被查過的項目返回後排到前面。只搬動既有節點，順序沒變就不搬。
 function reorderFilterGrids(){
-  document.querySelectorAll("#branchGrid .zone-group").forEach(group => reorderPillsByClicks(group, "wg_branch_clicks"));
+  reorderBranchGrids();
   reorderPillsByClicks(document.getElementById("courseGrid"), "wg_course_clicks");
   reorderTeacherGrid();
+}
+// 返回篩選頁時把課程／老師已展開的區塊收合：展開時 inline max-height 是當下 scrollHeight 的快照，上面重排後換行位置會變、
+// 總高度可能多一列（實測老師區重排 6 次有 4 次多 37px，最後一列被切掉），快照就過期了；收合會清掉它。
+// 例外：搜尋框有字時維持展開（搜尋會自動展開），只清掉過期的快照、改用 .expanded 的 CSS 3000px（過濾後的清單遠比這短）。
+function collapseFilterSections(){
+  document.querySelectorAll(".more-btn").forEach(btn => {
+    const wrap = document.getElementById(btn.dataset.target);
+    if (!wrap.classList.contains("expanded")) return;
+    const search = document.querySelector(`.section-search[data-collapsible="${wrap.id}"]`);
+    if (search && search.value.trim() !== "") wrap.style.maxHeight = "";
+    else setSectionExpanded(wrap, btn, false);
+  });
 }
 // 縮課日：國定假日（含補假）當天，分店改用假日課表，開課時間大多落在整點或 30 分（平常的平日是每堂隔 10 分鐘，
 // 例如 08:40、09:50）。官方資料沒有任何標記，開課時間也不是可靠的條件（10/26 實測有 16 間分店、33 堂課
@@ -2617,6 +2636,7 @@ function showFilterView(){
   // 排序結果會改變換行位置、進而改變 grid 高度；一定要趁 mainFormSheet 還是 display:none
   // 時排完，翻牌後才不會又造成一次 Cloudflare Web Analytics 抓到的 #mainFormSheet CLS。
   reorderFilterGrids();
+  collapseFilterSections();
   // favoriteSheet 在 DOM 順序上排在 mainFormSheet 前面，
   // 要先讓它們恢復顯示、版面高度定案，mainFormSheet 才不會在自己淡入之後又被
   // 前面冒出來的 favoriteSheet 推擠位置，造成 Cloudflare Web Analytics 抓到的
