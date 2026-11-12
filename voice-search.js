@@ -79,7 +79,9 @@ function roomBaseTerms(){
 // 涵蓋「大安分店」「台北站前」這類口語說法，不用手動列舉 100 多間分店。
 function branchTerms(){
   const terms = [];
+  const byCity = new Map();   // 縣市 → 分店 value 陣列（給下面「每個縣市都能整區全選」用）
   const byPrefix = new Map(); // 前 2 個字 → 分店 value 陣列（給下面的同前綴分店用）
+  const collect = (map, key, value) => { if (!map.has(key)) map.set(key, []); map.get(key).push(value); };
   document.querySelectorAll('#branchGrid input[name="branch"]').forEach((input) => {
     const label = input.nextElementSibling ? input.nextElementSibling.textContent : "";
     if (!label) return;
@@ -88,9 +90,8 @@ function branchTerms(){
     terms.push({ category: "branch", value: input.value, term: label + "店" });
     terms.push({ category: "branch", value: input.value, term: label + "分店" });
     if (city && !label.startsWith(city)) terms.push({ category: "branch", value: input.value, term: city + label });
-    const prefix = label.slice(0, 2);
-    if (!byPrefix.has(prefix)) byPrefix.set(prefix, []);
-    byPrefix.get(prefix).push(input.value);
+    if (city) collect(byCity, city, input.value);
+    collect(byPrefix, label.slice(0, 2), input.value);
   });
   // 「台北」「新北」「台中」「台南」「高屏」：等於按下分店區塊的「xx全選」按鈕，一個詞選起該區所有分店。
   // 直接讀那排按鈕的 data 屬性，範圍跟按鈕完全一致（台北／新北是單一縣市，台中／台南／高屏是官方分區，
@@ -111,16 +112,23 @@ function branchTerms(){
       if (values.length) terms.push({ category: "branch", value: values, term: btn.dataset.selectAllLabel, group: true });
     });
   }
-  // 同前綴分店：好幾間分店名稱開頭相同（板橋雙十／板橋中山／板橋府中／板橋重慶、鳳山五甲／鳳山中山），
-  // 講「板橋」「鳳山」就是整組一起選。前綴取前 2 個字、至少 2 間分店共用，而且前綴本身不是某間分店的名稱
-  // （「永和」「土城」本身就是一間分店，不能變成整組）。一樣標 group:true，講了單一分店就不整組生效。
-  // 前綴若已經是 terms 裡的詞就不再加：可能是某間分店的名稱，也可能是城市／整區全選詞（例如多收一間「台南xx」，
-  // 前綴「台南」要讓位給整區全選，不然「台南」只會選那幾間；兩個詞文字、長度、類別都相同，scanTerms 只處理先排到的）。
-  // 兩個字的詞只可能是分店名稱或整區全選詞，所以用「目前 terms 的全部詞」一個集合判斷，不靠詞的排列順序。
+  // 再補兩種同樣標 group:true 的整組詞（講了單一分店就不整組生效），優先順序是上面的按鈕詞 > 縣市 > 同前綴：
+  // ① 每個縣市（高雄、屏東、嘉義、桃園、新竹…，頁面上每間分店都標了 data-city）：講「高雄」就選高雄全部分店。
+  //    只有沒按鈕的縣市會新增；「台北」「新北」已有縣市按鈕、「台中」「台南」已有分區按鈕（範圍比縣市大，台南區含嘉義），
+  //    所以「台南」仍選整個台南區，「高雄」只選高雄（不含屏東；要含屏東講「高屏」）。
+  // ② 同前綴分店：好幾間分店名稱開頭相同（板橋雙十／板橋中山／板橋府中／板橋重慶、鳳山五甲／鳳山中山），
+  //    講「板橋」「鳳山」就是整組一起選。前綴取前 2 個字、至少 2 間分店共用。
+  // 詞若已經在 terms 裡就不再加（讓位）：可能是某間分店的名稱（「永和」「土城」本身就是一間分店，不能變成整組），
+  // 也可能是前面已加的整區全選詞或縣市詞。這些詞文字、長度、類別都相同，scanTerms 只處理先排到的，
+  // 所以用「目前 terms 的全部詞」一個集合判斷，不靠詞的排列順序決定誰贏。
   const taken = new Set(terms.map((t) => t.term));
-  byPrefix.forEach((values, prefix) => {
-    if (values.length >= 2 && !taken.has(prefix)) terms.push({ category: "branch", value: values, term: prefix, group: true });
-  });
+  const addGroup = (term, values) => {
+    if (taken.has(term)) return;
+    taken.add(term);
+    terms.push({ category: "branch", value: values, term, group: true });
+  };
+  byCity.forEach((values, city) => addGroup(city, values));
+  byPrefix.forEach((values, prefix) => { if (values.length >= 2) addGroup(prefix, values); });
   return terms;
 }
 // 課程/老師是動態填入的，直接讀現場 DOM（呼叫端已經等過 filterOptionsSettledPromise 才會呼叫這裡）。
