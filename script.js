@@ -3058,16 +3058,14 @@ const voteActive = new URLSearchParams(location.search).get("vote") === "1"
   || (todayIso() >= VOTE_START_DATE && todayIso() < VOTE_END_DATE);
 if (voteActive) document.documentElement.classList.add("vote");
 
-// 彩蛋：聖誕節（使用者 2026-11-04 決定），兩段日期不同：
-//   【下雪】2026-12-01 ~ 12-31（SNOW_*）：vendor/pure-snow.js／.css（改過的 pure-snow，見檔頭說明），只在期間內才動態載入，平常不下載；
+// 彩蛋：聖誕節（使用者 2026-11-04 決定；2026-11-12 把下雪的日期改成跟其他聖誕彩蛋一樣，所以只有一段日期 XMAS_*）：
+//   【下雪】vendor/pure-snow.js／.css（改過的 pure-snow，見檔頭說明），只在期間內才動態載入，平常不下載；
 //      數量由 #snow 的 data-count 決定（桌機 SNOW_COUNT_DESKTOP、手機 SNOW_COUNT_MOBILE）；開了「減少動態效果」就不下。
 //   a. 分頁標題的 💪 換成 🎄（只留一個 emoji）。 b. 標題「課表查詢」改紅綠斜紋（<html> 加 xmas，style.css 的 html.xmas）。
 //   c. 查詢鈕的放大鏡換成樹（fa-tree）。 d. 最愛選色視窗第一格放「紅綠斜紋」限時色票、最後一格的青色藏起來（html.xmas 切換，見 CLAUDE.md）。
-// 結束日都是「不含當天」：下雪 12/31 當天還有、1/1 零點起不再出現；聖誕彩蛋 12/26 當天還有、12/27 零點起不再出現。
+// 期間 2026-12-21 ~ 12-26，結束日是「不含當天」：12/26 當天還有、12/27 零點起不再出現。
 // 網址加 ?xmas=1 可以在期間外預覽全部（含下雪），加 ?snow=1 只預覽下雪（本機測試用）。
 // 過期之後這整段（含 vendor/pure-snow.*、html.xmas、聖誕色票的切換規則）可以刪；已存成紅綠斜紋的最愛照樣顯示（晶片樣式是永久的）。
-const SNOW_START_DATE = "2026-12-01";
-const SNOW_END_DATE = "2027-01-01";
 const XMAS_START_DATE = "2026-12-21";
 const XMAS_END_DATE = "2026-12-27";
 const SNOW_COUNT_DESKTOP = 60;
@@ -3075,8 +3073,7 @@ const SNOW_COUNT_MOBILE = 30;
 const xmasParams = new URLSearchParams(location.search);
 const xmasActive = xmasParams.get("xmas") === "1"
   || (todayIso() >= XMAS_START_DATE && todayIso() < XMAS_END_DATE);
-const snowActive = xmasActive || xmasParams.get("snow") === "1"
-  || (todayIso() >= SNOW_START_DATE && todayIso() < SNOW_END_DATE);
+const snowActive = xmasActive || xmasParams.get("snow") === "1"; // 下雪的期間跟聖誕彩蛋一樣，所以跟著 xmasActive
 if (xmasActive){
   refreshSubmitIcon(); // 單一決定點在 computeSubmitIconClass()，這裡不另外手動設 className
   document.documentElement.classList.add("xmas"); // 標題漸層與聖誕色票（style.css）；載入遮罩還蓋著，看不到換樣子的瞬間
