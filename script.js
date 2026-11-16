@@ -56,12 +56,13 @@ if (new URLSearchParams(location.search).get("pwa") === "1"){
 
 // 臨時公告（例如颱風提醒）：沿用廣告 banner 的位置，純文字、沒有連結；今天（台灣）早於 endDate 才顯示，
 // 過期自動消失。優先於廣告，公告期間不載入廣告、也不送廣告點擊統計。
-// 下次要發公告就改 text 與 endDate（endDate 是「不含當天」的結束日），script.js 版號加一。
+// 下次要發公告就改 text、startDate（含當天）與 endDate（「不含當天」的結束日），script.js 版號加一。
 const SITE_NOTICE = {
-  text: "10/24 颱風：北中部及宜蘭團體課停課，嘉義以南照常，詳見官網公告。",
-  endDate: "2026-10-25", // 顯示到 10/24 當天，10/25 零點起不顯示
+  text: "11/28 選舉日：全台有氧團體課程暫停一天，詳見官網公告。",
+  startDate: "2026-11-28", // 含當天：11/28 零點起才顯示
+  endDate: "2026-11-29", // 顯示到 11/28 當天，11/29 零點起不顯示
 };
-const siteNoticeActive = () => todayIso() < SITE_NOTICE.endDate; // todayIso 來自 common.js
+const siteNoticeActive = () => todayIso() >= SITE_NOTICE.startDate && todayIso() < SITE_NOTICE.endDate; // todayIso 來自 common.js
 const showSiteNotice = siteNoticeActive(); // 載入時定一次：頁面開著跨過結束日也不會變成「看得到公告卻被當廣告統計」
 
 // 廣告文案：內容改由 D1 的 ads table 提供（上下架時間 + enabled 開關），
@@ -1150,7 +1151,7 @@ function bindFavoriteLongPress(btn, index, fav){
     applyFavorite(fav);
   });
 }
-// 顏色選項裡的特殊值（index.html 的 favColor-rainbow／-rainbow-flow／-cream／-cream-flow／-xmas-stripe）：不是色碼，晶片改用對應的 class 畫彩虹底色
+// 顏色選項裡的特殊值：不是色碼，晶片改用對應的 class 畫彩虹底色（2026-10 同志遊行彩蛋期間新增的最愛會存成這些值，選色視窗已沒有對應色票，但晶片樣式永久保留）
 // （鮮豔或奶油色系的彩虹各有不會動與流動兩種；聖誕的紅綠斜紋 xmas-stripe）
 const FAV_RAINBOW_CLASSES = new Map([
   ["rainbow", "fav-rainbow"], ["rainbow-flow", "fav-rainbow-flow"],
@@ -2981,75 +2982,6 @@ downloadImageBtn.addEventListener("click", async () => {
   }
 });
 
-// 彩蛋：2026-10-31 台灣同志遊行，標題改成奶油色系的漸層彩虹、畫面持續飄下奶油色系的彩虹紙片（使用者 2026-10-30 決定，只到 11/2）。
-// 結束日是「不含當天」：11/2 當天還有，11/3 零點起載入就不再出現、標題回到原本的樣子。
-// 紙片是純 canvas、點擊穿透（.pride-confetti），使用者設了「減少動態效果」就不飄（標題漸層是靜態的，照樣換）。
-// 過期之後這整段（含 style.css 的 .pride-confetti 與 html.pride）可以刪，沒刪也不會再執行。
-const PRIDE_END_DATE = "2026-11-03";
-const prideActive = todayIso() < PRIDE_END_DATE; // 載入時定一次
-if (prideActive) document.documentElement.classList.add("pride"); // 標題的漸層（style.css 的 html.pride）；載入遮罩還蓋著，看不到換樣子的瞬間
-const PRIDE_CONFETTI_COLORS = ["#f2a09a", "#f7b985", "#f6dc82", "#a8d8a8", "#9cc7ee", "#c3a8e0"]; // 奶油色系的紅橘黃綠藍紫
-function startPrideConfetti(){
-  if (!prideActive || prefersReducedMotion()) return;
-  const canvas = document.createElement("canvas");
-  canvas.className = "pride-confetti";
-  canvas.setAttribute("aria-hidden", "true");
-  document.body.appendChild(canvas);
-  const ctx = canvas.getContext("2d");
-  let width = 0;
-  let height = 0;
-  let pixelRatio = 0;
-  const resize = () => {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const w = canvas.clientWidth; // 用 canvas 實際顯示的大小，不用 innerWidth／innerHeight：手機網址列伸縮時兩者會對不上，紙片會被拉歪
-    const h = canvas.clientHeight;
-    if (w === width && h === height && dpr === pixelRatio) return; // 重設 canvas.width／height 會重新配置並清空整張畫布，沒變就不要動
-    width = w;
-    height = h;
-    pixelRatio = dpr;
-    canvas.width = w * dpr;
-    canvas.height = h * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  };
-  resize();
-  // 手機捲動時網址列收合／展開會連續觸發 resize，等停下來再重設一次
-  let resizeTimer = 0;
-  window.addEventListener("resize", () => {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(resize, 150);
-  });
-  const rand = (min, max) => min + Math.random() * (max - min);
-  // 一片紙片：x 是水平基準位置（再加上左右搖擺）、t 是已經飄了幾秒；
-  // 高度乘上 cos(flip) 讓它邊轉邊翻面。anywhere=true 是一開始就散在整個畫面上方，不然會一起從頂端掉下來。
-  const spawn = (anywhere) => ({
-    x: rand(0, width), y: anywhere ? rand(-height, 0) : rand(-60, -10), speed: rand(45, 110),
-    sway: rand(10, 40), swayFreq: rand(0.6, 1.6), phase: rand(0, 6.28), t: 0,
-    angle: rand(0, 6.28), spin: rand(-2.5, 2.5), flip: rand(0, 6.28), flipSpeed: rand(3, 7),
-    w: rand(8, 11), h: rand(11, 17), color: PRIDE_CONFETTI_COLORS[Math.floor(Math.random() * PRIDE_CONFETTI_COLORS.length)],
-  });
-  const pieces = Array.from({ length: width < 600 ? 22 : 45 }, () => spawn(true));
-  let last = performance.now();
-  const frame = (now) => {
-    const dt = Math.min((now - last) / 1000, 0.05); // 分頁在背景時 rAF 會停，回來那一格不要讓紙片瞬間跳一大段
-    last = now;
-    ctx.clearRect(0, 0, width, height);
-    for (const p of pieces){
-      p.t += dt;
-      p.y += p.speed * dt;
-      if (p.y > height + 40) Object.assign(p, spawn(false));
-      ctx.save();
-      ctx.translate(p.x + Math.sin(p.t * p.swayFreq + p.phase) * p.sway, p.y);
-      ctx.rotate(p.angle + p.t * p.spin);
-      ctx.scale(1, Math.cos(p.flip + p.t * p.flipSpeed));
-      ctx.fillStyle = p.color;
-      ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
-      ctx.restore();
-    }
-    requestAnimationFrame(frame);
-  };
-  requestAnimationFrame(frame);
-}
-
 // 彩蛋：投票日（使用者 2026-11-06 決定，縣市長選舉 2026-11-28 是週六）：只有 11/28 當天，查詢鈕整顆變成「圈選印章」（白底、珊瑚色粗圓環加直線與斜線），
 // 11/29 零點起自動換回放大鏡。<html> 加 vote，畫面全由 style.css 的 html.vote 處理（用 CSS 畫，查詢中的轉圈圈與未選條件的灰色狀態照舊，不用改 JS 的圖示邏輯）。
 // 結束日是「不含當天」；網址加 ?vote=1 可以在期間外預覽（本機測試用）。過期之後這段與 style.css 的 html.vote 規則可以整段刪。
@@ -3154,7 +3086,7 @@ async function init(){
     }
     document.getElementById("loadingOverlay").classList.add("fade-out");
     setTimeout(() => document.getElementById("loadingOverlay").remove(), 200);
-    try { startPrideConfetti(); startSnow(); } catch(e){ console.error("彩蛋啟動失敗", e); } // 只是裝飾，出錯就算了
+    try { startSnow(); } catch(e){ console.error("彩蛋啟動失敗", e); } // 只是裝飾，出錯就算了
   }
 }
 init();

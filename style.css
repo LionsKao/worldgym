@@ -41,11 +41,6 @@ body{
 }
 .hero h1 .c1{ color:var(--coral); }
 .hero h1 .c2{ color:var(--navy-ink); }
-/* 彩蛋（script.js 的 PRIDE_END_DATE，到 2026-11-02）：標題改成奶油色系的漸層彩虹；html.pride 由 script.js 載入時加上，過期就不加、回到原本的珊瑚＋深藍。
-   漸層畫在 h1 上、用 background-clip:text 裁成字形，所以兩個 span 的文字色要透明；字是淡色，加一點 drop-shadow 才不會糊在米色底上
-   （不能用 text-shadow：文字填色是透明的，陰影會從字裡透出來）。 */
-html.pride .hero h1{ background:linear-gradient(90deg,var(--cream-rainbow-stops)); -webkit-background-clip:text; background-clip:text; filter:drop-shadow(0 1px 0 rgba(0,0,0,.14)); }
-html.pride .hero h1 .c1, html.pride .hero h1 .c2{ color:transparent; }
 /* 聖誕彩蛋（script.js 的 XMAS_END_DATE，到 2027-01-03）：標題改紅綠相間的 45° 斜紋（每條寬 14px，看得出寬度、只有兩個顏色），做法同上；html.xmas 由 script.js 載入時加上。 */
 html.xmas .hero h1{ background:repeating-linear-gradient(135deg,#c8453e 0,#c8453e 14px,#2f8f5b 14px,#2f8f5b 28px); -webkit-background-clip:text; background-clip:text; filter:drop-shadow(0 1px 0 rgba(0,0,0,.14)); }
 html.xmas .hero h1 .c1, html.xmas .hero h1 .c2{ color:transparent; }
@@ -467,19 +462,8 @@ html[data-theme="dark"].vote #scheduleSubmitBtn.gray-btn:not(.busy){ background:
 }
 .fav-color-options label:hover{ border-style:dashed; border-color:var(--ink); }
 .fav-color-options input:checked + label{ border-style:solid; border-color:var(--ink); transform:scale(1.1); }
-/* 四顆彩虹色票，都是 45° 斜紋：鮮豔（rainbow）與奶油色系（cream）各一顆不會動、一顆會流動（色票很小，直接動 background-position 就好，不用像晶片那樣拆 ::before）。
-   流動的圖塊是 270px 見方（= 3 個水平循環 90px），平移 90px 剛好接回原樣；background-origin 要設 border-box，不然 1.5px 的透明邊框會露出空白。 */
-#favColor-rainbow + label{ background:linear-gradient(135deg,var(--rainbow-stops)); }
-#favColor-rainbow-flow + label{ background:repeating-linear-gradient(135deg,var(--rainbow-cycle)) 0 0 / 270px 270px; animation:fav-rainbow-swatch 3s linear infinite; }
-#favColor-cream + label{ background:linear-gradient(135deg,var(--cream-rainbow-stops)); }
-#favColor-cream-flow + label{ background:repeating-linear-gradient(135deg,var(--cream-rainbow-cycle)) 0 0 / 270px 270px; animation:fav-rainbow-swatch 3s linear infinite; }
 #favColor-xmas-stripe + label{ background:var(--xmas-stripe); }
-#favColor-rainbow + label, #favColor-rainbow-flow + label, #favColor-cream + label, #favColor-cream-flow + label,
 #favColor-xmas-stripe + label{ background-origin:border-box; }
-@keyframes fav-rainbow-swatch{ to{ background-position:90px 0; } }
-/* 這四顆彩虹色票是限時的（2026-11-02 止）：彩蛋期間（html.pride）取代最後四格的深綠、棕、金、青，過期換回來。
-   已經存成彩虹的最愛不受影響——晶片的 .fav-rainbow／.fav-cream 樣式是永久的，只有「選色視窗裡選得到」是限時的。 */
-html:not(.pride) .fav-color-pill.pride-only, html.pride .fav-color-pill.pride-replaced{ display:none; }
 /* 聖誕的「紅綠斜紋」色票同樣是限時的（2027-01-03 止）：期間內（html.xmas）放在第一格、並把最後一格的青色藏起來（維持 14 顆），過期換回來；已存成紅綠斜紋的最愛不受影響。 */
 html:not(.xmas) .fav-color-pill.xmas-only, html.xmas .fav-color-pill.xmas-replaced{ display:none; }
 .fav-item{
@@ -509,7 +493,7 @@ html:not(.xmas) .fav-color-pill.xmas-only, html.xmas .fav-color-pill.xmas-replac
   animation:fav-rainbow 3s linear infinite;
 }
 @keyframes fav-rainbow{ from{ transform:translateX(0); } to{ transform:translateX(-90px); } }
-@media (prefers-reduced-motion:reduce){ .fav-item.fav-rainbow-flow::before, .fav-item.fav-cream-flow::before, #favColor-rainbow-flow + label, #favColor-cream-flow + label{ animation:none; } }
+@media (prefers-reduced-motion:reduce){ .fav-item.fav-rainbow-flow::before, .fav-item.fav-cream-flow::before{ animation:none; } }
 /* 刪除最愛：先微微放大，再縮小淡出並把寬度收合到 0（--fav-w 是 JS 量好的原寬；margin-right 的 -6px 抵掉
    .pill-grid 的 gap，旁邊的晶片才會順順地補上來）。JS 只用 animationend 收尾，沒有對應的時間常數。 */
 .fav-item.removing{ overflow:hidden; white-space:nowrap; pointer-events:none; animation:fav-remove .3s ease forwards; }
@@ -586,8 +570,6 @@ html:not(.xmas) .fav-color-pill.xmas-only, html.xmas .fav-color-pill.xmas-replac
   background:var(--paper);
   display:flex; align-items:center; justify-content:center; z-index:9999;
 }
-/* 彩蛋（script.js 的 startPrideConfetti，到 2026-11-02）：蓋在內容與底部按鈕列之上、彈窗（1000）之下，點擊穿透。 */
-.pride-confetti{ position:fixed; left:0; top:0; width:100%; height:100%; pointer-events:none; z-index:900; }
 #loadingOverlay .loading-box{ display:flex; flex-direction:column; align-items:center; gap:12px; }
 #loadingOverlay .blocks{ display:flex; gap:6px; }
 #loadingOverlay .blocks span{
