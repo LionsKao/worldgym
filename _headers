@@ -48,6 +48,9 @@
 /voice-search.js
   Cache-Control: public, max-age=2592000
 
+/newyear-fireworks.js
+  Cache-Control: public, max-age=2592000
+
 /common.js
   Cache-Control: public, max-age=2592000
 

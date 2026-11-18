@@ -1619,56 +1619,6 @@ if (isVoiceSupported() && navigator.permissions?.query){
   }).catch(() => {}); // 查不到（例如 Safari 不支援 "microphone" descriptor）就維持 "unknown"，退回 onerror 的 fallback
 }
 
-// ---- 暫時的診斷：量「按下麥克風 → 真的開始收音」花多久（2026-11-18，使用者回報第一次約 1.5 秒、第二次較短）----
-// 只有網址帶 ?voicedebug=1（寫進 localStorage，跟 ?pwa=1 同一套；?voicedebug=0 關掉）才會動作：
-// 畫面頂端疊一塊計時（最近 4 次按麥克風，可以直接比第一次與第二次），同時 console.info。沒開時 begin 回傳 null、
-// 所有 mark 都是 no-op，不影響一般使用者。查出等待落在哪一段之後整段刪掉（含 CLAUDE.md 的說明）。
-// 每次按麥克風一筆 { no, engine, perm, t0, marks:[[說明, 距離 t0 的毫秒]] }；mark 要帶 begin 回傳的那一筆，
-// 這樣上一輪的 onaudiostart 之類事件晚到時，不會記到新一輪頭上。
-const VOICE_DEBUG_KEY = "wg_debug_voice";
-{
-  const flag = new URLSearchParams(location.search).get("voicedebug");
-  if (flag === "1") writeStored(VOICE_DEBUG_KEY, "1");
-  else if (flag === "0") removeStored(VOICE_DEBUG_KEY);
-}
-const voiceDebugOn = readStored(VOICE_DEBUG_KEY) === "1";
-const voiceTimings = [];
-let voiceTimingEl = null;
-function voiceTimingBegin(engine){
-  if (!voiceDebugOn) return null;
-  const t = { no: voiceTimings.length + 1, engine, perm: voiceMicPermission, t0: performance.now(), marks: [] };
-  voiceTimings.push(t);
-  voiceTimingRender();
-  return t;
-}
-function voiceTimingMark(t, label){
-  if (!t) return;
-  t.marks.push([label, Math.round(performance.now() - t.t0)]);
-  console.info(`[voice #${t.no}] +${t.marks[t.marks.length - 1][1]}ms ${label}`);
-  voiceTimingRender();
-}
-// 兩支延遲載入的 JS 是不是在這次按下之後才載完（載完時間點、傳輸大小，0KB 就是從快取讀的）。
-function voiceTimingScriptLine(t, file){
-  const entry = performance.getEntriesByType("resource").filter((r) => r.name.includes(file)).pop();
-  if (!entry) return `${file}：尚未載完`;
-  if (entry.responseEnd < t.t0) return `${file}：按下之前就載完了`;
-  return `${file}：載完 +${Math.round(entry.responseEnd - t.t0)}ms（傳輸 ${Math.round(entry.transferSize / 1024)}KB）`;
-}
-function voiceTimingRender(){
-  if (!voiceTimingEl){
-    voiceTimingEl = document.createElement("pre");
-    voiceTimingEl.style.cssText = "position:fixed;top:env(safe-area-inset-top,0);left:0;right:0;z-index:99999;margin:0;padding:6px 8px;"
-      + "font:11px/1.35 monospace;white-space:pre-wrap;color:#9f9;background:rgba(0,0,0,.82);pointer-events:none;max-height:60vh;overflow:hidden";
-    document.body.appendChild(voiceTimingEl);
-  }
-  voiceTimingEl.textContent = voiceTimings.slice(-4).map((t) => [
-    `#${t.no} ${t.engine}　權限:${t.perm}`,
-    ...t.marks.map(([label, ms]) => `  +${ms}ms ${label}`),
-    `  ${voiceTimingScriptLine(t, "voice-search.js")}`,
-    `  ${voiceTimingScriptLine(t, "pinyin-pro")}`,
-  ].join("\n")).join("\n");
-}
-
 const loadVoiceSearch = createVendorScriptLoader("voice-search.js?v=25", () => !!window.WGVoiceSearch);
 let activeRecognition = null;
 let voiceTimeoutTimer = null;
@@ -1730,7 +1680,9 @@ function setVoiceRecordingLock(active){
 }
 // 預設是 SpeechRecognition 路徑用的兩行版（「聆聽中・請說話」加「再點一下或停頓即可結束」）；iOS 錄音路徑傳 compact=true，
 // 只顯示「聆聽中」：它沒有「停頓自動結束」，預設的副文字會誤導，而且不需要對使用者多做說明。
+let voiceStartingSlowTimer = null; // 「準備中」等太久要換成「麥克風啟動中」的計時器（見 showVoicePreparingTooltip）
 function showVoiceTooltipHtml(html, wrap){
+  clearTimeout(voiceStartingSlowTimer); // 任何新的提示都取代還沒觸發的換字
   hideTooltipElementImmediately(pillWarnTooltip); // 避免跟還在淡出的提示/警告 pill 疊在一起
   clearTimeout(pillWarnTimer);
   voiceTooltipEl.innerHTML = html;
@@ -1741,14 +1693,22 @@ function showVoiceTooltipHtml(html, wrap){
 function showVoiceTooltip(compact = false){
   showVoiceTooltipHtml(compact ? "聆聽中" : '聆聽中・請說話<span class="voice-tooltip-hint">再點一下或停頓即可結束</span>', !compact);
 }
-// 按下麥克風到真的開始收音之間（"starting"）：瀏覽器／系統在開麥克風，iOS 熟了之後約 0.4 秒、第一次可能更久，
-// 這段畫面原本完全沒有回饋，使用者容易搶先開口、前幾個字沒收到。顯示「準備中」告訴他先等一下；
+// 按下麥克風到真的開始收音之間（"starting"）：瀏覽器／系統在開麥克風，這段畫面原本完全沒有回饋，
+// 使用者容易搶先開口、前幾個字沒收到。顯示「準備中」告訴他先等一下；
 // 進入 "listening" 時 showVoiceTooltip() 換成「聆聽中」，字一換就是「現在可以講了」的信號（使用者 2026-11-18 決定用「準備中」）。
-// 失敗、逾時、取消一律經過 resetVoiceUI() → hideVoiceTooltip()，不會留著。
+// 兩段式（使用者 2026-11-18 決定）：iOS 實機量到熟了之後（暖啟動）按下到開始錄約 0.33～0.39 秒，只會看到「準備中」一閃；
+// 第一次（冷啟動，Safari 約 1.2 秒、Chrome 約 1.7 秒且含權限視窗）等超過 VOICE_STARTING_SLOW_MS 還沒開始，
+// 就換成「麥克風啟動中」，讓人知道為什麼比較久。不預測冷暖（沒有 API 能事先知道，暖的狀態能撐多久也沒量過），
+// 純看實際等了多久。失敗、逾時、取消一律經過 resetVoiceUI() → hideVoiceTooltip()，不會留著。
+const VOICE_STARTING_SLOW_MS = 750; // 夾在暖啟動（約 0.39 秒以內）與冷啟動（約 1.2 秒以上）中間
 function showVoicePreparingTooltip(){
   showVoiceTooltipHtml("準備中", false);
+  voiceStartingSlowTimer = setTimeout(() => {
+    if (voiceRecognitionState === "starting") showVoiceTooltipHtml("麥克風啟動中", false);
+  }, VOICE_STARTING_SLOW_MS);
 }
 function hideVoiceTooltip(){
+  clearTimeout(voiceStartingSlowTimer);
   voiceTooltipEl.classList.remove("visible", "wrap");
 }
 // 把這次 recognition 的計時器／參照／提示收乾淨，但不解鎖按鈕、不改 voiceRecognitionState——
@@ -1921,7 +1881,6 @@ function cancelRecorderSession(){
   releaseRecorderStream(session);
 }
 async function startRecorderVoiceSearch(){
-  const timing = voiceTimingBegin("錄音(iOS)");
   voiceRecognitionState = "starting";
   setVoiceRecordingLock(true);
   refreshSubmitIcon();
@@ -1942,9 +1901,7 @@ async function startRecorderVoiceSearch(){
 
   let stream;
   try{
-    voiceTimingMark(timing, "呼叫 getUserMedia（前面是畫面鎖定與載入腳本的同步工作）");
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    voiceTimingMark(timing, "getUserMedia 回來（拿到麥克風）");
   } catch(e){
     const denied = e?.name === "NotAllowedError" || e?.name === "SecurityError";
     if (denied){
@@ -1974,9 +1931,7 @@ async function startRecorderVoiceSearch(){
       const blob = new Blob(chunks, { type: recorder.mimeType || mimeType || "audio/mp4" });
       runVoiceProcessing(() => transcribeVoiceBlob(blob));
     };
-    recorder.onstart = () => voiceTimingMark(timing, "MediaRecorder start 事件（真的開始錄）");
     recorder.start();
-    voiceTimingMark(timing, "recorder.start() 呼叫完（畫面進入聆聽中）");
   } catch(e){
     console.error("MediaRecorder 啟動失敗", e);
     fail("record-error", "無法錄音，請再試一次");
@@ -2039,7 +1994,6 @@ function startVoiceSearch(){
   }
   // "starting" 從點下麥克風這一刻就生效（不是等 onstart）：micEligible() 立刻變 false，
   // 按鈕與 checkbox 也立刻鎖住，雙重防止瀏覽器權限視窗還沒回應時再點一次造成同時兩個 session。
-  const timing = voiceTimingBegin("SpeechRecognition");
   voiceRecognitionState = "starting";
   setVoiceRecordingLock(true);
   refreshSubmitIcon();
@@ -2068,9 +2022,8 @@ function startVoiceSearch(){
   // 硬體其實沒有真的打開——這種情況不管等多久都不會有結果，而且是「重新整理頁面才會好」的更嚴重
   // 狀態（不是「再點一次」就能解決），所以不等滿 6 秒逾時，提早判斷並給使用者更準確的提示。
   let audioStarted = false;
-  recognition.onaudiostart = () => { audioStarted = true; voiceTimingMark(timing, "onaudiostart（真的收到音訊）"); };
+  recognition.onaudiostart = () => { audioStarted = true; };
   recognition.onstart = () => {
-    voiceTimingMark(timing, "onstart（畫面進入聆聽中）");
     voiceRecognitionState = "listening";
     showVoiceTooltip();
     refreshSubmitIcon();
@@ -2122,11 +2075,7 @@ function startVoiceSearch(){
     settled = true;
     if (voiceRecognitionState === "listening"){ resetVoiceUI(); reportVoiceFailure("no-speech", "沒聽到聲音，請再試一次"); }
   };
-  try{
-    voiceTimingMark(timing, "呼叫 recognition.start()（前面是畫面鎖定與載入腳本的同步工作）");
-    recognition.start();
-    voiceTimingMark(timing, "start() 回來");
-  } catch(e){
+  try{ recognition.start(); } catch(e){
     console.error(e);
     settled = true;
     recognitionReady = true; // start() 丟例外代表這個 session 根本沒真的開始，不會有 onend 來呼叫它
@@ -3102,6 +3051,65 @@ function startSnow(){
   document.head.appendChild(script);
 }
 
+// 彩蛋：跨年煙火（使用者 2026-11-19 決定）：2026-12-31 00:00 ~ 2027-01-01 02:00（台灣時間，結束時間「不含」那一分鐘）。
+// 流程（init() 收載入遮罩前後）：載入畫面（四塊色塊）還蓋著時，淺色模式的使用者先由白漸變成黑（暫時的深色，不寫 wg_theme）→
+// 收遮罩 → 放一輪煙火（全螢幕透明 canvas、點擊穿透）→ 放完由黑漸變回白 → 彩蛋結束，不會一直放。深色模式的使用者不換色、直接放。
+// 煙火程式在 newyear-fireworks.js，只在期間內才動態載入，平常不下載；開了「減少動態效果」就整個不做（連換色也不換）。
+// 只在載入時放一次，頁面一直開著不會重播；網址加 ?newyear=1 可以在期間外預覽（本機測試用）。
+// 過期之後這段、newyear-fireworks.js、_headers 裡的快取規則與 common.js 的 taipeiNowStamp() 可以整段刪
+// （style.css 的 --theme-fade 變數預設 .3s，留著不影響平常的主題切換）。
+const NEWYEAR_START = "2026-12-31 00:00";
+const NEWYEAR_END = "2027-01-01 02:00";
+const NEWYEAR_FADE_MS = 1200; // 白↔黑漸變的秒數
+const newYearActive = xmasParams.get("newyear") === "1"
+  || (taipeiNowStamp() >= NEWYEAR_START && taipeiNowStamp() < NEWYEAR_END);
+const loadNewYearFireworks = createVendorScriptLoader("newyear-fireworks.js?v=5", () => !!window.WGFireworks);
+let newYearTempDark = false; // 目前的深色是不是我們暫時切的
+// 淺色↔深色漸變：沿用主題切換的 theme-switching（style.css），只是把淡入淡出的秒數用 --theme-fade 拉長；
+// 全站顏色（含還蓋著的載入遮罩底色與那四塊色塊）一起變，所以看起來是整個畫面由白變黑。
+function newYearFadeTheme(toDark){
+  return new Promise((resolve) => {
+    const root = document.documentElement;
+    root.style.setProperty("--theme-fade", `${NEWYEAR_FADE_MS}ms`);
+    root.classList.add("theme-switching");
+    if (toDark) root.setAttribute("data-theme", "dark");
+    else root.removeAttribute("data-theme");
+    renderThemeToggle();
+    retintCharts();
+    setTimeout(() => {
+      root.classList.remove("theme-switching");
+      root.style.removeProperty("--theme-fade");
+      resolve();
+    }, NEWYEAR_FADE_MS + 100);
+  });
+}
+// 載入遮罩還蓋著時呼叫（收遮罩之前）：先載好煙火程式、需要的話把淺色漸變成深色；回傳 true 代表遮罩收掉後可以放煙火。
+// 程式載入失敗就什麼都不動（不換色、不放）。
+async function newYearPrepare(){
+  if (!newYearActive || prefersReducedMotion()) return false;
+  try {
+    await loadNewYearFireworks();
+    if (!isDarkTheme()){
+      await newYearFadeTheme(true);
+      newYearTempDark = true;
+    }
+    return true;
+  } catch(e){
+    console.error("彩蛋啟動失敗", e);
+    return false;
+  }
+}
+function startNewYearFireworks(){
+  window.WGFireworks.start({
+    small: window.innerWidth < 600,
+    onDone: () => {
+      // 只換回「我們自己暫時切的深色」；放煙火期間使用者手動切過主題（wg_theme 已是 dark、或已經切回淺色）就不動。
+      if (newYearTempDark && isDarkTheme() && readStored(THEME_STORAGE_KEY) !== "dark") newYearFadeTheme(false);
+      newYearTempDark = false;
+    },
+  });
+}
+
 async function init(){
   // 已登記的通知（已裝 PWA 且已授權通知才會真的打 API）只有「畫查詢結果的鈴鐺」要用，不必擋在最前面：
   // 這裡先讓它在背景跑，跟 /filterOptions、token 預熱同時進行，到要查詢結果、收掉載入遮罩之前才等它（見 finally）。
@@ -3157,9 +3165,14 @@ async function init(){
       searchTriggerSource = "shared_url";
       await runSearchAndShowResults(currentFilterState());
     }
+    // 跨年煙火：遮罩還蓋著時先（淺色模式）由白漸變成黑，變完才收遮罩（一般日子這行是立刻 false）。
+    const newYearReady = await newYearPrepare();
     document.getElementById("loadingOverlay").classList.add("fade-out");
     setTimeout(() => document.getElementById("loadingOverlay").remove(), 200);
     try { startSnow(); } catch(e){ console.error("彩蛋啟動失敗", e); } // 只是裝飾，出錯就算了
+    if (newYearReady){
+      try { startNewYearFireworks(); } catch(e){ console.error("彩蛋啟動失敗", e); }
+    }
   }
 }
 init();

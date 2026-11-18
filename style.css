@@ -681,12 +681,14 @@ html[data-theme="dark"] .reminder-cancel-overlay{ background:rgba(35,35,43,.88);
 html[data-theme="dark"] .qr-tooltip{ background:#fff; } /* QR code 圖是黑碼白底，要放在白底上才掃得到 */
 html[data-theme="dark"] .qr-tooltip::after{ border-color:#fff transparent transparent transparent; }
 /* 切換主題的瞬間（script.js 暫時加上 theme-switching，約 0.4 秒後移除）：全站顏色一起淡入淡出。
-   不常駐，免得平常的 hover、選取多一層過場、干擾條紋動畫；使用者設了「減少動態效果」就不做。 */
+   不常駐，免得平常的 hover、選取多一層過場、干擾條紋動畫；使用者設了「減少動態效果」就不做。
+   淡入淡出的秒數用 --theme-fade（預設 .3s）：跨年煙火彩蛋把淺色模式暫時切成深色、放完再切回來時，
+   script.js 會在 <html> 暫時設成比較長的秒數，讓「由白變黑」看得出是漸變（見 CLAUDE.md「彩蛋：跨年煙火」）。 */
 @media (prefers-reduced-motion:no-preference){
   html.theme-switching,
   html.theme-switching *,
   html.theme-switching *::before,
   html.theme-switching *::after{
-    transition:background-color .3s ease, color .3s ease, border-color .3s ease, box-shadow .3s ease !important;
+    transition:background-color var(--theme-fade, .3s) ease, color var(--theme-fade, .3s) ease, border-color var(--theme-fade, .3s) ease, box-shadow var(--theme-fade, .3s) ease !important;
   }
 }

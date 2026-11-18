@@ -81,6 +81,16 @@ const CHART_MONTHS = 12;
 function todayIso(){
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei" }).format(new Date());
 }
+// 台灣現在的日期與時間（YYYY-MM-DD HH:mm），字串可以直接比大小；彩蛋要精確到幾點結束時用（只看日期用 todayIso）。
+// hour 用 % 24 擋掉部分舊瀏覽器在午夜回傳 "24" 的怪癖。
+function taipeiNowStamp(){
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(new Date()).map((p) => [p.type, p.value]));
+  const hour = String(Number(parts.hour) % 24).padStart(2, "0");
+  return `${parts.year}-${parts.month}-${parts.day} ${hour}:${parts.minute}`;
+}
 // 台灣現在是哪個月（YYYY-MM），跟 Worker 用台灣時間算的月份對得上。
 function currentMonthKey(){
   return todayIso().slice(0, 7);
