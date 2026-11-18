@@ -1619,6 +1619,56 @@ if (isVoiceSupported() && navigator.permissions?.query){
   }).catch(() => {}); // 查不到（例如 Safari 不支援 "microphone" descriptor）就維持 "unknown"，退回 onerror 的 fallback
 }
 
+// ---- 暫時的診斷：量「按下麥克風 → 真的開始收音」花多久（2026-11-18，使用者回報第一次約 1.5 秒、第二次較短）----
+// 只有網址帶 ?voicedebug=1（寫進 localStorage，跟 ?pwa=1 同一套；?voicedebug=0 關掉）才會動作：
+// 畫面頂端疊一塊計時（最近 4 次按麥克風，可以直接比第一次與第二次），同時 console.info。沒開時 begin 回傳 null、
+// 所有 mark 都是 no-op，不影響一般使用者。查出等待落在哪一段之後整段刪掉（含 CLAUDE.md 的說明）。
+// 每次按麥克風一筆 { no, engine, perm, t0, marks:[[說明, 距離 t0 的毫秒]] }；mark 要帶 begin 回傳的那一筆，
+// 這樣上一輪的 onaudiostart 之類事件晚到時，不會記到新一輪頭上。
+const VOICE_DEBUG_KEY = "wg_debug_voice";
+{
+  const flag = new URLSearchParams(location.search).get("voicedebug");
+  if (flag === "1") writeStored(VOICE_DEBUG_KEY, "1");
+  else if (flag === "0") removeStored(VOICE_DEBUG_KEY);
+}
+const voiceDebugOn = readStored(VOICE_DEBUG_KEY) === "1";
+const voiceTimings = [];
+let voiceTimingEl = null;
+function voiceTimingBegin(engine){
+  if (!voiceDebugOn) return null;
+  const t = { no: voiceTimings.length + 1, engine, perm: voiceMicPermission, t0: performance.now(), marks: [] };
+  voiceTimings.push(t);
+  voiceTimingRender();
+  return t;
+}
+function voiceTimingMark(t, label){
+  if (!t) return;
+  t.marks.push([label, Math.round(performance.now() - t.t0)]);
+  console.info(`[voice #${t.no}] +${t.marks[t.marks.length - 1][1]}ms ${label}`);
+  voiceTimingRender();
+}
+// 兩支延遲載入的 JS 是不是在這次按下之後才載完（載完時間點、傳輸大小，0KB 就是從快取讀的）。
+function voiceTimingScriptLine(t, file){
+  const entry = performance.getEntriesByType("resource").filter((r) => r.name.includes(file)).pop();
+  if (!entry) return `${file}：尚未載完`;
+  if (entry.responseEnd < t.t0) return `${file}：按下之前就載完了`;
+  return `${file}：載完 +${Math.round(entry.responseEnd - t.t0)}ms（傳輸 ${Math.round(entry.transferSize / 1024)}KB）`;
+}
+function voiceTimingRender(){
+  if (!voiceTimingEl){
+    voiceTimingEl = document.createElement("pre");
+    voiceTimingEl.style.cssText = "position:fixed;top:env(safe-area-inset-top,0);left:0;right:0;z-index:99999;margin:0;padding:6px 8px;"
+      + "font:11px/1.35 monospace;white-space:pre-wrap;color:#9f9;background:rgba(0,0,0,.82);pointer-events:none;max-height:60vh;overflow:hidden";
+    document.body.appendChild(voiceTimingEl);
+  }
+  voiceTimingEl.textContent = voiceTimings.slice(-4).map((t) => [
+    `#${t.no} ${t.engine}　權限:${t.perm}`,
+    ...t.marks.map(([label, ms]) => `  +${ms}ms ${label}`),
+    `  ${voiceTimingScriptLine(t, "voice-search.js")}`,
+    `  ${voiceTimingScriptLine(t, "pinyin-pro")}`,
+  ].join("\n")).join("\n");
+}
+
 const loadVoiceSearch = createVendorScriptLoader("voice-search.js?v=25", () => !!window.WGVoiceSearch);
 let activeRecognition = null;
 let voiceTimeoutTimer = null;
@@ -1861,6 +1911,7 @@ function cancelRecorderSession(){
   releaseRecorderStream(session);
 }
 async function startRecorderVoiceSearch(){
+  const timing = voiceTimingBegin("錄音(iOS)");
   voiceRecognitionState = "starting";
   setVoiceRecordingLock(true);
   refreshSubmitIcon();
@@ -1880,7 +1931,9 @@ async function startRecorderVoiceSearch(){
 
   let stream;
   try{
+    voiceTimingMark(timing, "呼叫 getUserMedia（前面是畫面鎖定與載入腳本的同步工作）");
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    voiceTimingMark(timing, "getUserMedia 回來（拿到麥克風）");
   } catch(e){
     const denied = e?.name === "NotAllowedError" || e?.name === "SecurityError";
     if (denied){
@@ -1910,7 +1963,9 @@ async function startRecorderVoiceSearch(){
       const blob = new Blob(chunks, { type: recorder.mimeType || mimeType || "audio/mp4" });
       runVoiceProcessing(() => transcribeVoiceBlob(blob));
     };
+    recorder.onstart = () => voiceTimingMark(timing, "MediaRecorder start 事件（真的開始錄）");
     recorder.start();
+    voiceTimingMark(timing, "recorder.start() 呼叫完（畫面進入聆聽中）");
   } catch(e){
     console.error("MediaRecorder 啟動失敗", e);
     fail("record-error", "無法錄音，請再試一次");
@@ -1973,6 +2028,7 @@ function startVoiceSearch(){
   }
   // "starting" 從點下麥克風這一刻就生效（不是等 onstart）：micEligible() 立刻變 false，
   // 按鈕與 checkbox 也立刻鎖住，雙重防止瀏覽器權限視窗還沒回應時再點一次造成同時兩個 session。
+  const timing = voiceTimingBegin("SpeechRecognition");
   voiceRecognitionState = "starting";
   setVoiceRecordingLock(true);
   refreshSubmitIcon();
@@ -2000,8 +2056,9 @@ function startVoiceSearch(){
   // 硬體其實沒有真的打開——這種情況不管等多久都不會有結果，而且是「重新整理頁面才會好」的更嚴重
   // 狀態（不是「再點一次」就能解決），所以不等滿 6 秒逾時，提早判斷並給使用者更準確的提示。
   let audioStarted = false;
-  recognition.onaudiostart = () => { audioStarted = true; };
+  recognition.onaudiostart = () => { audioStarted = true; voiceTimingMark(timing, "onaudiostart（真的收到音訊）"); };
   recognition.onstart = () => {
+    voiceTimingMark(timing, "onstart（畫面進入聆聽中）");
     voiceRecognitionState = "listening";
     showVoiceTooltip();
     refreshSubmitIcon();
@@ -2053,7 +2110,11 @@ function startVoiceSearch(){
     settled = true;
     if (voiceRecognitionState === "listening"){ resetVoiceUI(); reportVoiceFailure("no-speech", "沒聽到聲音，請再試一次"); }
   };
-  try{ recognition.start(); } catch(e){
+  try{
+    voiceTimingMark(timing, "呼叫 recognition.start()（前面是畫面鎖定與載入腳本的同步工作）");
+    recognition.start();
+    voiceTimingMark(timing, "start() 回來");
+  } catch(e){
     console.error(e);
     settled = true;
     recognitionReady = true; // start() 丟例外代表這個 session 根本沒真的開始，不會有 onend 來呼叫它
