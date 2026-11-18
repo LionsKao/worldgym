@@ -1730,13 +1730,23 @@ function setVoiceRecordingLock(active){
 }
 // 預設是 SpeechRecognition 路徑用的兩行版（「聆聽中・請說話」加「再點一下或停頓即可結束」）；iOS 錄音路徑傳 compact=true，
 // 只顯示「聆聽中」：它沒有「停頓自動結束」，預設的副文字會誤導，而且不需要對使用者多做說明。
-function showVoiceTooltip(compact = false){
+function showVoiceTooltipHtml(html, wrap){
   hideTooltipElementImmediately(pillWarnTooltip); // 避免跟還在淡出的提示/警告 pill 疊在一起
   clearTimeout(pillWarnTimer);
-  voiceTooltipEl.innerHTML = compact ? "聆聽中" : '聆聽中・請說話<span class="voice-tooltip-hint">再點一下或停頓即可結束</span>';
-  // 兩行版用固定寬度的 wrap 版型；compact 讓提示依文字長度縮到最短。
-  voiceTooltipEl.classList.toggle("wrap", !compact);
+  voiceTooltipEl.innerHTML = html;
+  // 兩行版用固定寬度的 wrap 版型；單行讓提示依文字長度縮到最短。
+  voiceTooltipEl.classList.toggle("wrap", wrap);
   voiceTooltipEl.classList.add("visible");
+}
+function showVoiceTooltip(compact = false){
+  showVoiceTooltipHtml(compact ? "聆聽中" : '聆聽中・請說話<span class="voice-tooltip-hint">再點一下或停頓即可結束</span>', !compact);
+}
+// 按下麥克風到真的開始收音之間（"starting"）：瀏覽器／系統在開麥克風，iOS 熟了之後約 0.4 秒、第一次可能更久，
+// 這段畫面原本完全沒有回饋，使用者容易搶先開口、前幾個字沒收到。顯示「準備中」告訴他先等一下；
+// 進入 "listening" 時 showVoiceTooltip() 換成「聆聽中」，字一換就是「現在可以講了」的信號（使用者 2026-11-18 決定用「準備中」）。
+// 失敗、逾時、取消一律經過 resetVoiceUI() → hideVoiceTooltip()，不會留著。
+function showVoicePreparingTooltip(){
+  showVoiceTooltipHtml("準備中", false);
 }
 function hideVoiceTooltip(){
   voiceTooltipEl.classList.remove("visible", "wrap");
@@ -1915,6 +1925,7 @@ async function startRecorderVoiceSearch(){
   voiceRecognitionState = "starting";
   setVoiceRecordingLock(true);
   refreshSubmitIcon();
+  showVoicePreparingTooltip();
   loadVoiceSearch().catch((e) => console.error("voice-search.js 載入失敗", e)); // 跟錄音平行載入，不等它
   // 順便預熱上傳要用的 token（同樣不等它）：token 還新就是 no-op，過期了就讓換發跟錄音重疊，不用等錄完才打 /issueToken。
   getQueryToken().catch(() => {});
@@ -2032,6 +2043,7 @@ function startVoiceSearch(){
   voiceRecognitionState = "starting";
   setVoiceRecordingLock(true);
   refreshSubmitIcon();
+  showVoicePreparingTooltip();
   loadVoiceSearch().catch((e) => console.error("voice-search.js 載入失敗", e)); // 跟聆聽平行載入，不等它
   // 每次都 new 全新物件：曾經試過共用同一個物件的實驗，驗證對「麥克風叫不醒」這個問題沒有幫助
   // （見 abortActiveRecognition() 的說明），退回最簡單的寫法。
