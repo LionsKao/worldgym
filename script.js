@@ -2259,10 +2259,24 @@ async function requestGeoFilter(radiusKm){
   geoPermissionModal.classList.remove("hidden");
 }
 
+// 定位失敗與「附近沒有分店」都要讓使用者看得到，不然會分不出是壞了還是真的沒有。
+// 不設 timeout 的話 getCurrentPosition 可能永遠不回呼（沒有任何畫面回饋）；規格上 timeout 不含等使用者回答權限視窗的時間。
+const GEO_TIMEOUT_MS = 10000;
+const GEO_ERROR_TEXT = {
+  1: "未取得定位權限，請至設定開啟", // PERMISSION_DENIED
+  3: "定位逾時，請稍後再試",         // TIMEOUT
+};
+const GEO_ERROR_TEXT_DEFAULT = "無法取得目前位置，請稍後再試"; // POSITION_UNAVAILABLE 與其他
+let geoLocating = false; // 定位進行中不再接受新的請求（連點三個距離鈕不會疊出三組結果與提示）
 function runGeoFilter(radiusKm){
-  if (!navigator.geolocation) return;
+  if (!navigator.geolocation || geoLocating) return;
+  geoLocating = true;
+  const anchor = document.querySelector(`.geo-filter-btn[data-radius-km="${radiusKm}"]`);
+  // 提示定位用錨點的位置：等定位期間使用者若離開了篩選頁，按鈕是隱藏的、位置全是 0，提示會跑到畫面外，所以隱藏時不顯示。
+  const warn = text => { if (anchor && anchor.getClientRects().length > 0) showPillWarning(anchor, text); };
   navigator.geolocation.getCurrentPosition(
     position => {
+      geoLocating = false;
       const { latitude, longitude } = position.coords;
       const matchedSlugs = new Set(
         Object.entries(BRANCH_COORDS)
@@ -2276,10 +2290,14 @@ function runGeoFilter(radiusKm){
       updateResetButtonState();
       updateSubmitState();
       trackEvent("geo_filter_apply", { radius_km: radiusKm, matched_count: matchedSlugs.size });
+      if (matchedSlugs.size === 0) warn(`${radiusKm} 公里內沒有分店`);
     },
     error => {
+      geoLocating = false;
       trackEvent("geo_filter_error", { radius_km: radiusKm, error_code: error.code });
-    }
+      warn(GEO_ERROR_TEXT[error.code] || GEO_ERROR_TEXT_DEFAULT);
+    },
+    { timeout: GEO_TIMEOUT_MS }
   );
 }
 
@@ -2754,13 +2772,21 @@ document.getElementById("mailSendBtn").addEventListener("click", async () => {
   btn.disabled = true;
   try{
     const res = await postJson("/sendMessageToAuthor", { content });
-    if (!res.ok) throw new Error(`sendMessageToAuthor failed: ${res.status}`);
+    if (!res.ok){
+      const err = new Error(`sendMessageToAuthor failed: ${res.status}`);
+      // 全站每日留言上限（worker 的 MESSAGE_DAILY_LIMIT）用完：跟一般失敗分開說，「請稍後再試」在這裡沒用，要等到明天。
+      if (res.status === 429){
+        const data = await res.json().catch(() => null);
+        err.dailyLimit = !!data && data.error === "message_daily_limit";
+      }
+      throw err;
+    }
     trackEvent("send_message", {});
     input.disabled = true;
     document.getElementById("mailSentOverlay").classList.remove("hidden");
   } catch(e){
     console.error(e);
-    showPillWarning(btn, "送出失敗，請稍後再試");
+    showPillWarning(btn, e && e.dailyLimit ? "今天的留言額度已滿，請明天再試" : "送出失敗，請稍後再試");
     btn.disabled = false;
   }
 });

@@ -1,5 +1,5 @@
 import BRANCHES from "./branches-seed.js";
-import { nowTaiwanIso, todayIsoTaipei, pad2, fnv1aHex, SCRAPER_USER_AGENT, OFFICIAL_SITE_TIMEOUT_MS } from "./util.js";
+import { nowTaiwanIso, todayIsoTaipei, pad2, fnv1aHex, SCRAPER_USER_AGENT, OFFICIAL_SITE_TIMEOUT_MS, postTeamsCard } from "./util.js";
 
 const SCHEDULE_DAYS_AHEAD = 13;
 // 查詢端（queryClasses.js 的 NORMAL_DAYS_AHEAD = 6）只看「今天到 +6 天」的正常班，
@@ -310,4 +310,63 @@ async function runScrape(db, { logger = console, onProgress = () => {} } = {}) {
   return summary;
 }
 
-export { runScrape, ingestBranchClasses, finalizeFilterOptions, fetchBranchSchedule, transformRawClass, chineseWeekday, cleanupStaleBranches };
+// --- 排程爬蟲的失敗通知（只有每日排程會發，後台手動重抓的結果由操作的人在終端機看） ---
+// 爬蟲失敗時 D1 保留舊資料、網站照常運作，只是課表一天比一天舊，沒人看 log 或後台就不會發現，所以排程跑完後檢查結果，
+// 有下面任一種情況就發一則 Teams（一天最多兩輪、所以最多兩則；下一輪恢復正常就不再發）：
+//   ① 失敗的分店達一半以上（官網整個壞掉、改版、擋我們）。少數幾間失敗不通知：單間分店偶爾出錯是常態，且下一輪會自己補上。
+//   ② 整輪丟例外（例如 D1 連不上）。
+//   ③ 沒有分店失敗、但全部分店合計寫入 0 筆課程：官網對每間都回「有效但沒有課」時，舊資料會被清空，
+//      這跟 Express 分店真的沒課長得一模一樣，單間分店分不出來，只有全站合計為 0 才是異常。
+const SCRAPE_ALERT_FAILURE_RATIO = 0.5;
+const SCRAPE_ALERT_MAX_ERRORS_SHOWN = 5;
+const SCRAPE_ALERT_MESSAGE_MAX_LENGTH = 120;
+
+// 回傳 null（正常）或一句說明原因的字串。
+function describeScrapeProblem(summary) {
+  const attempted = summary.branchesOk + summary.errors.length;
+  if (attempted === 0) return null; // 沒有任何分店被嘗試（清單是空的），不是爬蟲壞掉，不通知
+  if (summary.errors.length / attempted >= SCRAPE_ALERT_FAILURE_RATIO) {
+    return `${attempted} 間分店有 ${summary.errors.length} 間抓取失敗`;
+  }
+  if (summary.classesWritten === 0) {
+    return `${summary.branchesOk} 間分店都抓取成功，但全部合計寫入 0 筆課程（官網可能回了空資料，舊課表可能已被清空）`;
+  }
+  return null;
+}
+
+async function notifyScrapeProblem(env, reason, errors = []) {
+  if (!env.TEAMS_WEBHOOK_URL) return;
+  const body = [
+    { type: "TextBlock", text: "課表查詢網站：自動重抓課表有問題", weight: "bolder", wrap: true },
+    { type: "TextBlock", text: `${reason}。網站照常運作，但課表可能不是最新的（抓取失敗的分店保留舊資料）。下一輪排程（每天台灣時間 03:00、17:00）會自動再試，也可以到後台手動重抓。`, wrap: true },
+  ];
+  if (errors.length > 0) {
+    const lines = errors.slice(0, SCRAPE_ALERT_MAX_ERRORS_SHOWN).map((e) => `${e.branch}：${String(e.message).slice(0, SCRAPE_ALERT_MESSAGE_MAX_LENGTH)}`);
+    if (errors.length > SCRAPE_ALERT_MAX_ERRORS_SHOWN) lines.push(`…還有 ${errors.length - SCRAPE_ALERT_MAX_ERRORS_SHOWN} 間`);
+    body.push({ type: "TextBlock", text: lines.join("\n"), wrap: true });
+  }
+  try {
+    const res = await postTeamsCard(env, body);
+    if (!res.ok) console.error("scrape alert Teams webhook responded with error", res.status, await res.text());
+  } catch (e) {
+    // 通知失敗不能讓排程本身出錯（逾時、連不上都只記 log）。
+    console.error("scrape alert Teams webhook failed", e);
+  }
+}
+
+// 每日排程的入口：跑整輪爬蟲，再依結果決定要不要通知。回傳 runScrape 的摘要（丟例外時回 null）。
+async function runScheduledScrape(env) {
+  let summary;
+  try {
+    summary = await runScrape(env.DB);
+  } catch (e) {
+    console.error("scheduled scrape threw", e);
+    await notifyScrapeProblem(env, `整輪爬蟲丟出例外：${String(e && e.message).slice(0, SCRAPE_ALERT_MESSAGE_MAX_LENGTH)}`);
+    return null;
+  }
+  const problem = describeScrapeProblem(summary);
+  if (problem) await notifyScrapeProblem(env, problem, summary.errors);
+  return summary;
+}
+
+export { runScheduledScrape, describeScrapeProblem, runScrape, ingestBranchClasses, finalizeFilterOptions, fetchBranchSchedule, transformRawClass, chineseWeekday, cleanupStaleBranches };

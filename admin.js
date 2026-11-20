@@ -90,7 +90,25 @@ function showLoginOverlay(){
   requestAnimationFrame(() => { loginOverlay.style.transition = ""; });
 }
 
-function logoutAndLeave(){
+// 登出：先通知伺服器作廢所有 session（最多等 LOGOUT_TIMEOUT_MS），再清掉本機的 token 並離開。
+// 通知失敗（斷線、逾時、伺服器出錯）一樣照常離開——離線時也要走得掉，代價只是伺服器端的 session 撐到自己過期（最久 7 天）。
+// 作廢的是「現在以前簽發的全部」，不只這一張，所以在任何裝置登出，其他裝置也得重新輸入密碼（見 worker 的 verifyAdminSession）。
+const LOGOUT_TIMEOUT_MS = 3000;
+let loggingOut = false;
+async function logoutAndLeave(){
+  if (loggingOut) return;
+  loggingOut = true;
+  if (getStoredToken()){
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), LOGOUT_TIMEOUT_MS);
+    try{
+      await adminFetch("/adminLogout", { method: "POST", signal: controller.signal });
+    } catch(e){
+      console.error(e);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
   clearStoredToken();
   window.location.href = "index.html";
 }

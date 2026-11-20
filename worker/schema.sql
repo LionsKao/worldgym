@@ -1,5 +1,6 @@
 -- worldgym-schedule D1 schema
--- 資料表：classes（課表）、branches（分店）、meta_filter_options（篩選選項快取）與各種打點/統計表。
+-- 資料表：classes（課表）、branches（分店；只寫不讀的殘留表，分店清單的唯一來源是 src/branches-seed.js）、
+-- meta_filter_options（篩選選項快取）與各種打點/統計表。
 -- SQL 的 IN 子句可以同時下好幾個條件，所以不需要為每種篩選組合各建一個複合索引。
 --
 -- ⚠ 只能對「全新的空資料庫」執行。大部分的表前面有 DROP TABLE IF EXISTS，會把既有資料整張刪掉

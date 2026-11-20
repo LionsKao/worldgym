@@ -26,12 +26,12 @@
 
 | 組 | 嚴重度 | 範圍 | 約行數 | 重點 | 狀態 |
 | --- | --- | --- | --- | --- | --- |
-| G1 | 🔴 | `worker/src/index.js`（整檔） | 945 | 公開 API 與驗證核心：短效 token、每 IP 限流與全站每日額度、後台 session 與登入鎖定、CORS、各打點端點的輸入驗證、留言端點、語音端點、cron 入口。重點看驗證／限流能不能繞過、注入、資源耗盡、費用失控 | 已跑完（1 項待決定） |
-| G2 | 🔴 | `functions/`（全部）、`worker/src/crawlers.js`、`worker/src/util.js`、`_headers`、`worker/wrangler.toml` | 740 | Pages 邊緣與伺服器端注入：台灣 IP 限制與爬蟲例外、擋掉非網站檔案（路徑編碼繞過）、SSR 注入課表的跳脫與快取、動態 sitemap／llms.txt、安全標頭與 CSP、cron 設定 | 已跑完（2 項待決定） |
-| G3 | 🟠 | `admin.js`、`admin.html`、`common.js` | 1,180 | 後台頁面與共用工具：後台會渲染來自外部請求的資料，看 XSS／跳脫、登入與 session 處理、報表計算；`common.js` 是前台後台共用的工具（escapeHtml、fetchJson、圖表、時間） | 已跑完（2 項待決定） |
-| G4 | 🟠 | `worker/src/scrape.js`、`queryClasses.js`、`branchScan.js`、`branches-seed.js`、`branches-excluded.js`、`worker/schema.sql` | 1,010 | 課表資料管線：爬蟲寫入與新舊資料切換、查詢 SQL 與筆數上限、每月分店掃描、時間戳與時區、schema 與實際程式是否一致 | 已跑完（2 項待決定） |
+| G1 | 🔴 | `worker/src/index.js`（整檔） | 945 | 公開 API 與驗證核心：短效 token、每 IP 限流與全站每日額度、後台 session 與登入鎖定、CORS、各打點端點的輸入驗證、留言端點、語音端點、cron 入口。重點看驗證／限流能不能繞過、注入、資源耗盡、費用失控 | 已跑完（無待決定） |
+| G2 | 🔴 | `functions/`（全部）、`worker/src/crawlers.js`、`worker/src/util.js`、`_headers`、`worker/wrangler.toml` | 740 | Pages 邊緣與伺服器端注入：台灣 IP 限制與爬蟲例外、擋掉非網站檔案（路徑編碼繞過）、SSR 注入課表的跳脫與快取、動態 sitemap／llms.txt、安全標頭與 CSP、cron 設定 | 已跑完（1 項待決定） |
+| G3 | 🟠 | `admin.js`、`admin.html`、`common.js` | 1,180 | 後台頁面與共用工具：後台會渲染來自外部請求的資料，看 XSS／跳脫、登入與 session 處理、報表計算；`common.js` 是前台後台共用的工具（escapeHtml、fetchJson、圖表、時間） | 已跑完（無待決定） |
+| G4 | 🟠 | `worker/src/scrape.js`、`queryClasses.js`、`branchScan.js`、`branches-seed.js`、`branches-excluded.js`、`worker/schema.sql` | 1,010 | 課表資料管線：爬蟲寫入與新舊資料切換、查詢 SQL 與筆數上限、每月分店掃描、時間戳與時區、schema 與實際程式是否一致 | 已跑完（無待決定） |
 | G5 | 🟠 | `worker/src/reminders.js`、`worker/src/analytics.js`、`sw.js`、script.js 從開頭到 `trackTeacherEventOncePerSession`（含） | 1,030 | 推播提醒與報表統計：提醒登記／取消／到期發送、每月壓縮並刪明細（資料遺失風險）、前端的儲存／廣告與統計打點／推播註冊與提醒清單 | 已跑完（無待決定） |
-| G6 | 🟡 | script.js 從 `showServiceErrorModal` 到 `performSearch`（含），以及 `init` 到檔尾 | 930 | 前端核心查詢與結果顯示：token 重試與查詢快取、結果列渲染的跳脫、頁面切換與競態、初始化流程、首頁公開排行的渲染 | 已跑完（1 項待決定） |
+| G6 | 🟡 | script.js 從 `showServiceErrorModal` 到 `performSearch`（含），以及 `init` 到檔尾 | 930 | 前端核心查詢與結果顯示：token 重試與查詢快取、結果列渲染的跳脫、頁面切換與競態、初始化流程、首頁公開排行的渲染 | 已跑完（無待決定） |
 | G7 | 🟡 | script.js 從 `isSpeechRecognitionSupported`（含它前面的語音常數）到 `submitVoiceSearch`（含）、`voice-search.js` | 940 | 語音搜尋：狀態機與逾時、麥克風是否確實釋放、iOS 錄音路徑、比對引擎誤判。`worker/scripts/test-voice.mjs` 已有回歸測試，審查時可對照 | 已跑完（無待決定） |
 | G8 | 🟢 | script.js 從 `addDaysIso` 到 `renderThemeToggle`（含） | 1,000 | 篩選、最愛與主題：pill 與勾選狀態、localStorage 讀寫、我的最愛的編輯與長按、深色模式切換 | 已跑完（無待決定） |
 | G9 | 🟢 | script.js 從 `copyTextWithToast` 到 `startNewYearFireworks`（含）、`newyear-fireworks.js`、`index.html`、`403.html`、`404.html`、`ga-init.js`、`theme-init.js`、`css-async.js`、`manifest.json` | 1,300 | 結果頁複製與下載圖片、限時彩蛋、靜態頁面。`index.html` 有 640 行大多是標記，實際邏輯少 | 已跑完（無待決定） |
@@ -73,7 +73,11 @@
 - ~~限流與登入鎖定用完整 IPv6 位址當 key，同一個 /64 內換位址就能重置額度。~~ → **使用者決定：修，已修**。`worker/src/util.js` 新增 `ipLimitKey()`：IPv4 原樣、IPv6 只取前 64 位（`2001:db8:1:2::`）、IPv4-mapped（`::ffff:a.b.c.d`）當 IPv4、看不懂的格式原樣回傳（等於舊行為）；`fetch()` 算出 `ipKey` 給限流（`checkRateLimit`）與 handler，登入失敗鎖定（`admin-fail:<ipKey>`）改用它；`query_access_log` 仍記完整位址。副作用是同一個 /64 底下的人共用額度。限制：擁有 /56 以上整段的人（有些固定寬頻會發）有 256 個以上的 /64，仍可輪流換；這比原本的 2^64 小很多，沒有再往上收（收到 /56 會讓同一棟共用額度的人變多）。
   - 驗證：用假 KV／D1 直接呼叫 `worker.fetch` 的 49 項檢查全過（`ipLimitKey` 的 IPv4、特殊值、壓縮與完整寫法、大小寫、zone id、IPv4-mapped、NAT64 尾巴、七種看不懂的格式；`/issueToken` 同一個 /64 換 12 個位址前 10 次 200、之後 429，別的 /64 有自己的額度，IPv4 行為不變，IPv4-mapped 與同一個 IPv4 共用額度；`/verifyAdminToken` 同一個 /64 換 5 個位址各錯一次後第 6 次 423、正確密碼也被拒、別的 /64 不受影響、KV key 是 /64 形式；存取紀錄仍記完整位址）；對修改前的版本跑 7 項失敗（12 個位址全部通過、鎖定沒觸發、KV 裡有 7 個完整位址的 key）。G1 的 89 項、G5 後端 30 項、`check:branches` 重跑也全過。測試腳本沒進版控。
   - 部署影響：IPv6 使用者的計數 key 換了形式，舊的計數（最多 90 秒的限流窗口、15 分鐘的鎖定）自然作廢，沒有遷移問題；IPv4 的 key 不變。
-- 留言端點只有每 IP 限流，沒有全站每日上限，也沒檢查 Origin。（**仍待決定**）
+- ~~留言端點只有每 IP 限流，沒有全站每日上限，也沒檢查 Origin。~~ → **使用者決定：加全站每日上限 50 則，已做**。
+  - 處理：`/sendMessageToAuthor` 加 `MESSAGE_DAILY_LIMIT`＝50（`takeKvQuota`，台灣日期當 key、TTL 兩天，跟語音的每日額度同一套），超過回 429 `message_daily_limit`；放在內容檢查與 webhook 設定檢查之後，所以內容不合法（400）、沒設 webhook（503）的請求不吃額度，被每 IP 每分鐘 5 次擋下的也不算。前端（`script.js`）收到這個錯誤顯示「今天的留言額度已滿，請明天再試」，其他失敗仍是「送出失敗，請稍後再試」（對使用者來說「稍後」在這裡沒用，要等到明天）。`script.js` 版號 256 → 257。
+  - **刻意不檢查 Origin**：別的網站的瀏覽器要打這個端點，會先被 CORS preflight 擋掉（只放行 `ALLOWED_ORIGINS`），非瀏覽器的腳本可以偽造 Origin，檢查擋不住。已寫進 CLAUDE.md 與程式註解。
+  - 缺點：有人刻意灌滿額度，正常人當天就留不了言；計數是非原子的 KV，爆量時可能少算，只是「大致的」上限。
+  - 驗證：假 KV／D1／Teams webhook 直接呼叫 `worker.fetch` 的 13 項（每則換一個 /64：前 50 則 200、第 51～55 則 429、Teams 只被呼叫 50 次、KV key 與值；空白與超過 500 字的 400、沒設 webhook 的 503 不吃額度；額度滿了 `/issueToken` 不受影響；同一個 IP 前 5 則 200、之後 `rate_limited` 且不算進每日額度），對修改前的版本跑 5 項失敗；前端 jsdom 10 項（額度滿、每 IP 限流、502、429 但不是 JSON、網路失敗、成功各自的提示與按鈕狀態與 `send_message` 事件），對修改前的 `script.js` 跑 1 項失敗。G1 的 89 項、G5 後端 30 項、IPv6 49 項、前端 G8 131／G9 81／G10 13／load-guard 32、`test:voice` 91、`check:versions` 重跑也全過。測試腳本沒進版控。
 
 **決定不修（3 項）**
 - 被限流的請求也寫 D1 存取紀錄：這是刻意的設計（報表要看被擋下的次數），要改就得放棄它。
@@ -85,7 +89,7 @@
 - G2：`worker/wrangler.toml` 的 `VAPID_SUBJECT` 是個人 email，repo 若是公開的要評估；同一個檔案有註解還寫「CLAUDE.md『語音搜尋』第十版」，已經過期。
 
 ### G2
-2026-11-20 跑完（xhigh，目標 `functions/`、`worker/src/crawlers.js`、`worker/src/util.js`、`_headers`、`worker/wrangler.toml`，沒有二次驗證），共 9 項：修 7 項、待決定 2 項。這一組沒有發現能直接利用的漏洞；`_middleware.js` 的路徑封鎖（先 decode 再比對、點開頭檔案、`.md`）與 SSR 的跳脫都沒找到繞過方式。
+2026-11-20 跑完（xhigh，目標 `functions/`、`worker/src/crawlers.js`、`worker/src/util.js`、`_headers`、`worker/wrangler.toml`，沒有二次驗證），共 9 項：修 7 項、待決定 2 項（1 項已決定並修掉，見下）。這一組沒有發現能直接利用的漏洞；`_middleware.js` 的路徑封鎖（先 decode 再比對、點開頭檔案、`.md`）與 SSR 的跳脫都沒找到繞過方式。
 
 **已修（7 項）**
 - `_headers` 收回麥克風權限的規則只寫了 `/admin.html`，但它會 308 轉址到實際提供頁面的 `/admin`，後者仍帶 `microphone=(self)`（用 curl 對正式站查到的）。→ 新增 `/admin` 規則。順便發現「本機沒生效」的舊註解是誤判（當時只讀了轉址後的 `/admin`），已改正。
@@ -99,14 +103,19 @@
 驗證：用假 Cache API／D1 呼叫 `getFragment`、用假 `fetch` 與一個永不回應的本機伺服器測 Teams 逾時（實測 10.0 秒後丟 `TimeoutError`），共 40 個檢查全過；G1 的 89 個檢查重跑也全過。測試腳本沒進版控。
 
 **待使用者決定（2 項，沒修）**
-- `wrangler.toml` 的 `VAPID_SUBJECT` 是真實的工作 email，寫在版控裡。當時查不到 repo 是不是公開的，後來在 G3 看到 `admin.js` 開頭註解寫「repo 是公開的」，所以這個 email 是公開的；可以改成角色信箱或 `https:` 網址（金鑰沒變，既有訂閱不會失效）。
+- ~~`wrangler.toml` 的 `VAPID_SUBJECT` 是真實的工作 email，寫在版控裡。~~ → **使用者決定：改成網址，已改**。當時查不到 repo 是不是公開的，後來在 G3 看到 `admin.js` 開頭註解寫「repo 是公開的」，所以這個 email 是公開的。
+  - 處理：`VAPID_SUBJECT = "https://worldgym.pages.dev"`，並在 `wrangler.toml` 加註解說明用途與為什麼不放 email。金鑰沒變，既有訂閱不會失效，不用使用者重新登記。推播程式庫（`@block65/webcrypto-web-push`）只檢查 subject 不是空的，原樣放進 JWT 的 `sub`，所以任何 `https:` 網址都能用。
+  - 驗證：讀 `wrangler.toml` 真正的值，用臨時產生的金鑰對 Google、Apple、Mozilla 三種推播網域各簽一次，解開 JWT 確認 `sub` 是這個網址、`aud` 是推播服務網域、`exp` 約 12 小時後、`alg=ES256`、簽章驗證通過，`buildPushPayload` 整包也組得出請求；`wrangler.toml` 裡（扣掉註解）沒有任何 email，共 15 項全過。**沒有對真正的推播服務送一則實際通知**：Apple 的 Web Push 文件要求 `sub` 是 `mailto:` 或 `https:` 網址，這點只能靠規格，上線後若有人回報 iOS 收不到提醒，先看這裡。
+  - 限制：git 歷史裡已經有的 email 還在，而且 repo 是公開的，大概早就被抓走了；要完全清掉得改寫 git 歷史，風險大，沒有做。
+  - 部署：這個變數由 `wrangler.toml` 在部署時套用，push 到 `main` 觸發 Worker 自動部署後才會生效。
 - 暫時的 `/sitemap-static.xml` 診斷路徑（`_middleware.js` 的 `PUBLIC_CRAWLER_PATHS` 加上根目錄 639 行的靜態檔）還在。只有你知道 Search Console 的「無法讀取 Sitemap」問題解決了沒；解決後連同 Search Console 裡那份 sitemap 一起刪。
+  - **2026-11-20 使用者說「剩下的照你的處理方式」→ 這項保留、沒刪**（唯一還開著的一項）：我只能確認伺服器這一側沒問題——對正式站實測 `/sitemap.xml` 回 200、`application/xml`、內容是動態產生的（`lastmod` 是當天），`/sitemap-static.xml` 也回 200——但 Google 那邊讀不讀得到只有 Search Console 看得出來；留著不花任何成本，提早刪反而可能丟掉診斷證據。**等你看過 Search Console：`sitemap.xml` 顯示「成功」就告訴我，我連同 `PUBLIC_CRAWLER_PATHS` 那一項一起刪（Search Console 裡那份 `sitemap-static.xml` 要你自己移除）**；若還是「無法讀取」，這份靜態檔正好用來對照。
 
 **留給後面組別的線索**
 - G3：`/queryAccessStats` 的 `userAgent` 是攻擊者可控字串（G1 已記），要確認後台渲染時有跳脫。另外 CSP 是全站共用（`/*`），後台頁雖然沒有載入 GA，仍允許 Google Tag Manager 等腳本來源；若想讓後台更嚴格，可以替 `/admin` 另設較窄的 CSP（要先用 `!` 拔掉繼承值再設）。
 
 ### G3
-2026-11-20 跑完（xhigh，目標 `admin.js`、`admin.html`、`common.js`，沒有二次驗證），共 10 項：修 7 項、待決定 2 項、不修 1 項。**後台渲染外部資料的 XSS 沒有問題**：存取紀錄的 `ip`、`userAgent`、`lastSeen`（含 `title` 屬性）、廣告文字、下拉選單的值都有跳脫，用帶 `<img onerror>`／`<script>` 的 User-Agent 實測沒有長出元素（這是 G1 留下的線索，已結案）。
+2026-11-20 跑完（xhigh，目標 `admin.js`、`admin.html`、`common.js`，沒有二次驗證），共 10 項：修 7 項、待決定 2 項（已處理：1 項修、1 項不修，見下）、不修 1 項。**後台渲染外部資料的 XSS 沒有問題**：存取紀錄的 `ip`、`userAgent`、`lastSeen`（含 `title` 屬性）、廣告文字、下拉選單的值都有跳脫，用帶 `<img onerror>`／`<script>` 的 User-Agent 實測沒有長出元素（這是 G1 留下的線索，已結案）。
 
 **已修（7 項）**
 - 折線圖 Y 軸在數值很小時刻度標籤重複（用真的 Chart.js 4.4.7 量到：最大 1 → `0,0,1,1,1`、最大 7 → `0,2,4,5,7` 而 1.75 被標成 2）。→ 新增 `niceAxisMax()` 決定上限，4 等分、每格整數（最大 1 → 0～4、7 → 0～8、110 → 0～120、8123 → 0～10000）；`updateLineChart()` 換資料時一併重算。前後台的折線圖都吃到。
@@ -119,9 +128,13 @@
 
 驗證：用 jsdom 載入真正的 `admin.html`、Chart.js 4.4.7、`common.js`、`admin.js`（用真的 `<script>` 元素執行，top-level `const` 跟瀏覽器一樣共用），搭配假 `fetch`，共 71 個檢查全過；G1 的 89 個、G2 的 40 個、語音比對 91 個案例、`check:versions` 重跑也全過。`common.js` 版號 8 → 9（`index.html`、`admin.html` 兩邊）、`admin.js` 46 → 47。測試腳本沒進版控。
 
-**待使用者決定（2 項，沒修）**
-- 登出只清瀏覽器裡的 token，伺服器端 7 天的 session（可滑動延長）仍然有效，沒有撤銷機制。要修得在伺服器端加撤銷清單或登出端點，是設計上的改動。
-- 公開的 `admin.html` 內嵌了 Cloudflare 帳號 ID、D1 資料庫 ID、GA 資源 ID 與 Web Analytics 的 site tag 的連結。它們不是密碼，但讓釣魚或探測更容易；可以改成登入後才由 `admin.js` 產生連結。**`admin.js` 開頭的註解寫「repo 是公開的」，所以 G2 提到的 `VAPID_SUBJECT`（真實工作 email）也是公開的**，要不要改請一併決定。
+**待使用者決定（2 項）→ 2026-11-20 使用者說「剩下的照你的處理方式」，已處理**
+- ~~登出只清瀏覽器裡的 token，伺服器端 7 天的 session（可滑動延長）仍然有效，沒有撤銷機制。~~ → **已修：登出會在伺服器端作廢 session**。
+  - 做法：新增 `POST /adminLogout`（要帶有效 session、每 IP 每分鐘 10 次）。Worker 在 KV 記 `admin-session-revoked-before`＝當下時間（TTL 7 天＋1 小時），`verifyAdminSession` 在簽章與效期都通過後多讀一次這個 key，**簽發時間（`exp − 7 天`）不晚於它的 session 一律拒絕**。token 格式沒變，所以部署前簽發的 session 也能被作廢；`issueAdminSession` 因此拿掉自訂效期的參數（一律 7 天）。前端 `logoutAndLeave()` 先打 `/adminLogout`（最多等 3 秒），不管成功與否都清本機 token 並離開，連點只送一次。
+  - **為什麼作廢「全部」而不只是這一張**：每次開後台都會換發新 token、舊的不會失效，只作廢送來登出的那一張，擋不住「早先被複製走的那張」，而登出就是為了讓它們都不能用。代價：在任何一台裝置登出，其他裝置也得重新輸入密碼（單一管理者，可接受）。
+  - 限制：KV 全球傳播最久約一分鐘；斷線時登出只清本機，伺服器端 session 仍撐到自己過期（最久 7 天）；要立刻作廢全部仍是換 `MANUAL_SCRAPE_TOKEN` 與 `ADMIN_SESSION_SECRET`。有效 token 每個請求多一次 KV 讀取，亂送的 token 不會碰到 KV。
+  - 驗證：後端 33 項（登出前後、A 與換發的 B 都作廢、舊密碼重新登入拿到新 token、沒登入／亂碼／原始密碼／GET 都不能登出、部署前格式的 token 相容、簽發時間與登出時間的 ±1 ms 邊界、紀錄寫壞時保守拒絕、亂送的 token 不多讀 KV、限流）＋前端 16 項（jsdom 載入真的 `admin.html`／`admin.js`：正常登出帶對的 header、伺服器 500／403／429／斷網／卡住 3 秒都照常離開、連點只送一次、沒有 token 不送）。`admin.js` 版號 47 → 48。**沒有對正式站實際登出一次**（會讓你現有的後台登入失效）。
+- ~~公開的 `admin.html` 內嵌了 Cloudflare 帳號 ID、D1 資料庫 ID、GA 資源 ID 與 Web Analytics 的 site tag 的連結。~~ → **不修**。理由：搬到 `admin.js` 只是從一個公開檔案搬到另一個公開檔案（兩個都是任何人能直接下載的靜態檔，repo 也是公開的），沒有擋到任何人；D1 資料庫 ID 本來就寫在公開的 `worker/wrangler.toml`；Cloudflare 帳號 ID、GA 資源 ID 都不是憑證（沒有登入權限就看不到任何東西）。真要藏得由登入後的 Worker 端點回傳連結，為了幾個非密碼的 ID 不值得。**`admin.js` 開頭的註解寫「repo 是公開的」，所以 G2 提到的 `VAPID_SUBJECT`（真實工作 email）也是公開的**（那一項已在 G2 處理，改成網址了）。
 
 **不修（1 項）**
 - 自製下拉選單沒有鍵盤操作與 ARIA（選項是沒有 tabindex 的 div）。要做好得改選單的結構與互動，而且會動到公開首頁的排行選單，這次不處理。
@@ -130,7 +143,7 @@
 - `admin.js` 的 `addDays` 與 `script.js` 的 `addDaysIso`（以及 Worker 的 `addDaysIso`）是三份相同功能的程式；要合併得動 `script.js`，價值低，沒做。
 
 ### G4
-2026-11-20 跑完（xhigh，目標 `scrape.js`、`queryClasses.js`、`branchScan.js`、`branches-seed.js`、`branches-excluded.js`、`schema.sql`，沒有二次驗證），共 7 項：修 5 項、待決定 2 項。**這一組最重要的一項是「官網一出錯就清空整間分店」**——用官網的真實 API 實測確認過，不是推論。
+2026-11-20 跑完（xhigh，目標 `scrape.js`、`queryClasses.js`、`branchScan.js`、`branches-seed.js`、`branches-excluded.js`、`schema.sql`，沒有二次驗證），共 7 項：修 5 項、待決定 2 項（已處理：1 項做、1 項只修說明，見下）。**這一組最重要的一項是「官網一出錯就清空整間分店」**——用官網的真實 API 實測確認過，不是推論。
 
 **已修（5 項）**
 - 官網課表 API 出錯時 HTTP 狀態仍是 200，內容是 `{"exception":"EXCEPTION","data":"","status":false}`（用壞日期實測）。舊的 `fetchBranchSchedule` 把它當成「沒有課」回 `[]`，`ingestBranchClasses` 隨後把整間分店的舊課表清掉；官網在 03:00／17:00 整個壞掉的話，111 間全被清空、`classes` 變 0 列，網站最久 12 小時查不到課（驗證腳本重現：1199 列 → 0 列，而且 `branchesOk` 還顯示 111）。→ 官網回 `status:false`、有 `exception`、或 `data` 不是陣列都丟錯，該間舊資料原封不動、列進 `errors`。沒有課的 Express 分店（`status:true`、`data` 是一排空物件 `{}`，實測確認）不受影響，仍然會清空那間分店。
@@ -141,9 +154,12 @@
 
 驗證：用真的 SQLite（`node:sqlite`）包成跟 D1 一樣的介面（100 個參數上限、不收 function／object 參數、`batch` 是一個 transaction），搭配假官網，共 53 個檢查全過；對修改前的版本跑，15 項失敗（全部對應上面的問題）。涵蓋整輪爬蟲（官網出錯／全部出錯／HTTP 503／Express 沒課／換老師／同 id 原地更新／清孤兒分店）、500 組隨機查詢條件與暴力過濾的結果比對、分店掃描與 seed 資料。另外對官網實測三次（一般分店、Express 沒課的分店、故意給壞日期）確認回應格式，並用真實回應跑 `transformRawClass`（217 列 → 171 堂有課名，id 沒有撞、教室與時間格式都正常）。`schema.sql` 在真的 SQLite 整份可執行；依序套用 `migrations/` 後的結構與 `schema.sql` 一致（`classes`、`branches`、`meta_filter_options`、`reminders` 四張在 migration 開始前就存在，比不到；`idx_query_access_log_ip` 是 migration 011 建、之後手動砍掉的，`migrations/018` 有記）。G1 89 項、G2 40 項、語音比對 91 個案例、`check:branches`、`check:versions` 重跑也全過。測試腳本沒進版控。
 
-**待使用者決定（2 項，沒修）**
-- **排程爬蟲失敗沒有任何通知**：`runScrape` 的結果（幾間失敗）只寫 `console.log`。官網改版或持續出錯時，D1 保留舊資料、網站照常運作，但課表一天比一天舊，只有打開後台手動重抓或看 Worker log 才知道。專案已有 `postTeamsCard`，可以在「失敗的分店超過某個比例」時發一則 Teams；但這是新增通知行為，要你決定門檻（例如失敗超過一半）與要不要做。
-- **`branches` 資料表只寫不讀**：全專案沒有任何地方讀它，`upsertBranches` 每輪白寫 111 列；README 與 CLAUDE.md 還把它列成「分店清單」，容易讓人誤以為分店清單在 D1。要移除得新增 migration `DROP TABLE branches` 並同步文件；不處理也沒有害處（每天約 222 列寫入）。
+**待使用者決定（2 項）→ 2026-11-20 使用者說「剩下的照你的處理方式」，已處理**
+- ~~排程爬蟲失敗沒有任何通知。~~ → **已做：失敗時發 Teams 通知**。
+  - 門檻（我的建議）：跑完每日排程（03:00、17:00）後，**失敗的分店達一半以上**、**整輪丟例外**（例如 D1 連不上）、或**沒有分店失敗但全部合計寫入 0 筆課程**，就發一則 Teams（一天最多兩則；下一輪恢復正常就不再發）。少數幾間失敗不通知：單間偶爾出錯是常態、下一輪會補上，通知太頻繁會被忽略。第三種是補「官網對每間都回『有效但沒有課』」那個單間分不出來的缺口：全站合計為 0 才是異常（驗證時重現過：這種情況舊課表會被清空）。
+  - 做法：`scrape.js` 新增 `runScheduledScrape(env)`（排程入口，`index.js` 的 `scheduled()` 改呼叫它）與 `describeScrapeProblem(summary)`（判斷）；沒設 `TEAMS_WEBHOOK_URL` 就靜默略過；Teams 回錯誤或逾時只記 log、不讓排程出錯；卡片列最多 5 間失敗分店（訊息截 120 字），其餘寫「還有 N 間」。後台手動重抓（`/scrapeManual`）不發，操作的人在終端機就看得到。
+  - 驗證：32 項（門檻邊界 55／111 不發、56／111 發，剛好一半發、0 間嘗試不發；整輪用真的 SQLite 與假官網跑：全成功、11 間失敗、全部失敗、官網對每間回空；D1 壞掉丟例外；沒設 webhook、Teams 回 500、Teams 逾時都不丟例外；全部失敗時舊課表原封不動；兩個 cron 都走新流程、其餘 cron 與手動重抓不發）。**沒有對真的 Teams 發過**（要 push 部署後等排程失敗才會發，或你可以暫時把門檻改低自己試）。
+- ~~`branches` 資料表只寫不讀。~~ → **不 DROP，只修說明**。理由：留著沒有害處（每天約 222 列寫入，量很小）；要移除得先部署停止寫入的程式、再對正式庫跑 `DROP TABLE`，順序一反（migration 先跑）舊程式每輪爬蟲都會在 `upsertBranches` 出錯，為了省 222 列不值得冒這個險。改成：CLAUDE.md、README 的資料表說明與 `schema.sql` 檔頭註解都寫明「只寫不讀的殘留表，分店清單的唯一來源是 `branches-seed.js`」，避免有人以為分店清單在 D1。
 
 **其他沒處理**
 - 官網回「有效但沒有課」（`status:true`、一排 `{}`）跟 Express 的真的沒課長得一模一樣，無法區分，所以仍然會清空那間分店；官網實際出錯的訊號（`status:false`）已經處理。
@@ -181,7 +197,7 @@
 - 每月壓縮在新舊寫法下，壓縮前後所有報表（排行、趨勢、最愛、廣告、提醒、年份選單）數字完全一致，中途失敗後下一輪補齊的最終結果也一致。
 
 ### G6
-2026-11-20 跑完（xhigh，目標 `script.js` 的 `showServiceErrorModal`～`performSearch` 與 `init`～檔尾，沒有二次驗證），共 10 項：修 8 項、待決定 1 項、不處理 1 項。結果列渲染、查詢快取、token 重試、`init` 流程的主線都沒有問題；問題集中在「失敗時使用者看不到」與「兩件事同時進行」。
+2026-11-20 跑完（xhigh，目標 `script.js` 的 `showServiceErrorModal`～`performSearch` 與 `init`～檔尾，沒有二次驗證），共 10 項：修 8 項、待決定 1 項（已修，見下）、不處理 1 項。結果列渲染、查詢快取、token 重試、`init` 流程的主線都沒有問題；問題集中在「失敗時使用者看不到」與「兩件事同時進行」。
 
 **已修（8 項）**
 - `init()` 載入 `/filterOptions` 用 `fetch().then(r => r.json())`，不檢查 HTTP 狀態：被限流（429）或伺服器錯誤時回應本身也是 JSON（`{"error":...}`），解析成功就被當成成功，課程與老師區塊變成空的，沒有錯誤提示、也沒有重試。→ 改用 `common.js` 的 `fetchJson`，失敗走原本的「讀取失敗」文字與服務錯誤視窗。
@@ -195,8 +211,12 @@
 
 驗證：用 jsdom 載入真正的 `index.html`、`common.js`、整份 `script.js`（逾時常數縮短為 3000→300、6000→600 毫秒），搭配假 `fetch`、假 Chart、假 IntersectionObserver，共 62 個檢查全過；對修改前的版本跑，17 項失敗（對應上面 8 項）。涵蓋：載入選項（正常、429／500／純文字 403、先失敗再重試成功）、通知清單卡住與晚到、查詢主線（結果列渲染與跳脫、縮課日標紅、資料更新時間、語音原句標籤、結果數 0／超過 250／500／429／逾時／網路錯誤的提示、查詢快取的命中／過期／排序／20 組上限、連續 5 次查詢的提醒視窗）、兩個查詢同時進行、等待時離開篩選頁、token 過期與 `/issueToken` 失敗、公開排行（只畫前 10 名、年月選單、沒資料、失敗、亂序）與趨勢圖、依位置篩選分店。提示框掛在隱藏按鈕上會跑到畫面外這點，另外在內建瀏覽器（本機伺服器、手機寬度 375×812）量過位置，jsdom 沒有版面、量不出來。G5 的前端檢查（35 項）與 `check:versions` 重跑也全過。`script.js` 版號 251 → 252。測試腳本沒進版控。
 
-**待使用者決定（1 項，沒修）**
-- 「依目前位置篩選分店」（1／3／5 公里）在定位被拒絕、逾時、或附近沒有任何分店時完全沒有畫面回饋，只送 GA 事件，使用者不知道是壞了還是附近真的沒有。要不要提示、提示什麼字，是產品決定。
+**待使用者決定（1 項）→ 2026-11-20 使用者說「剩下的照你的處理方式」，已修**
+- ~~「依目前位置篩選分店」（1／3／5 公里）在定位被拒絕、逾時、或附近沒有任何分店時完全沒有畫面回饋。~~ → **已加提示**（用現有的 `showPillWarning`，掛在被按的那顆距離鈕上方、1.8 秒後消失，跟其他按鈕的短提示一致）：
+  - 附近沒有分店：「N 公里內沒有分店」（N 是按的 1／3／5）。
+  - 沒有定位權限（錯誤碼 1，例如在瀏覽器視窗按了拒絕）：「未取得定位權限，請至設定開啟」；逾時（3）：「定位逾時，請稍後再試」；其他（2 無法取得位置等）：「無法取得目前位置，請稍後再試」。
+  - 順手補兩處：① `getCurrentPosition` 以前沒帶 timeout，可能永遠不回呼（沒有任何回饋），現在 `timeout: 10000`（規格上不含等使用者回答權限視窗的時間）；② 定位進行中不再接受新的距離鈕請求（連點三個鈕以前會疊出三組結果與提示）。等定位期間使用者離開了篩選頁、按鈕被藏起來時不顯示提示（位置是 0，會跑到畫面外；跟 G6 修的那一項同一個原因），勾選與 GA 照常。GA 事件不變。
+  - 驗證：jsdom 23 項（附近有／沒有分店、四種錯誤碼的文字與 GA、連點、失敗後旗標放開可再按、離開頁面、權限已封鎖沿用原本說明視窗、第一次說明視窗按確定後被拒絕）；對修改前的 `script.js` 跑，8 項失敗；內建瀏覽器 375×812 實測兩種提示都完整顯示在按鈕上方、一行放得下。`script.js` 版號 257 → 258。
 
 **不處理（1 項）**
 - 首頁四張圖表各自註冊 `window` 的 `resize` 去呼叫 `chart.resize()`，而 Chart.js 設了 `responsive: true` 已經自己監聽容器大小，看起來是多餘的。但不確定當初是不是為了某個版面問題刻意加的，拿掉沒有可量的好處，沒動。

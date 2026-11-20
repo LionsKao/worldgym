@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { queryClasses } from "./queryClasses.js";
-import { runScrape, cleanupStaleBranches } from "./scrape.js";
+import { runScrape, runScheduledScrape, cleanupStaleBranches } from "./scrape.js";
 import { REMIND_MINUTES_OPTIONS, registerReminder, isAllowedPushEndpoint, cancelReminder, listReminders, dispatchDueReminders } from "./reminders.js";
 import { monthlyNameRanking, availableYears, monthlySearchTrend, favoriteStatsCombined, adStatsCombined, reminderStatsCombined, rollupAnalyticsEvents } from "./analytics.js";
 import { scanForNewBranches } from "./branchScan.js";
@@ -165,7 +165,7 @@ async function verifyToken(getKey, token) {
   const valid = await crypto.subtle.verify("HMAC", key, sigBytes, payloadBytes);
   if (!valid) return { ok: false, reason: "token_invalid" };
   if (typeof payload.exp !== "number" || Date.now() > payload.exp) return { ok: false, reason: "token_expired" };
-  return { ok: true };
+  return { ok: true, exp: payload.exp };
 }
 
 async function hmacKey(env) {
@@ -225,11 +225,22 @@ async function adminSessionKey(env) {
   const material = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(seed));
   return crypto.subtle.importKey("raw", material, { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
 }
-async function issueAdminSession(env, ttlMs = ADMIN_SESSION_TTL_MS) {
-  return signToken(await adminSessionKey(env), ttlMs);
+// 一律用固定的 ADMIN_SESSION_TTL_MS：token 裡只有 exp，簽發時間靠「exp − 效期」推回來（見 verifyAdminSession 的登出撤銷），
+// 所以不能讓某張 session 有不同的效期。
+async function issueAdminSession(env) {
+  return signToken(await adminSessionKey(env), ADMIN_SESSION_TTL_MS);
 }
+// 登出時 /adminLogout 在 KV 記下當下時間，「這個時間點以前簽發的 session 全部作廢」（不是只作廢送來登出的那一張：
+// 每次開後台都會換發新 token、舊的不會失效，只作廢一張擋不住「早先被複製走的那張」，而登出的目的就是讓它們都不能用）。
+// 代價是在任何一台裝置登出，所有裝置都要重新輸入密碼。KV 全球傳播最久約一分鐘；這個 key 的 TTL 比 session 效期多一點，
+// 過了之後舊 token 本來就全過期，key 自己消失。只有簽章與效期都通過才會多讀這一次 KV，亂送的 token 不會碰到 KV。
+const ADMIN_REVOKED_BEFORE_KEY = "admin-session-revoked-before";
 async function verifyAdminSession(env, token) {
-  return (await verifyToken(() => adminSessionKey(env), token)).ok;
+  const result = await verifyToken(() => adminSessionKey(env), token);
+  if (!result.ok) return false;
+  const revokedBefore = parseInt((await env.QUERY_RATE_LIMIT.get(ADMIN_REVOKED_BEFORE_KEY)) || "0", 10);
+  const issuedAt = result.exp - ADMIN_SESSION_TTL_MS;
+  return issuedAt > revokedBefore;
 }
 // 一般後台端點只認 session token。原始密碼只能在 /verifyAdminToken 這個唯一入口拿來換 session——
 // 那裡有連續失敗鎖定；如果其他端點也接受原始密碼，就等於繞過鎖定，可以對任一端點慢慢猜密碼。
@@ -483,6 +494,15 @@ async function handleVerifyAdminToken({ req, env, ctx, origin, ipKey }) {
   return json({ ok: true, sessionToken }, 200, origin);
 }
 
+// 後台登出：作廢目前為止簽發的所有 session（原因與代價見 verifyAdminSession 上面的說明）。
+// 要等寫入完成才回應（不用 waitUntil），前端收到 200 就代表伺服器已經記下。
+async function handleAdminLogout({ env, origin }) {
+  await env.QUERY_RATE_LIMIT.put(ADMIN_REVOKED_BEFORE_KEY, String(Date.now()), {
+    expirationTtl: Math.ceil(ADMIN_SESSION_TTL_MS / 1000) + 3600,
+  });
+  return json({ ok: true }, 200, origin);
+}
+
 // 手動測試整站爬蟲：回傳串流（NDJSON，每行一個 JSON 物件），讓 admin 頁面的終端機能即時顯示進度，
 // 不用等整輪一百多家分店都跑完才拿到結果。最後一行一定是 type:"result" 或 type:"error"。
 function handleScrapeManual({ env, ctx, origin }) {
@@ -510,7 +530,17 @@ function handleScrapeManual({ env, ctx, origin }) {
 }
 
 // 「寫信給作者」表單：把留言轉發到 Teams 頻道 webhook，不落地存資料。
-async function handleSendMessageToAuthor({ req, env, origin }) {
+// 防濫用：每 IP 每分鐘 5 次（ROUTES 的 limit）擋不住「很多個 IP 各自小量」，所以另有全站每日上限 MESSAGE_DAILY_LIMIT，
+// 把最壞情況（頻道被洗版、webhook 被 Teams 限流）變成有上限的數字。正常使用一天遠低於這個數字。
+// 沒檢查 Origin：別的網站的瀏覽器要打這個端點，會先被 CORS preflight 擋掉（只放行 ALLOWED_ORIGINS），
+// 而非瀏覽器的腳本可以隨便偽造 Origin，檢查擋不住。
+// 計數用 takeKvQuota（非原子、爆量時可能少算），是「大致的」上限、不是硬性保證。
+// 缺點：有人刻意灌滿額度，正常人當天就留不了言（回 429 message_daily_limit，前端會顯示「今天的留言額度已滿」）。
+const MESSAGE_DAILY_LIMIT = 50;
+function takeMessageDailyBudget(env, ctx) {
+  return takeKvQuota(env, ctx, `message-daily:${todayIsoTaipei()}`, MESSAGE_DAILY_LIMIT, 172800);
+}
+async function handleSendMessageToAuthor({ req, env, ctx, origin }) {
   const body = await readJson(req);
   const content = String(body?.content || "").trim();
   if (!content || content.length > 500) {
@@ -520,6 +550,10 @@ async function handleSendMessageToAuthor({ req, env, origin }) {
   if (!env.TEAMS_WEBHOOK_URL) {
     console.error("TEAMS_WEBHOOK_URL 未設定，無法轉發留言");
     return json({ error: "teams webhook not configured" }, 503, origin);
+  }
+  // 放在內容檢查與 webhook 設定檢查之後：內容不合法或根本送不出去的請求不會吃掉每日額度。
+  if (!(await takeMessageDailyBudget(env, ctx))) {
+    return json({ error: "message_daily_limit" }, 429, origin);
   }
   let teamsRes;
   try {
@@ -902,6 +936,7 @@ const ROUTES = {
   },
 
   "POST /verifyAdminToken": { limit: 10, handler: handleVerifyAdminToken },
+  "POST /adminLogout": { limit: 10, admin: true, handler: handleAdminLogout },
   "GET /scrapeManual": { limit: 5, admin: true, handler: handleScrapeManual },
   "POST /sendMessageToAuthor": { limit: 5, handler: handleSendMessageToAuthor },
 
@@ -997,8 +1032,9 @@ export default {
     // 每天台灣時間 03:00、17:00（UTC 19:00、09:00）各自動重抓一次全部分店，見 wrangler.toml 的 cron 設定。
     // 這支爬蟲對每間分店（目前 111 間）逐一發出 subrequest，「單次執行」就用掉一百多個，
     // 需要 Workers Paid 方案（單次執行 subrequest 上限 1000）才跑得完；免費方案單次執行上限只有 50，會在跑到一半時失敗。
+    // 跑完會依結果決定要不要發 Teams 通知（失敗一半以上、整輪丟例外、全站合計 0 筆課程），見 scrape.js 的 runScheduledScrape。
     if (event.cron === "0 19 * * *" || event.cron === "0 9 * * *") {
-      ctx.waitUntil(runScrape(env.DB));
+      ctx.waitUntil(runScheduledScrape(env));
       return;
     }
     // 每月 2 號台灣時間 04:00（cron 一律是 UTC，所以設定寫成 1 號 20:00）：清一次 query_access_log 的舊紀錄，

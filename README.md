@@ -72,7 +72,7 @@
 | cron | 時間 | 做什麼 |
 | --- | --- | --- |
 | `*/5 * * * *` | 每 5 分鐘 | 掃描課前推播是否到期並送出 |
-| `0 19 * * *`、`0 9 * * *` | 每天 03:00、17:00 | 重抓全部分店課表（需要 Workers Paid：單次執行要發一百多個 subrequest，免費方案上限只有 50） |
+| `0 19 * * *`、`0 9 * * *` | 每天 03:00、17:00 | 重抓全部分店課表（需要 Workers Paid：單次執行要發一百多個 subrequest，免費方案上限只有 50）。跑完若失敗的分店達一半以上、整輪丟例外、或全部合計寫入 0 筆課程，會發 Teams 通知（少數幾間失敗不通知；後台手動重抓不發） |
 | `0 20 1 * *` | 每月 2 號 04:00（cron 是 UTC，設定寫成 1 號 20:00） | 兩件互不相關的事：①把**當月以前**（實務上就是剛結束的上個月）的報表明細壓縮成月度彙總並刪掉明細；②另外清掉 90 天前的 `query_access_log`（這個「90 天」只針對這張存取紀錄表，跟報表明細無關） |
 | `0 21 2 * *` | 每月 3 號 05:00（設定寫成 UTC 2 號 21:00） | 比對官網 sitemap 與 `branches-seed.js`，有差異才發 Teams 通知（只通知，不會自動改資料）；`branches-excluded.js` 裡已知不收的網址不算差異 |
 
@@ -86,9 +86,9 @@
 | 公開讀取 | `GET /ads`（60）、`GET /publicSearchStats`、`/publicTeacherStats`、`/publicCourseStats`、`/publicBranchStats`（各 30） | 廣告與首頁公開排行 |
 | 打點 | `POST /trackAdEvent`（60）、`/trackAdEvents`（20）、`/trackSearchEvents`（20）、`/trackSearch`（60）、`/trackFavorite`（60） | 使用量統計，內容會驗證（見「防濫用機制」） |
 | 推播提醒 | `POST /registerReminder`、`/cancelReminder`、`GET /myReminders`（各 60） | 見「推播提醒」 |
-| 其他 | `POST /sendMessageToAuthor`（5） | 留言轉發到 Teams |
+| 其他 | `POST /sendMessageToAuthor`（5） | 留言轉發到 Teams；另有全站每日 50 則上限（`MESSAGE_DAILY_LIMIT`），超過回 429 `message_daily_limit` |
 | 語音搜尋 | `POST /transcribeVoice`（10） | 只有 iOS／iPadOS 用：前端錄最長 7 秒音訊上傳，Worker 用 Workers AI（`AI` binding，Whisper）轉成文字回傳；要帶 `/issueToken` 的 token，音檔不儲存（上限 256KB，另有全站每日 2000 次的額度，超過回 429）。其他裝置用瀏覽器內建語音辨識，不經過這個端點 |
-| 後台 | `POST /verifyAdminToken`（10）、`GET /adStats`、`/favoriteStats`、`/reminderStats`、`/voiceStats`、`/queryAccessStats`（各 30）、`GET /scrapeManual`、`POST /scanNewBranches`、`/cleanupStaleBranches`、`/rollupAnalyticsManual`（各 5） | 除登入外都要帶 session token；`/scrapeManual` 以串流回傳進度 |
+| 後台 | `POST /verifyAdminToken`（10）、`POST /adminLogout`（10）、`GET /adStats`、`/favoriteStats`、`/reminderStats`、`/voiceStats`、`/queryAccessStats`（各 30）、`GET /scrapeManual`、`POST /scanNewBranches`、`/cleanupStaleBranches`、`/rollupAnalyticsManual`（各 5） | 除登入外都要帶 session token；`/scrapeManual` 以串流回傳進度 |
 
 ## 🗄️ 資料表總覽
 
@@ -97,7 +97,7 @@ D1（`worldgym-schedule`）的 table，完整欄位以 [`worker/schema.sql`](wor
 | Table | 用途 |
 | --- | --- |
 | `classes` | 爬蟲抓下來的課表（分店、日期、課程、老師、教室、是否代課） |
-| `branches` | 分店清單（slug、名稱、地區） |
+| `branches` | 只寫不讀的殘留表：分店清單的唯一來源是 `worker/src/branches-seed.js`，沒有任何程式讀這張表（每輪爬蟲仍會寫入，無害，刻意留著） |
 | `meta_filter_options` | 篩選用的課程／老師名稱清單快取（爬蟲跑完才更新） |
 | `reminders` | 課前推播提醒的登記與發送狀態 |
 | `reminder_add_events` / `reminder_add_monthly` | 提醒功能使用量：只記「登記」被觸發幾次，不分辨是不是同一人、不追蹤取消 |
@@ -154,6 +154,7 @@ npx wrangler d1 execute worldgym-schedule --remote --command="UPDATE ads SET ena
 3. 每次重新開啟後台都會重新驗證並換發新 token（滑動延長），7 天內有開過就不用重新輸入密碼。
 4. 只有 `/verifyAdminToken` 接受「直接帶密碼」，其餘後台端點只認 session token，這樣無法繞過登入保護去對別的端點猜密碼。
 5. **登入失敗鎖定**：同一個 IP（IPv6 以 /64 為單位）連續輸錯 5 次，就鎖定 15 分鐘（記在 KV 的 `admin-fail:<IP key>`）；鎖定期間**連正確密碼也會被拒絕**，畫面會顯示「嘗試次數過多，已暫時鎖定」，等解除再輸入一次即可。
+6. **登出會作廢 session**：左上角「返回並登出」會打 `POST /adminLogout`，Worker 在 KV 記下登出時間，**這個時間以前簽發的所有 session 都失效**（不只這一張，所以在任何裝置登出，其他裝置也要重新輸入密碼）。斷線時登出只清掉瀏覽器裡的 token，伺服器端的 session 仍撐到自己過期（最久 7 天）。
 
 ## 📊 後台報表與操作
 
