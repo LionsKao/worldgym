@@ -33,7 +33,7 @@
 | G5 | 🟠 | `worker/src/reminders.js`、`worker/src/analytics.js`、`sw.js`、script.js 從開頭到 `trackTeacherEventOncePerSession`（含） | 1,030 | 推播提醒與報表統計：提醒登記／取消／到期發送、每月壓縮並刪明細（資料遺失風險）、前端的儲存／廣告與統計打點／推播註冊與提醒清單 | 已跑完（無待決定） |
 | G6 | 🟡 | script.js 從 `showServiceErrorModal` 到 `performSearch`（含），以及 `init` 到檔尾 | 930 | 前端核心查詢與結果顯示：token 重試與查詢快取、結果列渲染的跳脫、頁面切換與競態、初始化流程、首頁公開排行的渲染 | 已跑完（1 項待決定） |
 | G7 | 🟡 | script.js 從 `isSpeechRecognitionSupported`（含它前面的語音常數）到 `submitVoiceSearch`（含）、`voice-search.js` | 940 | 語音搜尋：狀態機與逾時、麥克風是否確實釋放、iOS 錄音路徑、比對引擎誤判。`worker/scripts/test-voice.mjs` 已有回歸測試，審查時可對照 | 已跑完（無待決定） |
-| G8 | 🟢 | script.js 從 `addDaysIso` 到 `renderThemeToggle`（含） | 1,000 | 篩選、最愛與主題：pill 與勾選狀態、localStorage 讀寫、我的最愛的編輯與長按、深色模式切換 | 未開始 |
+| G8 | 🟢 | script.js 從 `addDaysIso` 到 `renderThemeToggle`（含） | 1,000 | 篩選、最愛與主題：pill 與勾選狀態、localStorage 讀寫、我的最愛的編輯與長按、深色模式切換 | 已跑完（1 項待決定） |
 | G9 | 🟢 | script.js 從 `copyTextWithToast` 到 `startNewYearFireworks`（含）、`newyear-fireworks.js`、`index.html`、`403.html`、`404.html`、`ga-init.js`、`theme-init.js`、`css-async.js`、`manifest.json` | 1,300 | 結果頁複製與下載圖片、限時彩蛋、靜態頁面。`index.html` 有 640 行大多是標記，實際邏輯少 | 未開始 |
 
 建議節奏（可自行調整）：G1 分量最重又最重要，單獨一次；之後 G2＋G3、G4＋G5、G6＋G7、G8＋G9 各配一次。
@@ -233,7 +233,36 @@
 - 比對引擎：`pinyin-pro` 對空字串、表情符號、孤立代理字元、2000 字長句都不丟例外；表情符號會讓逐字拼音長度和句子不一致，程式已經檢查長度相同才換算標色範圍。`npm run test:voice` 91 個案例全過。
 
 ### G8
-（未開始）
+2026-11-20 跑完（xhigh，目標 `script.js` 的 `addDaysIso`～`renderThemeToggle`，沒有二次驗證），共 10 項：修 6 項、待決定 1 項、不處理 2 項、不用改 1 項。篩選勾選與存檔、分享網址、最愛的新增／套用／編輯／刪除／順序／長按、清除記憶、深色模式的主線都沒有問題；修的是「兩個功能互相踩到」與「壞資料」。
+
+**已修（6 項）**
+- 語音進行中（`starting`／`listening`／`processing`）只鎖了重設鈕、通知鈕與六組 checkbox，**最愛晶片與分店區的距離／全選鈕沒鎖**：聆聽中點最愛晶片會直接套用並進結果頁，語音那一輪結束時又整組取代、再查一次，結果頁被語音的查詢蓋掉；按「台北全選」勾的 22 間分店被語音結果悄悄蓋掉（正是 `setVoiceRecordingLock` 的註解說要避免的情況）。→ `setVoiceRecordingLock` 一併鎖住（disabled ＋ `voice-dimmed` 變暗）。
+- 通知頁的隱私說明與 QR code 浮層可以同時開著、互相疊住看不清楚（內建瀏覽器 375 寬實測）：`setupTogglePopover` 的按鈕 click 有 `stopPropagation`，別的浮層的「點外面收起」收不到這次點擊。→ 開一個時收掉其他的（模組內留一份浮層清單）。
+- `showPillWarning` 接手跟標籤完整內容提示（`showHoverTooltip`）共用的那個提示框，卻沒清掉 `activeTooltipAnchor`：結果頁點「等 6 間」標籤、提示開著時再按已是最愛的灰色愛心，「這組篩選已經是最愛了」被接著冒泡到 `document` 的 click 處理器立刻收掉，使用者看到按鈕沒反應。→ `showPillWarning` 內容換掉時清掉 `activeTooltipAnchor`。
+- 通知頁「複製網站網址」失敗只 `console.error`，沒有畫面提示；結果頁的複製會顯示「複製失敗，請手動選取」。在 LINE 等內建瀏覽器或剪貼簿權限被拒時，按鈕看起來是壞的（`navigator.clipboard` 不存在時 `TypeError` 也被同一個 `try` 接住）。→ 失敗時顯示「複製失敗，請手動選取」。
+- `makePill` 的 id 把非英數、非 CJK 統一表意文字的字元全換成底線：名稱只差在標點、空白、注音符號的老師或課程會得到同一個 id（例如「ㄅ悟」與「ㄚ悟」），第二顆 pill 的 `label for` 指到第一顆，點第二位老師勾到第一位。**目前資料沒有碰撞**（1052 位老師、74 門課的快照逐一比對），屬潛在問題。→ id 尾巴加流水號；id 沒有其他地方在引用（搜尋過 `script.js`、`voice-search.js`、`style.css`）。
+- `getFavorites()` 只確認 JSON 能解析、不確認結構：`wg_favorites` 被改成物件、字串或含 `null` 時，載入時頂層的 `renderFavorites()` 丟例外，整支 `script.js` 後面的 `init()` 全不執行，只能手動清網站資料。正常使用不會發生。→ 只收「陣列、每筆是帶 `state` 的物件」的資料，壞掉的筆數下次存檔時掉掉。
+
+驗證：用 jsdom 載入真正的 `index.html`、`common.js`、整份 `script.js`（假 fetch／Chart／IntersectionObserver／PointerEvent，長按時間常數縮短），共 131 個檢查全過；同一份測試對修改前的版本跑，15 項失敗（對應上面 6 項）。涵蓋：`addDaysIso`／`weekdayOfIso`／`resolveQueryState`（跨年、閏年、今天明天）、`makePill`／`renderGrid`（純文字、重畫）、勾選存檔與重新載入還原（分店、星期、時段、教室、課程、老師）、點擊次數排序、分區展開狀態、城市與分區全選、搜尋框與展開鈕、重設鈕、分享網址的產生與還原（短代碼、`utm` 參數、網址帶不存在的值）、提示框、浮層、新增最愛（預設名稱、截斷、提示 pill）、套用最愛、右鍵與長按編輯（改名、換色、順序、取消、刪除）、別的分頁改過清單時的內容比對（改到對的那顆、目標被刪不動別顆、晶片已過期）、長按與短按（放手後的 click 不套用、手指移動、第二根手指、滑鼠右鍵、鍵盤 Enter）、語音鎖定、清除記憶兩顆按鈕保留的 key、主題切換（儲存空間被擋也照樣切）、11 種壞掉的 localStorage 內容。鎖定時的變暗外觀與兩個浮層互斥另在內建瀏覽器（本機伺服器、375×812）看過。G5 前端 35 項、G6 62 項、G7 52 項、`test:voice` 91 案例、`check:versions` 重跑也全過。`script.js` 版號 253 → 254。測試腳本沒進版控。
+
+**待使用者決定（1 項，沒修）**
+- 新增最愛時，使用者自己打的名稱原樣當 `favorite_label` 送進 GA（`add_favorite`／`edit_favorite`／`delete_favorite`／`apply_favorite`），但隱私說明寫「僅進行匿名統計且不收集個人資料」。`GA_EVENTS.md` 有記載這是設計（為了看最愛名稱的分布），但名稱是自由文字，使用者可能打人名。要不要改成只送預設名稱（分店名或趣味預設名）、自訂名稱改送 `custom`，或在隱私說明補一句，是產品與隱私的決定。
+
+**不處理（2 項）**
+- 「清除篩選記憶」靠 `location.reload()`：網址若還帶著不足以自動查詢的篩選參數（例如手動輸入的 `/?day=1`），重新整理後又被網址套回去。程式產生的分享網址都會在返回篩選頁時被 `showFilterView` 的 `replaceState` 清掉，只有手動編輯網址才碰得到。
+- `showHoverTooltip` 的 `wrap` 參數沒有呼叫端傳過非預設值：多一個分支，但拿掉沒有可量的好處。
+
+**不用改（1 項）**
+- 原本以為 `TIME_OPTIONS` 只用來產生 `TIME_LABEL`、可以簡化：實際上 `voice-search.js`（詞彙表）與 `worker/scripts/test-voice.mjs`（用正規表示式從 `script.js` 抽出來執行）都在用，是我只搜了 `script.js` 的誤判，沒有動。
+
+**其他沒處理**
+- 搜尋老師時被搜尋框藏起來的 pill 若已勾選，畫面上看不到但查詢仍會帶上（沒有任何提示說「還有 N 個已勾選的被藏起來」）；這是搜尋框的既有行為，沒有人回報過。
+- 套用最愛時，最愛裡的老師／課程若已不在清單，會被悄悄略過（記憶檔已記錄使用者 2026-10-20 決定先不改）。
+
+**沒問題的部分**
+- 所有 localStorage 讀寫都走 `readStored`／`writeStored`／`removeStored`，儲存空間被擋時主題切換、最愛、篩選記憶都不丟例外；`FILTER_MEMORY_KEYS` 涵蓋所有「篩選記憶」類的 key，不會誤清 `wg_client_id`、`wg_theme` 等。
+- 最愛編輯：按鈕的垃圾桶刪除先寫回 localStorage 再跑動畫；儲存／刪除前用內容在最新清單裡重新找（`findFavoriteIndex`），多個分頁同時開著不會改到別顆；長按與 `contextmenu` 先後觸發時只開一次；放手後的 click 不會再套用。
+- 最愛晶片的名稱與圖示用 `escapeHtml` 後才放進 `innerHTML`（引號也跳脫），顏色走 `style.background` 賦值；老師與課程名稱用 `textContent`（`makePill`）。
 
 ### G9
 （未開始）

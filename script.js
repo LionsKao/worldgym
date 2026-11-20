@@ -578,10 +578,13 @@ const TIME_OPTIONS = [
   { name: "time", value: "1800", label: "18 - 23" },
 ];
 const TIME_LABEL = Object.fromEntries(TIME_OPTIONS.map(o => [o.value, o.label]));
+let pillIdSeq = 0;
 function makePill(name, value, label, checked){
   const wrap = document.createElement("span");
   wrap.className = "pill";
-  const id = `${name}-${value}`.replace(/[^a-zA-Z0-9一-鿿-]/g, "_");
+  // 名稱把非英數、非中日韓統一表意文字的字元都換成底線，只差在標點、空白、注音符號的兩個名稱會得到同一個 id
+  // （label 的 for 就指到第一顆、點第二顆勾到第一顆），所以尾巴加流水號保證不重複。id 沒有其他地方在引用。
+  const id = `${name}-${value}`.replace(/[^a-zA-Z0-9一-鿿-]/g, "_") + "-" + (++pillIdSeq);
   // 課程/老師名稱來自爬官網的資料，不能直接拼進 innerHTML（官網資料若含 < 會被當成 HTML 執行），
   // 一律用 DOM API 設值，瀏覽器自己會當純文字處理。
   const input = document.createElement("input");
@@ -849,6 +852,9 @@ function positionPillTooltip(rect){
 }
 function showPillWarning(anchorEl, text, iconClass){
   hideTooltipElementImmediately(voiceTooltipEl); // 避免跟還在淡出的語音聆聽提示疊在一起
+  // 這個提示框跟標籤的完整內容提示（showHoverTooltip）是同一個元素：內容換掉之後，標籤就不再是「提示開著」的那個。
+  // 不清掉的話，標籤提示開著時按別的鈕（例如灰色的愛心）顯示的提示，會被接著冒泡到 document 的 click 處理器立刻收掉。
+  activeTooltipAnchor = null;
   const rect = anchorEl.getBoundingClientRect();
   pillWarnTooltip.classList.remove("wrap");
   pillWarnTooltip.innerHTML = "";
@@ -898,6 +904,8 @@ copyUrlBtn.addEventListener("click", async (e) => {
     trackEvent("copy_site_url", {});
   } catch(err){
     console.error(err);
+    // 內建瀏覽器（LINE 等）或剪貼簿權限被拒時會失敗；跟結果頁的複製一樣要告訴使用者，不然按鈕看起來是壞的
+    showPillWarning(copyUrlBtn, "複製失敗，請手動選取");
   }
 });
 
@@ -905,11 +913,17 @@ copyUrlBtn.addEventListener("click", async (e) => {
 // 不再即時用 JS 產生：省掉一整包 56KB 的 QR 函式庫，換成一張幾 KB 的靜態圖。
 // 點按鈕開關浮層、點浮層與按鈕以外的地方收起（QR code、隱私說明、通知說明共用）。
 // wrapSelector 是按鈕與浮層共同的外層，點在裡面不算「點外面」；onOpen 在剛打開時呼叫。
+// 一次只開一個：按鈕的 click 有 stopPropagation，別的浮層的「點外面收起」收不到這次點擊，不互斥的話
+// 先開隱私說明再按 QR code，兩個浮層會同時開著、疊在一起看不清楚。
+const togglePopoverTooltips = [];
 function setupTogglePopover(btn, tooltip, wrapSelector, onOpen){
+  togglePopoverTooltips.push(tooltip);
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
-    tooltip.classList.toggle("visible");
-    if (onOpen && tooltip.classList.contains("visible")) onOpen();
+    const opening = !tooltip.classList.contains("visible");
+    togglePopoverTooltips.forEach(other => { if (other !== tooltip) other.classList.remove("visible"); });
+    tooltip.classList.toggle("visible", opening);
+    if (onOpen && opening) onOpen();
   });
   document.addEventListener("click", (e) => {
     if (!tooltip.classList.contains("visible")) return;
@@ -1040,7 +1054,12 @@ document.getElementById("resetFiltersBtn").addEventListener("click", (e) => {
 const FAVORITES_KEY = "wg_favorites";
 
 function getFavorites(){
-  return readStoredJson(FAVORITES_KEY, []);
+  const favs = readStoredJson(FAVORITES_KEY, []);
+  // 只收結構完整的（陣列、每筆是帶 state 的物件）：載入時頂層就會跑 renderFavorites()，內容壞掉（被改過的儲存空間）
+  // 丟出例外的話，整支 script.js 後面的 init() 都不會執行，使用者只能手動清網站資料。壞掉的筆數下次存檔時就掉了。
+  return Array.isArray(favs)
+    ? favs.filter(f => f && typeof f === "object" && f.state && typeof f.state === "object")
+    : [];
 }
 function saveFavorites(favs){
   writeStoredJson(FAVORITES_KEY, favs);
@@ -1691,6 +1710,13 @@ let cachedStaticLockInputs = null;
 function setVoiceRecordingLock(active){
   ["resetFiltersBtn", "notifyBtn"].forEach(id => {
     const el = document.getElementById(id);
+    el.disabled = active;
+    el.classList.toggle("voice-dimmed", active);
+  });
+  // 最愛晶片（點了直接套用並查詢，進結果頁）與分店區的距離／全選鈕（直接改勾選）也會改掉篩選，一樣要鎖：
+  // 不然語音結果回來時整組取代，手動的改動毫無提示地消失，或結果頁被語音那一輪的查詢蓋掉。這些元素數量少、
+  // 最愛晶片又會重畫，不快取、每次現查。
+  document.querySelectorAll("#favoriteGrid .fav-item, #branchSectionHead .pill-btn").forEach(el => {
     el.disabled = active;
     el.classList.toggle("voice-dimmed", active);
   });
