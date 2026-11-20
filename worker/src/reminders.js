@@ -7,6 +7,11 @@ const REMIND_MINUTES_OPTIONS = [30, 60, 90];
 const DEFAULT_REMIND_MINUTES = 30;
 // scheduled() 的 cron 間隔是 5 分鐘(見 wrangler.toml [triggers]),掃描時抓「即將在這個視窗內到期」的通知。
 const DISPATCH_WINDOW_MINUTES = 5;
+// 對推播服務的單次請求逾時：一筆一筆依序送，某個推播服務卡住不能讓後面的全部等著。
+const PUSH_TIMEOUT_MS = 10000;
+// 送完的提醒每累積這麼多筆就先刪一次，不等整輪送完才一次刪：執行到一半被平台砍掉（時間、CPU 上限）時，
+// 已經送出的提醒才不會留在資料庫，被下一個 5 分鐘再送一次。
+const DELETE_CHUNK_SIZE = 20;
 
 const WEEKDAY_LABEL = { 1: "一", 2: "二", 3: "三", 4: "四", 5: "五", 6: "六", 7: "日" };
 
@@ -141,36 +146,52 @@ async function dispatchDueReminders(db, env) {
   if (results.length === 0) return { dispatched: 0 };
 
   const vapid = { subject: env.VAPID_SUBJECT, publicKey: env.VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY };
+  const now = nowTaiwanIso();
   let dispatched = 0;
   const doneIds = [];
-
-  for (const r of results) {
-    try {
-      const subscription = JSON.parse(r.pushSubscription);
-      // 登記時已檢查過，這裡再擋一次，以防白名單上線前就已經存在的資料。
-      if (!isAllowedPushEndpoint(subscription.endpoint)) {
-        console.error("[reminders] endpoint not allowed, dropped", r.id);
-        continue;
-      }
-      const title = `${r.className} ${r.teacherName}`;
-      const body = `${r.branchName} 週${WEEKDAY_LABEL[r.dayOfWeek]} ${formatHHmm(r.startTime)}`;
-      const message = { data: JSON.stringify({ title, body, url: r.clickUrl || "/" }), options: { ttl: 3600 } };
-      const payload = await buildPushPayload(message, subscription, vapid);
-      const res = await fetch(subscription.endpoint, payload);
-      if (!res.ok) {
-        console.error("[reminders] push endpoint responded", res.status, r.id);
-      } else {
-        dispatched++;
-      }
-    } catch (err) {
-      console.error("[reminders] push failed", r.id, err.message);
-    } finally {
-      doneIds.push(r.id);
-    }
+  // 處理完（成功、失效、失敗、被白名單擋掉、課已開始都一樣）的提醒就刪掉，分批刪。
+  async function flushDone() {
+    const ids = doneIds.splice(0);
+    if (ids.length === 0) return;
+    await db.batch(ids.map((id) => db.prepare("DELETE FROM reminders WHERE id = ?").bind(id)));
   }
 
-  // 每一筆都處理過了(成功、失效、失敗、被白名單擋掉都一樣),最後一次批次刪除。
-  await db.batch(doneIds.map((id) => db.prepare("DELETE FROM reminders WHERE id = ?").bind(id)));
+  try {
+    for (const r of results) {
+      try {
+        // 課已經開始了（例如排程停擺一陣子、之後才補跑）就不用再送「課前提醒」，直接丟掉。
+        // classAt 跟 now 都是台灣時間字串（同一種格式），可以直接比大小。
+        if (r.classAt < now) {
+          console.error("[reminders] class already started, dropped", r.id);
+          continue;
+        }
+        const subscription = JSON.parse(r.pushSubscription);
+        // 登記時已檢查過，這裡再擋一次，以防白名單上線前就已經存在的資料。
+        if (!isAllowedPushEndpoint(subscription.endpoint)) {
+          console.error("[reminders] endpoint not allowed, dropped", r.id);
+          continue;
+        }
+        const title = `${r.className} ${r.teacherName}`;
+        const body = `${r.branchName} 週${WEEKDAY_LABEL[r.dayOfWeek]} ${formatHHmm(r.startTime)}`;
+        const message = { data: JSON.stringify({ title, body, url: r.clickUrl || "/" }), options: { ttl: 3600 } };
+        const payload = await buildPushPayload(message, subscription, vapid);
+        const res = await fetch(subscription.endpoint, { ...payload, signal: AbortSignal.timeout(PUSH_TIMEOUT_MS) });
+        if (!res.ok) {
+          console.error("[reminders] push endpoint responded", res.status, r.id);
+        } else {
+          dispatched++;
+        }
+      } catch (err) {
+        console.error("[reminders] push failed", r.id, err.message);
+      } finally {
+        // continue 也會經過這裡，所以「是否該分批刪」放在這裡判斷，不放在迴圈最後。
+        doneIds.push(r.id);
+        if (doneIds.length >= DELETE_CHUNK_SIZE) await flushDone();
+      }
+    }
+  } finally {
+    await flushDone();
+  }
 
   return { dispatched, scanned: results.length };
 }

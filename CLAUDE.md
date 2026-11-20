@@ -189,7 +189,7 @@ worker/
 | `favorite_events` / `favorite_monthly` / `favorite_client_seen` | 「我的最愛」建立/使用打點，用匿名 clientId 去重估算人數；`favorite_client_seen` 即時維護全時間去重人數 |
 | `query_access_log` | `/issueToken`、`/queryClasses` 的存取紀錄，每月清 90 天前的 |
 
-事件明細表（`*_events`）只保留當月，上個月由每月 cron 壓縮進 `*_monthly` 後刪除明細；所有報表查詢是「彙總表 UNION ALL 明細表」。**這些事件表的索引只留實際被查詢計畫用到的**：它們每次使用者查詢、點最愛、看廣告都會寫入，而每個索引都讓每筆寫入多寫一份、每月壓縮刪明細時也要連索引一起刪；所有查詢都是依月份 `substr(createdAt,1,7)` 篩選或分組，所以只需要建在 `substr` 運算式上的索引（`worker/migrations/020` 已在正式庫砍掉 14 個沒人用的，資料庫約 28.5MB → 24.2MB，23 個索引剩 9 個）。新增或改動會碰這些表的查詢時，先用 `EXPLAIN QUERY PLAN`（本機套 `schema.sql` 與正式庫的計畫要一致）確認用到哪個索引，真的需要才加，不要憑感覺多建。細節見 README「分析報表明細轉月度彙總」與 `worker/src/analytics.js`。
+事件明細表（`*_events`）只保留當月，上個月由每月 cron 壓縮進 `*_monthly` 後刪除明細；所有報表查詢是「彙總表 UNION ALL 明細表」。**這些事件表的索引只留實際被查詢計畫用到的**：它們每次使用者查詢、點最愛、看廣告都會寫入，而每個索引都讓每筆寫入多寫一份、每月壓縮刪明細時也要連索引一起刪；所有查詢都是依月份 `substr(createdAt,1,7)` 篩選或分組，所以只需要建在 `substr` 運算式上的索引（`worker/migrations/020` 已在正式庫砍掉 14 個沒人用的，資料庫約 28.5MB → 24.2MB，23 個索引剩 9 個）。新增或改動會碰這些表的查詢時，先用 `EXPLAIN QUERY PLAN`（本機套 `schema.sql` 與正式庫的計畫要一致）確認用到哪個索引，真的需要才加，不要憑感覺多建。細節見 README「分析報表明細轉月度彙總」與 `worker/src/analytics.js`。**每月壓縮（`rollupAnalyticsEvents`）每個月份是一個 `db.batch()`：用 `INSERT ... SELECT` 從明細現算寫進彙總表、同一批裡刪掉明細，不要改成「先 SELECT 回 JS、再用綁定值 INSERT」**：兩輪壓縮同時跑時（排程遇到後台手動按鈕），後到的那輪會讀到「明細已被刪光」的空結果、把先算好的月度總數蓋成 0，明細沒了就回不來（`analytics.js` 的註解有說明）。
 
 **時間戳一律用台灣時間（`+08:00`），不是 UTC**：`createdAt`/`updatedAt`/`scrapedAt`/`ads.startAt`/`ads.endAt` 都是位移 8 小時再貼 `+08:00` 後綴的 ISO 字串，才能跟其他時間戳直接用字串比較/排序。一律用 `worker/src/util.js` 的 `nowTaiwanIso()`（要往前/往後推用 `taiwanIso(offsetMs)`，要台灣年月日時分用 `taiwanClock()` 再讀 `getUTC*()`，用 `Date.UTC(...)` 湊出來的台灣牆上時間轉字串用 `taiwanIsoOf()`，台灣今天的日期用 `todayIsoTaipei()`，台灣這個月／往前幾個月的 `YYYY-MM` 用 `taiwanMonthKey(n)`；前端的台灣今天日期用 `common.js` 的 `todayIso()`，`currentMonthKey()` 也是它切出來的，前後台都不要自己再算一份），不要在各檔案自己寫 `Date.now() + 8 * 3600 * 1000`，也不要混用 `new Date().toISOString()`（那是 UTC）。
 
@@ -202,6 +202,7 @@ worker/
 ### 推播提醒 (PWA)
 課表頁需先加到主畫面成為 PWA 才顯示鈴鐺按鈕（`script.js` 的 `isPWAInstalled()` 判斷 `display-mode: standalone`；本機測試可在網址加 `?pwa=1` 繞過）。登記提醒流程：前端 `sw.js` 註冊 Service Worker 拿 Push 訂閱 → `/registerReminder` 存 D1 → worker cron 每 5 分鐘掃到期提醒 → `reminders.js` 用 VAPID 金鑰簽署推播內容送出 → `sw.js` 的 `push` 事件顯示通知。
 課前幾分鐘由使用者在點鈴鐺跳出的小視窗選 30/60/90（前端 `script.js` 的 `REMIND_MINUTES_OPTIONS`、`index.html` 的 `remindLead` radio、後端 `reminders.js` 的 `REMIND_MINUTES_OPTIONS` 白名單三處要一致；`/registerReminder` 沒帶 `remindMinutes` 視為 30，帶了不在白名單回 400）。一堂課只有一個提醒時間：`buildReminderId` 不含分鐘數，重複登記是覆蓋；黃鈴鐺點一下直接取消，要改時間就取消後重登。`reminders.remindMinutes` 只給畫面顯示「課前 N 分鐘」用，**cron 發送只看 `remindAt`**。上次選的值存 localStorage `wg_remind_minutes`，只用來預選。
+到期掃描 `dispatchDueReminders`：每筆推播有 10 秒逾時（`PUSH_TIMEOUT_MS`，一筆一筆依序送，卡住一筆後面全部等著）；處理完的提醒每 20 筆就刪一次、結束前再刪一次（`DELETE_CHUNK_SIZE`），**不要改回整輪送完才一次刪**——執行到一半被平台砍掉時，已經送出的會留在資料庫、被下一個 5 分鐘再送一次；課已經開始（`classAt` 早於現在，例如排程停擺後補跑）的直接丟掉不送。前端取消與讀取清單（`cancelReminderRequest`、`fetchMyReminders`）一定要檢查 `res.ok`：`fetch` 遇到 429／500 也會正常 resolve，不檢查的話，取消失敗畫面卻顯示「已取消」（伺服器還留著、課前照樣收到通知），讀取失敗會被當成「沒有通知」而把清單與鈴鐺狀態清掉。
 
 ### 台灣 IP 限制與爬蟲例外
 Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭）都只放行台灣 IP（`cf.country` 沒值，如本機開發，一律放行）。已知搜尋引擎/AI 爬蟲（Googlebot、GPTBot、ClaudeBot、Claude-User 等，UA 清單 `CRAWLER_UA_PATTERN`）例外：

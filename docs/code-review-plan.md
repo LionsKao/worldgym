@@ -30,7 +30,7 @@
 | G2 | 🔴 | `functions/`（全部）、`worker/src/crawlers.js`、`worker/src/util.js`、`_headers`、`worker/wrangler.toml` | 740 | Pages 邊緣與伺服器端注入：台灣 IP 限制與爬蟲例外、擋掉非網站檔案（路徑編碼繞過）、SSR 注入課表的跳脫與快取、動態 sitemap／llms.txt、安全標頭與 CSP、cron 設定 | 已跑完（2 項待決定） |
 | G3 | 🟠 | `admin.js`、`admin.html`、`common.js` | 1,180 | 後台頁面與共用工具：後台會渲染來自外部請求的資料，看 XSS／跳脫、登入與 session 處理、報表計算；`common.js` 是前台後台共用的工具（escapeHtml、fetchJson、圖表、時間） | 已跑完（2 項待決定） |
 | G4 | 🟠 | `worker/src/scrape.js`、`queryClasses.js`、`branchScan.js`、`branches-seed.js`、`branches-excluded.js`、`worker/schema.sql` | 1,010 | 課表資料管線：爬蟲寫入與新舊資料切換、查詢 SQL 與筆數上限、每月分店掃描、時間戳與時區、schema 與實際程式是否一致 | 已跑完（2 項待決定） |
-| G5 | 🟠 | `worker/src/reminders.js`、`worker/src/analytics.js`、`sw.js`、script.js 從開頭到 `trackTeacherEventOncePerSession`（含） | 1,030 | 推播提醒與報表統計：提醒登記／取消／到期發送、每月壓縮並刪明細（資料遺失風險）、前端的儲存／廣告與統計打點／推播註冊與提醒清單 | 未開始 |
+| G5 | 🟠 | `worker/src/reminders.js`、`worker/src/analytics.js`、`sw.js`、script.js 從開頭到 `trackTeacherEventOncePerSession`（含） | 1,030 | 推播提醒與報表統計：提醒登記／取消／到期發送、每月壓縮並刪明細（資料遺失風險）、前端的儲存／廣告與統計打點／推播註冊與提醒清單 | 已跑完（無待決定） |
 | G6 | 🟡 | script.js 從 `showServiceErrorModal` 到 `performSearch`（含），以及 `init` 到檔尾 | 930 | 前端核心查詢與結果顯示：token 重試與查詢快取、結果列渲染的跳脫、頁面切換與競態、初始化流程、首頁公開排行的渲染 | 未開始 |
 | G7 | 🟡 | script.js 從 `isSpeechRecognitionSupported`（含它前面的語音常數）到 `submitVoiceSearch`（含）、`voice-search.js` | 940 | 語音搜尋：狀態機與逾時、麥克風是否確實釋放、iOS 錄音路徑、比對引擎誤判。`worker/scripts/test-voice.mjs` 已有回歸測試，審查時可對照 | 未開始 |
 | G8 | 🟢 | script.js 從 `addDaysIso` 到 `renderThemeToggle`（含） | 1,000 | 篩選、最愛與主題：pill 與勾選狀態、localStorage 讀寫、我的最愛的編輯與長按、深色模式切換 | 未開始 |
@@ -153,7 +153,30 @@
 - 分店 seed：slug 與名稱都不重複、`check:branches` 通過；不收清單與 seed 沒有重疊；月度掃描的新增／疑似下架判斷正確。
 
 ### G5
-（未開始）
+2026-11-20 跑完（xhigh，目標 `reminders.js`、`analytics.js`、`sw.js`、`script.js` 開頭到 `trackTeacherEventOncePerSession`，沒有二次驗證），共 12 項：修 8 項、不處理 4 項。最重要的一項是「每月壓縮在兩輪同時跑時會把月度總數蓋成 0」——用模擬交錯執行重現過，不是推論。
+
+**已修（8 項）**
+- 每月壓縮（`rollupAnalyticsEvents`）是「先 SELECT 回 JS、再用綁定值 INSERT 彙總＋DELETE 明細」。兩輪壓縮同時跑時（排程剛好遇到後台手動按鈕、或排程被重複觸發），後到的那輪讀到的是先到的那輪已經刪光明細之後的空結果，接著把先算好的月度總數蓋成 0，明細沒了就永遠回不來（驗證：查詢量、最愛、提醒三張彙總表各被蓋成 0 一次）。→ 改成每個月份一個 `db.batch()`：用 `INSERT ... SELECT` 在同一個 transaction 裡從明細現算、同批刪明細；明細已被刪掉就什麼都不寫。七張明細表共用同一個 `rollupTable()`，程式碼少了約 30 行；`rowsAggregated` 改用 `meta.changes`，回應欄位不變。
+- 課前推播逐筆送出時：推播服務卡住沒有逾時，而且送完的提醒要等整輪結束才一次刪。執行到一半被平台砍掉（時間、CPU 上限）或卡住時，已經送出的提醒還留在資料庫，每 5 分鐘被再送一次（驗證：25 筆在第 23 筆卡死，25 筆全留著、其中 22 筆會重送）。→ 每筆 10 秒逾時；處理完的每 20 筆就刪一次，結束前再刪一次。
+- 課已經開始了還是會送「課前提醒」（例如排程停擺一陣子、之後補跑）。→ `classAt` 早於現在的直接丟掉。
+- 前端取消通知（`cancelReminderRequest`）不檢查 HTTP 狀態：被限流（429）或伺服器錯誤時，畫面照樣顯示「已取消」，伺服器還留著，課前照樣收到通知。→ 非 2xx 丟錯，鈴鐺維持原狀、可以重試。
+- 前端讀取通知清單（`fetchMyReminders`）失敗時回空陣列，`renderReminderList` 把它當成「沒有通知」，清掉清單與登記記錄。→ 失敗要丟錯；清單與登記記錄維持原樣，只有畫面上原本什麼都沒有時才顯示「無法讀取通知，請稍後再試」。
+- `sw.js` 點通知：已開著的視窗若不是這個 service worker 控制的，`navigate()` 會被拒絕（或回 `null`），整個點擊流程丟錯，點了通知沒有任何反應。→ 被拒絕就改開新視窗，回 `null` 就只 focus 原本的視窗。
+- `logFavoriteEvent` 在沒有 `crypto.randomUUID` 的瀏覽器會丟例外，而呼叫端（加入最愛、套用最愛）在它後面還有事要做（關視窗、送出查詢）。→ 打點包 try/catch，不能擋住主流程。
+- `/registerReminder` 的 `startTime` 只檢查是 4 位數字，`2599` 這種會被 `Date.UTC` 進位成隔天的奇怪時間。→ 限制成 00～23 時、00～59 分。
+
+驗證：後端用真的 SQLite 包成 D1 介面、真的 VAPID／Web Push 加密、假推播服務，共 30 個檢查全過；前端用 jsdom 執行真正的 `script.js`（第 1～523 行）與 `common.js`，並用 `vm` 執行真正的 `sw.js`，共 35 個檢查全過。對修改前的版本跑，共 14 項失敗（後端 6、前端 8，全部對應上面的問題）。涵蓋：`computeNextOccurrence` 4000 組隨機（現在時間×星期×開課時間×提前分鐘）與暴力解逐一對照、登記／覆蓋／取消／清單與他人 endpoint 的權限、endpoint 白名單、推播各種回應（410／500／丟例外／被白名單擋／壞資料）、壓縮前後所有報表數字一致、壓縮中途失敗無遺失、重複執行不變、兩輪同時跑（三種交錯）、廣告顯示與曝光點擊、查詢次數去重。G1 89 項、G2 40 項、G4 53 項、語音比對 91 個案例、`check:branches`、`check:versions` 重跑也全過。`script.js` 版號 250 → 251。測試腳本沒進版控。**限制**：`sw.js` 的 `navigate()` 行為是用假的 clients 測的，沒有在真的 iPhone PWA 上驗證。
+
+**不處理（4 項）**
+- 提醒清單用 `GET /myReminders?endpoint=...`，推播 endpoint 會出現在網址裡（Worker 的請求紀錄看得到）。endpoint 本身就是「誰有它誰就能列出、取消那支裝置的提醒」的憑證，要改成 POST 得動前後端兩邊；紀錄只有你自己看得到，價值低。
+- 單次到期的提醒超過約 1000 筆時（Workers 單次執行的 subrequest 上限），超過的會被丟掉。目前用量遠低於這個數字。
+- 開課時間在凌晨 01:30 以前的課，「課前 90 分鐘」會落在前一天，登記時 `remindAt` 可能已經過去。課表一般沒有這種時段，沒處理。
+- 每月壓縮的 `INSERT OR REPLACE` 沒改成累加：新寫法已經讓兩輪同時跑變成空轉，而且寫入時間戳都是伺服器當下產生、排程在月底約 28 小時後才跑，不會有遲到的舊月份明細。
+
+**沒問題的部分**
+- 提醒的權限：取消與清單都要連同 push endpoint 比對，猜 id 刪不到別人的；endpoint 白名單擋得住冒名網域（`fcm.googleapis.com.evil.com`）、帶 port、帶帳密、http。
+- 廣告網址只收 http(s)、廣告文字當純文字顯示（帶 `<img onerror>` 的文字沒有長出元素）、曝光離開頁面時只送一次、查詢次數 30 分鐘去重。
+- 每月壓縮在新舊寫法下，壓縮前後所有報表（排行、趨勢、最愛、廣告、提醒、年份選單）數字完全一致，中途失敗後下一輪補齊的最終結果也一致。
 
 ### G6
 （未開始）

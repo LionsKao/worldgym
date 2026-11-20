@@ -118,7 +118,7 @@ D1（`worldgym-schedule`）的 table，完整欄位以 [`worker/schema.sql`](wor
 
 `teacher_search_events`、`course_search_events`、`branch_search_events`、`search_events`、`favorite_events`、`ad_events`、`reminder_add_events` 這些事件明細表**只保留當月**，上個月一結束就由每月排程（`rollupAnalyticsEvents()`）壓縮成對應的 `*_monthly` 彙總表並刪除明細。彙總表保留報表實際用到的完整維度（例如老師排行留「月份＋老師名」各自的次數），所以之後想把「前 15 名」改成「前 20 名」不需要任何資料回填。
 
-所有報表查詢都是「彙總表 `UNION ALL` 明細表」，兩者依月份天生互斥；彙總寫入與刪除明細包在同一個 `db.batch()` 裡原子執行，不會有同一個月被重複計算的瞬間。「累積建立人數」是例外，靠 `favorite_client_seen` 即時維護，不依賴明細。想手動確認或補跑，可用 admin token 呼叫 `POST /rollupAnalyticsManual`。
+所有報表查詢都是「彙總表 `UNION ALL` 明細表」，兩者依月份天生互斥；彙總（用 `INSERT ... SELECT` 從明細現算）與刪除明細包在同一個 `db.batch()` 裡原子執行，不會有同一個月被重複計算的瞬間，兩輪壓縮同時跑也不會把已算好的月度總數蓋掉。「累積建立人數」是例外，靠 `favorite_client_seen` 即時維護，不依賴明細。想手動確認或補跑，可用 admin token 呼叫 `POST /rollupAnalyticsManual`。
 
 ## 🔔 推播提醒（PWA）
 

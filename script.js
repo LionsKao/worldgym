@@ -169,7 +169,13 @@ function getClientId(){
 // 我的最愛使用量落地存進 D1：add 是成功建立一個最愛、apply 是點最愛套用篩選，不去重，
 // 用來在 admin.html 看「多少人做起來」跟「做起來後按了幾次」。
 function logFavoriteEvent(type){
-  fireAndForgetPost("/trackFavorite", { clientId: getClientId(), type });
+  // 打點絕不能擋住主流程：沒有 crypto.randomUUID 的舊瀏覽器在 getClientId() 會丟例外，
+  // 而呼叫端（加入最愛、套用最愛）在這一行之後還有事要做（關視窗、送出查詢）。
+  try {
+    fireAndForgetPost("/trackFavorite", { clientId: getClientId(), type });
+  } catch(e){
+    console.warn("最愛打點失敗", e);
+  }
 }
 // 廣告連結只收 http(s)：ads.url 是寫在資料庫裡的字串，會直接變成 <a href>，
 // 要是不小心（或被人）寫成 javascript: 之類，點下去就會執行。不合格的廣告當作沒有這則。
@@ -331,6 +337,7 @@ function readRemindMinutes(){
 }
 
 const REMINDER_EMPTY_HTML = '<div class="empty-hint" id="reminderEmptyHint">沒有通知</div>';
+const REMINDER_ERROR_HTML = '<div class="empty-hint" id="reminderEmptyHint">無法讀取通知，請稍後再試</div>';
 let pendingReminderBell = null;
 async function registerReminderForBell(bell, remindMinutes){
   bell.classList.add("busy");
@@ -363,11 +370,15 @@ async function registerReminderForBell(bell, remindMinutes){
 // 取消一則已登記的通知（結果頁的鈴鐺、「通知」清單的鈴鐺共用）。
 async function cancelReminderRequest(id){
   const sub = await ensurePushSubscription();
-  await postJson("/cancelReminder", { id, subscriptionEndpoint: sub.endpoint });
+  const res = await postJson("/cancelReminder", { id, subscriptionEndpoint: sub.endpoint });
+  // fetch 遇到 429／500 也是正常 resolve：不檢查的話，畫面會顯示「已取消」，伺服器卻還留著，課前照樣收到通知。
+  if (!res.ok) throw new Error(`cancelReminder failed: ${res.status}`);
 }
-// 這個 push subscription 底下所有還沒發送的通知。
+// 這個 push subscription 底下所有還沒發送的通知。讀取失敗要丟錯，不能回空陣列——
+// 呼叫端會把空陣列當成「沒有通知」，把畫面與登記記錄都清掉。
 async function fetchMyReminders(endpoint){
   const res = await fetch(`${WORKER_BASE}/myReminders?endpoint=${encodeURIComponent(endpoint)}`);
+  if (!res.ok) throw new Error(`myReminders failed: ${res.status}`);
   const data = await res.json();
   return data.reminders || [];
 }
@@ -401,12 +412,16 @@ async function renderReminderList(){
     grid.innerHTML = "";
     return;
   }
-  let list = [];
+  let list;
   try{
     const sub = await ensurePushSubscription();
     list = await fetchMyReminders(sub.endpoint);
   } catch(e){
     console.error(e);
+    // 讀取失敗（網路、被限流、伺服器錯誤）不是「沒有通知」：清單與登記記錄維持原樣，
+    // 只有畫面上原本什麼都沒有時才提示讀取失敗。
+    if (grid.children.length === 0) grid.innerHTML = REMINDER_ERROR_HTML;
+    return;
   }
   registeredReminders.clear();
   list.forEach((r) => registeredReminders.set(reminderKeyFromRecord(r), r));

@@ -569,7 +569,7 @@ async function handleRegisterReminder({ req, env, ctx, origin }) {
     typeof branchSlug !== "string" || !KNOWN_BRANCH_SLUGS.has(branchSlug) ||
     !isBoundedText(branchName, true) || !isBoundedText(className, true) || !isBoundedText(teacherName, true) || !isBoundedText(roomName) ||
     !Number.isInteger(dayOfWeek) || dayOfWeek < 1 || dayOfWeek > 7 ||
-    typeof startTime !== "string" || !/^\d{4}$/.test(startTime) ||
+    typeof startTime !== "string" || !/^([01]\d|2[0-3])[0-5]\d$/.test(startTime) ||
     !pushSubscription || typeof pushSubscription.endpoint !== "string" || !pushSubscription.endpoint ||
     pushSubscription.endpoint.length > REMINDER_MAX_ENDPOINT_LENGTH ||
     !isAllowedPushEndpoint(pushSubscription.endpoint) ||
