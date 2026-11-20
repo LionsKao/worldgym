@@ -1135,7 +1135,8 @@ function applyFavorite(fav){
   SELECTION_STORAGE_KEYS.forEach(removeStored);
   FILTER_GROUPS.forEach(name => saveSelection(`wg_selected_${name}`, [name]));
   updateResetButtonState();
-  trackEventOncePerSession("apply_favorite", fav.label, { favorite_label: fav.label });
+  // 最愛名稱是使用者自己打的自由文字，不送進 GA（隱私說明寫「不收集個人資料」）；fav.label 只用來在本機去重。
+  trackEventOncePerSession("apply_favorite", fav.label);
   logFavoriteEvent("apply");
   // 直接呼叫共用的 performSearch()，不經過 requestSubmit() 重新進入表單監聽器——該監聽器原本會在
   // 重入時把這裡剛設好的 searchTriggerSource 蓋回 "manual"（因為套用最愛後 isSearchValid() 多半為真，
@@ -1398,9 +1399,9 @@ favDeleteBtn.addEventListener("click", () => {
   const favs = getFavorites();
   const current = resolveFavEditIndex(favs);
   if (current === -1) return;
-  const [removed] = favs.splice(current, 1);
+  favs.splice(current, 1);
   saveFavorites(favs);
-  trackEvent("delete_favorite", { favorite_label: removed.label });
+  trackEvent("delete_favorite");
   const { chip } = favEdit;
   closeFavoriteModal();
   setTimeout(() => (chip.isConnected ? collapseChip(chip, renderFavorites) : renderFavorites()), FAV_REMOVE_START_DELAY_MS);
@@ -1431,7 +1432,7 @@ favModalSubmitBtn.addEventListener("click", () => {
     const name = typedName || favoriteLabel(currentFilterState());
     favs.push({ label: name, icon, color, state: currentFilterState() });
     saveFavorites(favs);
-    trackEvent("add_favorite", { favorite_label: name });
+    trackEvent("add_favorite");
     logFavoriteEvent("add");
     // 還沒看過「長按可編輯」的人，renderFavorites 會接一顆提示 pill（FAV_EDIT_NOTICE）；最愛區塊此刻是隱藏的，回篩選頁才看得到。
     renderFavorites();
@@ -1450,7 +1451,7 @@ favModalSubmitBtn.addEventListener("click", () => {
   favs.splice(current, 1);
   favs.splice(insertAt, 0, { ...old, label: name, icon, color });
   saveFavorites(favs);
-  trackEvent("edit_favorite", { favorite_label: name });
+  trackEvent("edit_favorite");
   renderFavorites();
   closeFavoriteModal();
 });

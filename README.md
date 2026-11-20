@@ -33,6 +33,7 @@
 ├── ga-init.js                           # GA4 初始化（只有 index.html 載入，必須同步載入；因 CSP 不允許 inline script 而獨立成檔）
 ├── theme-init.js                        # 淺色／深色主題初始化（只有 index.html 載入，必須同步載入、趕在第一次繪製前套用；同樣為了 CSP）
 ├── css-async.js                         # 非阻塞載入 Font Awesome CSS（同樣是為了 CSP；index.html、admin.html 都載入）
+├── load-guard.js                        # 載入保險（只有 index.html 載入）：script.js 載入失敗或載入遮罩蓋太久時，在遮罩上顯示說明與「重新整理」鈕
 ├── admin.html / admin.js                # 後台：登入、報表（Chart.js）、手動重抓與清除孤兒資料
 ├── vendor/chart.umd.min.js              # Chart.js（vendor 進來，不吃 CDN）
 ├── vendor/html2canvas.min.js            # html2canvas（結果頁「下載圖片」用，點了才動態載入，同樣 vendor 進來）
@@ -206,7 +207,7 @@ Pages（`functions/_middleware.js`）與 Worker 都只放行台灣 IP（拿不�
 
 所有頁面帶 `Content-Security-Policy`、`X-Frame-Options: DENY`（後台不能被嵌入）、`Strict-Transport-Security`、`Permissions-Policy`（只開 `geolocation=(self)`）等標頭，設定在 [`_headers`](_headers)。重點：
 
-- `script-src` **不含 `'unsafe-inline'`**：頁面裡不能寫 inline `<script>` 或 `onclick=`／`onload=` 之類的 inline 事件處理（會被擋，而且是靜默失效），要用外部檔，這也是 `ga-init.js`、`theme-init.js`、`css-async.js` 獨立成檔的原因。
+- `script-src` **不含 `'unsafe-inline'`**：頁面裡不能寫 inline `<script>` 或 `onclick=`／`onload=` 之類的 inline 事件處理（會被擋，而且是靜默失效），要用外部檔，這也是 `ga-init.js`、`theme-init.js`、`css-async.js`、`load-guard.js` 獨立成檔的原因。
 - **新增任何外部來源（CDN、字型、分析服務、新的 API 網域）都要同步改 CSP**。改完用本機開發伺服器（會套用 `_headers`）載入頁面，看主控台有沒有 `violates the following Content Security Policy`。萬用字元 `*.example.com` **不包含** `example.com` 本身，要另外列。
 - 本機載入時 Cloudflare Web Analytics beacon 會出現 CORS 錯誤，是因為 localhost 不是它登記的網域，與 CSP 無關，可忽略。
 
@@ -225,7 +226,7 @@ Pages（`functions/_middleware.js`）與 Worker 都只放行台灣 IP（拿不�
 
 ## ⚡ 靜態資源快取
 
-CSS、JS、icon（`style.css`、`script.js`、`common.js`、`admin.js`、`ga-init.js`、`theme-init.js`、`css-async.js`、`vendor/`、`icons/`、`favicon.ico`）一律走 `_headers` 快取 30 天，搭配引用處的 `?v=` 版號：**檔案內容改了，就要把引用它的地方（`index.html`／`admin.html`／`403.html`／`404.html`、`manifest.json`、`sw.js`）的版號加一**，否則使用者最久一個月看到舊的。`style.css` 四個頁面要用同一個版號；`common.js` 同時被兩個頁面引用，兩邊的版號要一起改。`sw.js` 不長快取（Service Worker 要能隨時更新），`favicon.ico` 是瀏覽器自己請求的、沒辦法帶版號。
+CSS、JS、icon（`style.css`、`script.js`、`common.js`、`admin.js`、`ga-init.js`、`theme-init.js`、`css-async.js`、`load-guard.js`、`vendor/`、`icons/`、`favicon.ico`）一律走 `_headers` 快取 30 天，搭配引用處的 `?v=` 版號：**檔案內容改了，就要把引用它的地方（`index.html`／`admin.html`／`403.html`／`404.html`、`manifest.json`、`sw.js`）的版號加一**，否則使用者最久一個月看到舊的。`style.css` 四個頁面要用同一個版號；`common.js` 同時被兩個頁面引用，兩邊的版號要一起改。`sw.js` 不長快取（Service Worker 要能隨時更新），`favicon.ico` 是瀏覽器自己請求的、沒辦法帶版號。
 
 版號是人工維護的，改完 CSS／JS／icon 請跑檢查（只讀檔）：`cd worker && npm run check:versions -- --base=origin/main`，會抓「引用沒帶版號、同一個檔案各處版號不一致、檔案內容改了版號沒加」。
 

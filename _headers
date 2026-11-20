@@ -67,6 +67,9 @@
 /ga-init.js
   Cache-Control: public, max-age=2592000
 
+/load-guard.js
+  Cache-Control: public, max-age=2592000
+
 /css-async.js
   Cache-Control: public, max-age=2592000
 

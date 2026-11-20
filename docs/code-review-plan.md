@@ -33,8 +33,8 @@
 | G5 | 🟠 | `worker/src/reminders.js`、`worker/src/analytics.js`、`sw.js`、script.js 從開頭到 `trackTeacherEventOncePerSession`（含） | 1,030 | 推播提醒與報表統計：提醒登記／取消／到期發送、每月壓縮並刪明細（資料遺失風險）、前端的儲存／廣告與統計打點／推播註冊與提醒清單 | 已跑完（無待決定） |
 | G6 | 🟡 | script.js 從 `showServiceErrorModal` 到 `performSearch`（含），以及 `init` 到檔尾 | 930 | 前端核心查詢與結果顯示：token 重試與查詢快取、結果列渲染的跳脫、頁面切換與競態、初始化流程、首頁公開排行的渲染 | 已跑完（1 項待決定） |
 | G7 | 🟡 | script.js 從 `isSpeechRecognitionSupported`（含它前面的語音常數）到 `submitVoiceSearch`（含）、`voice-search.js` | 940 | 語音搜尋：狀態機與逾時、麥克風是否確實釋放、iOS 錄音路徑、比對引擎誤判。`worker/scripts/test-voice.mjs` 已有回歸測試，審查時可對照 | 已跑完（無待決定） |
-| G8 | 🟢 | script.js 從 `addDaysIso` 到 `renderThemeToggle`（含） | 1,000 | 篩選、最愛與主題：pill 與勾選狀態、localStorage 讀寫、我的最愛的編輯與長按、深色模式切換 | 已跑完（1 項待決定） |
-| G9 | 🟢 | script.js 從 `copyTextWithToast` 到 `startNewYearFireworks`（含）、`newyear-fireworks.js`、`index.html`、`403.html`、`404.html`、`ga-init.js`、`theme-init.js`、`css-async.js`、`manifest.json` | 1,300 | 結果頁複製與下載圖片、限時彩蛋、靜態頁面。`index.html` 有 640 行大多是標記，實際邏輯少 | 已跑完（1 項待決定） |
+| G8 | 🟢 | script.js 從 `addDaysIso` 到 `renderThemeToggle`（含） | 1,000 | 篩選、最愛與主題：pill 與勾選狀態、localStorage 讀寫、我的最愛的編輯與長按、深色模式切換 | 已跑完（無待決定） |
+| G9 | 🟢 | script.js 從 `copyTextWithToast` 到 `startNewYearFireworks`（含）、`newyear-fireworks.js`、`index.html`、`403.html`、`404.html`、`ga-init.js`、`theme-init.js`、`css-async.js`、`manifest.json` | 1,300 | 結果頁複製與下載圖片、限時彩蛋、靜態頁面。`index.html` 有 640 行大多是標記，實際邏輯少 | 已跑完（無待決定） |
 
 建議節奏（可自行調整）：G1 分量最重又最重要，單獨一次；之後 G2＋G3、G4＋G5、G6＋G7、G8＋G9 各配一次。
 
@@ -233,7 +233,7 @@
 - 比對引擎：`pinyin-pro` 對空字串、表情符號、孤立代理字元、2000 字長句都不丟例外；表情符號會讓逐字拼音長度和句子不一致，程式已經檢查長度相同才換算標色範圍。`npm run test:voice` 91 個案例全過。
 
 ### G8
-2026-11-20 跑完（xhigh，目標 `script.js` 的 `addDaysIso`～`renderThemeToggle`，沒有二次驗證），共 10 項：修 6 項、待決定 1 項、不處理 2 項、不用改 1 項。篩選勾選與存檔、分享網址、最愛的新增／套用／編輯／刪除／順序／長按、清除記憶、深色模式的主線都沒有問題；修的是「兩個功能互相踩到」與「壞資料」。
+2026-11-20 跑完（xhigh，目標 `script.js` 的 `addDaysIso`～`renderThemeToggle`，沒有二次驗證），共 10 項：修 6 項、待決定 1 項（已決定並修掉，見下）、不處理 2 項、不用改 1 項。篩選勾選與存檔、分享網址、最愛的新增／套用／編輯／刪除／順序／長按、清除記憶、深色模式的主線都沒有問題；修的是「兩個功能互相踩到」與「壞資料」。
 
 **已修（6 項）**
 - 語音進行中（`starting`／`listening`／`processing`）只鎖了重設鈕、通知鈕與六組 checkbox，**最愛晶片與分店區的距離／全選鈕沒鎖**：聆聽中點最愛晶片會直接套用並進結果頁，語音那一輪結束時又整組取代、再查一次，結果頁被語音的查詢蓋掉；按「台北全選」勾的 22 間分店被語音結果悄悄蓋掉（正是 `setVoiceRecordingLock` 的註解說要避免的情況）。→ `setVoiceRecordingLock` 一併鎖住（disabled ＋ `voice-dimmed` 變暗）。
@@ -245,8 +245,10 @@
 
 驗證：用 jsdom 載入真正的 `index.html`、`common.js`、整份 `script.js`（假 fetch／Chart／IntersectionObserver／PointerEvent，長按時間常數縮短），共 131 個檢查全過；同一份測試對修改前的版本跑，15 項失敗（對應上面 6 項）。涵蓋：`addDaysIso`／`weekdayOfIso`／`resolveQueryState`（跨年、閏年、今天明天）、`makePill`／`renderGrid`（純文字、重畫）、勾選存檔與重新載入還原（分店、星期、時段、教室、課程、老師）、點擊次數排序、分區展開狀態、城市與分區全選、搜尋框與展開鈕、重設鈕、分享網址的產生與還原（短代碼、`utm` 參數、網址帶不存在的值）、提示框、浮層、新增最愛（預設名稱、截斷、提示 pill）、套用最愛、右鍵與長按編輯（改名、換色、順序、取消、刪除）、別的分頁改過清單時的內容比對（改到對的那顆、目標被刪不動別顆、晶片已過期）、長按與短按（放手後的 click 不套用、手指移動、第二根手指、滑鼠右鍵、鍵盤 Enter）、語音鎖定、清除記憶兩顆按鈕保留的 key、主題切換（儲存空間被擋也照樣切）、11 種壞掉的 localStorage 內容。鎖定時的變暗外觀與兩個浮層互斥另在內建瀏覽器（本機伺服器、375×812）看過。G5 前端 35 項、G6 62 項、G7 52 項、`test:voice` 91 案例、`check:versions` 重跑也全過。`script.js` 版號 253 → 254。測試腳本沒進版控。
 
-**待使用者決定（1 項，沒修）**
-- 新增最愛時，使用者自己打的名稱原樣當 `favorite_label` 送進 GA（`add_favorite`／`edit_favorite`／`delete_favorite`／`apply_favorite`），但隱私說明寫「僅進行匿名統計且不收集個人資料」。`GA_EVENTS.md` 有記載這是設計（為了看最愛名稱的分布），但名稱是自由文字，使用者可能打人名。要不要改成只送預設名稱（分店名或趣味預設名）、自訂名稱改送 `custom`，或在隱私說明補一句，是產品與隱私的決定。
+**待使用者決定（1 項）→ 2026-11-20 使用者決定「不要送進 GA」，已修**
+- 新增最愛時，使用者自己打的名稱原樣當 `favorite_label` 送進 GA（`add_favorite`／`edit_favorite`／`delete_favorite`／`apply_favorite`），但隱私說明寫「僅進行匿名統計且不收集個人資料」。`GA_EVENTS.md` 原本記載這是設計（為了看最愛名稱的分布），但名稱是自由文字，使用者可能打人名。
+- 處理：四個事件都不再帶任何參數（連預設名稱也不送，因為編輯後的名稱沒辦法分辨是預設還是自己打的）；`apply_favorite` 的「每個 session 只送一次」去重仍以名稱當 key，但只存在本機 sessionStorage，不經 GA。`GA_EVENTS.md` 的四列改成「無」並加註；GA 裡舊資料的 `favorite_label` 仍在，要清得到 GA 後台處理。`script.js` 版號 255 → 256。
+- 驗證：jsdom 載入真正的 `index.html`、`common.js`、整份 `script.js`，假 `gtag` 記錄所有事件，新增→套用（連按兩次）→編輯→刪除一整輪，名稱用「王小明專屬」「李小華專屬」，13 項檢查全過；同一份測試對修改前的版本跑，8 項失敗（四個事件都帶著名稱）。`search_schedule` 的參數沒被連帶弄掉。G8 131 項、G9 81 項、`check:versions` 重跑全過。
 
 **不處理（2 項）**
 - 「清除篩選記憶」靠 `location.reload()`：網址若還帶著不足以自動查詢的篩選參數（例如手動輸入的 `/?day=1`），重新整理後又被網址套回去。程式產生的分享網址都會在返回篩選頁時被 `showFilterView` 的 `replaceState` 清掉，只有手動編輯網址才碰得到。
@@ -265,7 +267,7 @@
 - 最愛晶片的名稱與圖示用 `escapeHtml` 後才放進 `innerHTML`（引號也跳脫），顏色走 `style.background` 賦值；老師與課程名稱用 `textContent`（`makePill`）。
 
 ### G9
-2026-11-20 跑完（xhigh，目標 `script.js` 的 `copyTextWithToast`～`startNewYearFireworks`、`newyear-fireworks.js`、`index.html`、`403.html`、`404.html`、`ga-init.js`、`theme-init.js`、`css-async.js`、`manifest.json`，沒有二次驗證），共 6 項：修 2 項、待決定 1 項、不處理 3 項。結果頁複製與下載圖片、三個限時彩蛋的日期邊界、煙火動畫本身、靜態頁面的主線都沒有問題；修的兩項都是「等待沒有上限」與「少一層保護」。
+2026-11-20 跑完（xhigh，目標 `script.js` 的 `copyTextWithToast`～`startNewYearFireworks`、`newyear-fireworks.js`、`index.html`、`403.html`、`404.html`、`ga-init.js`、`theme-init.js`、`css-async.js`、`manifest.json`，沒有二次驗證），共 6 項：修 2 項、待決定 1 項（已決定並做完，見下）、不處理 3 項。結果頁複製與下載圖片、三個限時彩蛋的日期邊界、煙火動畫本身、靜態頁面的主線都沒有問題；修的兩項都是「等待沒有上限」與「少一層保護」。
 
 **已修（2 項）**
 - 跨年煙火：`newYearPrepare()` 在載入遮罩還蓋著時 `await loadNewYearFireworks()`，**沒有任何上限**。`newyear-fireworks.js` 的請求若既不成功也不失敗（跨年夜行動網路擁塞最容易發生），`init()` 的 `finally` 就卡在這一步，載入遮罩永遠不收，整個網站用不了。跟 G6 的「遮罩蓋著時的每一步等待都要有上限」同一類，煙火只是裝飾，不該拖垮網站。→ 加 `NEWYEAR_LOAD_TIMEOUT_MS`（3 秒）用既有的 `withTimeout` 包起來，等不到就放棄、照常收遮罩（腳本載入失敗、載入完卻沒有 `WGFireworks` 本來就會走 catch，沒有問題）。
@@ -273,8 +275,12 @@
 
 驗證：用 jsdom 載入真正的 `index.html`、`common.js`、整份 `script.js`（假時鐘、假 `html2canvas`／`URL.createObjectURL`／`<a>.click`／煙火程式，逾時常數縮短），共 81 個檢查全過；對修改前的版本跑，2 項失敗（對應上面 2 項）。涵蓋：投票日（11/27 23:59、11/28 00:00、11/28 23:59、11/29 00:00 四個邊界與 `?vote=1`）、聖誕（12/20 23:59、12/21 00:00、12/26 23:59、12/27 00:00 四個邊界、🎄標題取代💪、分店頁標題沒有💪時補🎄、樹圖示、下雪的樣式表與腳本與雪花數量、手機寬度、減少動態效果、`?snow=1`）、`taipeiNowStamp` 的邊界（午夜是 00 不是 24、結束時間不含）、跨年流程（淺色使用者先變深色再放再換回、不寫 `wg_theme`、深色使用者不換色、放的過程中使用者手動切主題不被蓋掉、減少動態效果不做、期間內自動進入與 01:59／02:00 邊界、手機的 `small`、分享網址自動查詢加跨年、腳本卡住／失敗／載入完沒有物件）、複製選單（開關、Esc、點外面、aria）、複製文字與連結的內容與提示、複製失敗、下載圖片（一般瀏覽器的完整流程與鎖定／還原、`ignoreElements`、`onclone`、lazy 圖片、鎖住期間第二次點擊進不來、iOS 的預覽視窗與 revoke、html2canvas 丟錯、截圖／轉檔／載入逾時、`toBlob` 回 null）、`theme-init`／`ga-init`／`css-async`／`manifest.json`／`403.html`／`404.html`。`index.html` 另用腳本靜態檢查：280 個 id 沒有重複、所有 `label for`／`aria-*` 指向的 id 存在、`script.js`／`common.js`／`voice-search.js` 用 `getElementById` 取的 id 都存在、沒有 inline 事件處理器與 inline script（`ld+json` 除外）、`target="_blank"` 都帶 `noopener`、圖片都有 `alt`。另在內建瀏覽器（本機伺服器）用 `?newyear=1` 完整跑了一次跨年流程：遮罩收掉、煙火 canvas 放完自己移除、深色換回淺色、`wg_theme` 沒被寫；`css-async.js` 動態插入的 Font Awesome 樣式表保留了 `integrity` 與 `crossorigin`（jsdom 不反映 `integrity`，這點只能在真的瀏覽器看）。G5 前端 35 項、G6 62 項、G7 52 項、G8 131 項、`test:voice` 91 案例、`check:versions` 重跑也全過。`script.js` 版號 254 → 255。測試腳本沒進版控。**限制**：沒有在真的 iPhone 上驗證下載圖片的預覽視窗與長按儲存（只驗了程式流程）；煙火實際畫面沒有重看（只改了載入的等待）。
 
-**待使用者決定（1 項，沒修）**
-- `#loadingOverlay` 是不透明的全螢幕遮罩，只有 `script.js` 的 `init()` 會把它拿掉。`script.js` 載不到，或在頂層丟例外（舊瀏覽器不認得語法、儲存空間壞掉等），使用者會看到永遠不停的載入動畫，沒有任何訊息可以重新整理或更新瀏覽器。要補的話得在外部小腳本（CSP 不允許 inline script，例如 `theme-init.js` 旁邊另開一支）加一個看門狗計時器，過一段時間遮罩還在就換成提示文字。要不要做、等多久、顯示什麼字，是產品決定；目前頂層例外的已知來源（壞掉的 `wg_favorites`）已在 G8 修掉。
+**待使用者決定（1 項）→ 2026-11-20 使用者同意「照建議做」，已做**
+- `#loadingOverlay` 是不透明的全螢幕遮罩，只有 `script.js` 的 `init()` 會把它拿掉。`script.js` 載不到，或在頂層丟例外（舊瀏覽器不認得語法、儲存空間壞掉等），使用者會看到永遠不停的載入動畫，沒有任何訊息可以重新整理或更新瀏覽器。`script.js` 裡有 `?.`／`??`，iOS 13.3 以前、Chrome 80 以前會整支語法錯誤（這些瀏覽器的使用者應該很少，所以是便宜的保險，不是急件）。
+- 處理：新增外部小腳本 `load-guard.js`（CSP 不允許 inline script），放在 `index.html` 的 `<body>` 最後、`common.js` 之前，同步載入；`_headers` 加 30 天快取規則，版號 `?v=1`。遮罩蓋超過 10 秒（`SLOW_MS`）顯示「載入時間比預期久，請檢查網路後重新整理」；`script.js`／`common.js` 載入失敗，或這兩支丟出語法錯誤／頂層例外，立刻顯示「頁面載入失敗，請檢查網路後重新整理，或更新瀏覽器版本」；兩種都附一顆「重新整理」鈕。提示是遮罩的子元素、**不移除遮罩**，`init()` 一收遮罩就跟著消失；樣式用 inline style 自己寫，不靠 `style.css`；檔案本身不用新語法。別人的腳本（GA、Cloudflare beacon）或本站延遲載入的腳本出錯不會觸發。
+- 文字排版在內建瀏覽器 375 寬看過後，用換行把句子切成兩行（原本「瀏覽／器」會從詞中間斷開）；文字內容與使用者同意的那句相同，只是在逗號後換行。
+- 驗證：jsdom 32 項（卡住、遮罩已在淡出或已移除、各種載入失敗與別人腳本出錯、先慢後失敗不重複建、SSR 區塊不受影響、跟真正的 `common.js`＋`script.js` 一起跑〔正常載入沒有提示、`/filterOptions` 卡住時提示出現又隨遮罩消失〕、靜態檢查含檔案不含新語法與 `_headers` 規則）；內建瀏覽器用暫時複本（不進版控、已刪）實際看過：`common.js` 404 → `script.js` 丟 `ReferenceError`，提示立刻出現（淺色、深色、375 寬）；沒有 `common.js`／`script.js` 時 10 秒才出現；`style.css` 也載不到時提示仍在遮罩下方正確位置。G8 131、G9 81（K11 的 script 順序期望改成 load-guard → common → script）、`test:voice` 91、`check:versions` 重跑也全過。
+- 限制：沒有在真的舊 iPhone／舊 Android 上驗證；`load-guard.js` 在舊瀏覽器能不能跑，只靠「沒有新語法」的靜態檢查。
 
 **不處理（3 項）**
 - 下載圖片的「轉檔」階段逾時（10 秒）後，晚到的 `canvas.toBlob` 回呼仍會觸發下載或打開 iOS 預覽視窗，使用者先看到失敗提示、之後圖片卻自己出現。要處理得在逾時時設旗標讓回呼什麼都不做；手機卡到 10 秒又自己回來的情況很罕見，而且結果是使用者得到他要的圖片。

@@ -19,10 +19,12 @@
 
 | 事件名稱 | 觸發時機 | 參數 |
 | --- | --- | --- |
-| `add_favorite` | 把目前篩選條件存成一筆最愛 | `favorite_label` 最愛名稱 |
-| `apply_favorite`（每個最愛每個 session 只送一次）| 點某個已存的最愛套用篩選 | `favorite_label` |
-| `edit_favorite` | 長按（桌機右鍵）最愛開編輯視窗，儲存名稱／圖示／顏色／順序的修改 | `favorite_label` 儲存後的名稱 |
-| `delete_favorite` | 在編輯視窗按垃圾桶刪除某個最愛 | `favorite_label` |
+| `add_favorite` | 把目前篩選條件存成一筆最愛 | 無 |
+| `apply_favorite`（每個最愛每個 session 只送一次，以最愛名稱在本機去重）| 點某個已存的最愛套用篩選 | 無 |
+| `edit_favorite` | 長按（桌機右鍵）最愛開編輯視窗，儲存名稱／圖示／顏色／順序的修改 | 無 |
+| `delete_favorite` | 在編輯視窗按垃圾桶刪除某個最愛 | 無 |
+
+（最愛名稱是使用者自己打的自由文字，**刻意不送進 GA**：隱私說明寫「不收集個人資料」，名稱可能是人名。以前這四個事件帶 `favorite_label`，2026-11-20 移除；GA 裡舊資料的該參數仍在。）
 | `fav_edit_notice_shown` | 「長按最愛可以編輯」提示 pill 完整出現在畫面上連續滿 2 秒，記為看過 | 無 |
 | `fav_edit_notice_dismiss` | 點了提示 pill 把它收起來 | 無 |
 
