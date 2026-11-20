@@ -155,7 +155,7 @@ hosting/                             只用於本機開發（dev.mjs 啟動 wran
 worker/
   src/index.js                      路由表 ROUTES（限流、後台驗證統一處理）/ CORS / 入口 / cron scheduled()；含 POST /transcribeVoice（iOS 語音搜尋的 Workers AI 轉文字，見「語音搜尋」）
   src/crawlers.js                   海外 IP 存取判斷：爬蟲 UA 清單（Pages 的 _middleware.js 也 import 這份）+ 只放行的唯讀路徑
-  src/util.js                       共用小工具：台灣時間（nowTaiwanIso 等）、fnv1aHex、爬官網的 UA、推 Teams；functions/ 也會 import
+  src/util.js                       共用小工具：台灣時間（nowTaiwanIso 等）、fnv1aHex、限流用的 IP key（ipLimitKey，IPv6 取 /64）、爬官網的 UA、推 Teams；functions/ 也會 import
   src/queryClasses.js               課表查詢邏輯
   src/scrape.js                     爬蟲邏輯（重抓官網課表寫入 D1）
   src/branchScan.js                 每月比對官網 sitemap 與 branches-seed.js，有差異才通知 Teams（只通知，不改資料）；已知不收的網址（branches-excluded.js）不算差異
@@ -227,7 +227,7 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 
 ### /queryClasses 防濫用
 匿名公開端點，做不到真正私有 API，只拉高濫用成本：
-1. 流量限制：每 IP 每 60 秒 20 次（`/queryClasses`）/ 10 次（`/issueToken`），用 KV namespace `QUERY_RATE_LIMIT`（fixed-window，非原子，夠用不追求精確）。
+1. 流量限制：每 IP 每 60 秒 20 次（`/queryClasses`）/ 10 次（`/issueToken`），用 KV namespace `QUERY_RATE_LIMIT`（fixed-window，非原子，夠用不追求精確）。**「IP key」**：限流與登入失敗鎖定用的是 `worker/src/util.js` 的 `ipLimitKey()`，IPv4 原樣、**IPv6 只取前 64 位（/64）**——一般家用網路與手機拿到整段 /64，只用完整位址當 key 的話，攻擊者在段內換位址就能重置額度與鎖定；副作用是同一個 /64 底下的人共用額度（實務上是同一戶或同一支手機）。`fetch()` 把它算好放進 handler 的 `ipKey`，**限流與鎖定一律用 `ipKey`，不要拿 `ip` 當 key**；`ip`（完整位址）只給 `query_access_log` 寫存取紀錄用，報表才看得到真正來源。看不懂的 IPv6 格式會原樣回傳（等於舊行為）。
 2. 短效 HMAC token：`GET /issueToken` 發 15 分鐘效期 token（payload 只有 `exp`，`QUERY_TOKEN_SECRET` 簽名）。`/queryClasses` 沒帶對 token 回 401（`token_invalid`/`token_expired`）。
 3. 結果筆數上限：`worker/src/queryClasses.js` 的 `RESULT_HARD_CAP = 600`（前端超過 `RESULT_COUNT_WARN_LIMIT = 250` 就整包不顯示，後端沒必要撈更多）。
 4. 綁定參數：D1 每個查詢最多 100 個。`queryClasses` 把條件全綁進 SQL，分店要不要下推進 `IN` 子句（`branchPushedDown`），算的是「其他條件的參數 ＋ 分店數 ＋ 每個時間窗自己的參數（日期範圍、星期幾、指定日期、LIMIT）」是否在 `D1_PARAM_SAFETY_LIMIT` 內；新增篩選條件要把它的參數數算進去，漏算的話條件塞滿時會 500。比對白名單用 `Object.hasOwn`，不要用 `obj[key]`（會吃到 `constructor` 等原型鏈）。
@@ -314,7 +314,7 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 - 本機（localhost）載入時 Cloudflare Web Analytics beacon 會出現 CORS 錯誤，是因為 localhost 不是它登記的網域，跟 CSP 無關，可忽略。
 
 ### 後台登入
-密碼是 `MANUAL_SCRAPE_TOKEN`（沒設或是空字串時登入一律拒絕；它跟 `ADMIN_SESSION_SECRET` 都沒設時，session 簽發與驗證會丟錯、回 500，不會退回可預測的金鑰）；登入成功換發 7 天效期、簽章的 session token（存 `localStorage`，用 `X-Admin-Token` header 帶），只有 `/verifyAdminToken` 收原始密碼，其餘後台端點只認 session token。**登入失敗鎖定**：同一 IP 連續輸錯 5 次鎖 15 分鐘（KV key `admin-fail:<IP>`，TTL 到期自動解除），鎖定期間連正確密碼也會被拒（回 423、畫面顯示「嘗試次數過多，已暫時鎖定」）；要排查可用 `wrangler kv key get "admin-fail:<IP>" --namespace-id <QUERY_RATE_LIMIT 的 id> --remote` 看計數，不要為了「測試登入」刻意輸錯。session 簽章金鑰見下面的 `ADMIN_SESSION_SECRET`。`admin.html` 的登入框（`#adminLoginOverlay`）與登入頁的返回鈕在 HTML 裡預設 `hidden`，只有 `admin.js` 的 `initAuth()` 判斷需要登入才顯示——已登入的人開後台要等 `/verifyAdminToken` 回應，預設顯示的話會先閃一下登入框再消失。驗證超過 `LOGIN_REVEAL_AFTER_MS`（3 秒）還沒回應，就先亮出登入框（不然網路慢時是一片空白、無法登入），之後驗證成功仍會自動換成後台；`showLoginOverlay()` 要先關掉轉場再 `focus()`（從 hidden 轉出來的起點仍算 hidden，直接 focus 會失敗），已經顯示時再呼叫是 no-op（不會清掉使用者打到一半的密碼），`adminEntered` 讓遲到的驗證結果不會蓋掉等待期間手動登入的人。**只有 `/verifyAdminToken` 明確回 401／403（`verifyToken()` 的 `{ invalid: true }`）才清掉存在 `localStorage` 的 session**；423 被鎖定、網路錯誤、逾時、5xx 都保留它（session 可能還有效，鎖定解除或網路恢復後重開就能自動登入，不用重新輸入密碼），不要改回「任何失敗都清掉」。
+密碼是 `MANUAL_SCRAPE_TOKEN`（沒設或是空字串時登入一律拒絕；它跟 `ADMIN_SESSION_SECRET` 都沒設時，session 簽發與驗證會丟錯、回 500，不會退回可預測的金鑰）；登入成功換發 7 天效期、簽章的 session token（存 `localStorage`，用 `X-Admin-Token` header 帶），只有 `/verifyAdminToken` 收原始密碼，其餘後台端點只認 session token。**登入失敗鎖定**：同一 IP 連續輸錯 5 次鎖 15 分鐘（KV key `admin-fail:<IP key>`，TTL 到期自動解除；**IPv6 以 /64 為單位**，key 是 `2001:db8:1:2::` 這種前 64 位的形式，見下面「IP key」），鎖定期間連正確密碼也會被拒（回 423、畫面顯示「嘗試次數過多，已暫時鎖定」）；要排查可用 `wrangler kv key get "admin-fail:<IP key>" --namespace-id <QUERY_RATE_LIMIT 的 id> --remote` 看計數，不要為了「測試登入」刻意輸錯。**已知限制、使用者 2026-11-20 決定不修**：計數是非原子的 KV 讀後寫，同一瞬間送出的平行猜測會在計數更新前全部通過，所以鎖定擋不住「同時送出很多次」的暴力破解；後台密碼 `MANUAL_SCRAPE_TOKEN` 必須維持長的隨機字串，那才是真正的防線（根本解法要新增 D1 表或 Durable Object，沒有做）。session 簽章金鑰見下面的 `ADMIN_SESSION_SECRET`。`admin.html` 的登入框（`#adminLoginOverlay`）與登入頁的返回鈕在 HTML 裡預設 `hidden`，只有 `admin.js` 的 `initAuth()` 判斷需要登入才顯示——已登入的人開後台要等 `/verifyAdminToken` 回應，預設顯示的話會先閃一下登入框再消失。驗證超過 `LOGIN_REVEAL_AFTER_MS`（3 秒）還沒回應，就先亮出登入框（不然網路慢時是一片空白、無法登入），之後驗證成功仍會自動換成後台；`showLoginOverlay()` 要先關掉轉場再 `focus()`（從 hidden 轉出來的起點仍算 hidden，直接 focus 會失敗），已經顯示時再呼叫是 no-op（不會清掉使用者打到一半的密碼），`adminEntered` 讓遲到的驗證結果不會蓋掉等待期間手動登入的人。**只有 `/verifyAdminToken` 明確回 401／403（`verifyToken()` 的 `{ invalid: true }`）才清掉存在 `localStorage` 的 session**；423 被鎖定、網路錯誤、逾時、5xx 都保留它（session 可能還有效，鎖定解除或網路恢復後重開就能自動登入，不用重新輸入密碼），不要改回「任何失敗都清掉」。
 
 ## Secrets
 

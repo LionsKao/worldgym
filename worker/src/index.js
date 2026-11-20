@@ -6,7 +6,7 @@ import { monthlyNameRanking, availableYears, monthlySearchTrend, favoriteStatsCo
 import { scanForNewBranches } from "./branchScan.js";
 import BRANCHES from "./branches-seed.js";
 import { isRequestAllowed } from "./crawlers.js";
-import { nowTaiwanIso, taiwanMonthKey, taiwanIso, postTeamsCard, todayIsoTaipei } from "./util.js";
+import { nowTaiwanIso, taiwanMonthKey, taiwanIso, postTeamsCard, todayIsoTaipei, ipLimitKey } from "./util.js";
 import { Buffer } from "node:buffer"; // 語音搜尋：讀取音檔與轉 base64（wrangler.toml 已開 nodejs_compat）
 
 // 網站是跨網域被呼叫，所以要自己開白名單。
@@ -90,10 +90,10 @@ async function takeKvQuota(env, ctx, key, limit, ttlSeconds) {
   ctx.waitUntil(env.QUERY_RATE_LIMIT.put(key, String(current + 1), { expirationTtl: ttlSeconds }));
   return true;
 }
-// 每 IP 每 60 秒窗口的請求次數上限打點。
-async function checkRateLimit(env, kvKeyPrefix, ip, limit, ctx) {
+// 每 IP 每 60 秒窗口的請求次數上限打點。ipKey 是 util.js 的 ipLimitKey() 的結果（IPv6 以 /64 為單位），不是原始位址。
+async function checkRateLimit(env, kvKeyPrefix, ipKey, limit, ctx) {
   const windowBucket = Math.floor(Date.now() / 60000);
-  return takeKvQuota(env, ctx, `${kvKeyPrefix}:${ip}:${windowBucket}`, limit, 90);
+  return takeKvQuota(env, ctx, `${kvKeyPrefix}:${ipKey}:${windowBucket}`, limit, 90);
 }
 
 // /issueToken、/queryClasses 存取紀錄，事後才有辦法查是不是被爬蟲/腳本大量打（見 query_access_log）。
@@ -249,18 +249,19 @@ async function isAdminLoginRequest(req, env) {
 // 避免鎖定期間還能靠 timing 之類側管道再多試探）。TTL 到期自動解鎖，不用額外清理。
 const ADMIN_LOCKOUT_THRESHOLD = 5;
 const ADMIN_LOCKOUT_TTL_SEC = 15 * 60; // 連續失敗達門檻後鎖定 15 分鐘
-function adminFailKey(ip) {
-  return `admin-fail:${ip}`;
+// 這裡的 ipKey 是 ipLimitKey() 的結果：IPv4 就是位址本身，IPv6 是前 64 位（見 util.js），不是原始位址。
+function adminFailKey(ipKey) {
+  return `admin-fail:${ipKey}`;
 }
-async function getAdminFailCount(env, ip) {
-  return parseInt((await env.QUERY_RATE_LIMIT.get(adminFailKey(ip))) || "0", 10);
+async function getAdminFailCount(env, ipKey) {
+  return parseInt((await env.QUERY_RATE_LIMIT.get(adminFailKey(ipKey))) || "0", 10);
 }
-async function recordAdminFailure(env, ctx, ip) {
-  const count = (await getAdminFailCount(env, ip)) + 1;
-  ctx.waitUntil(env.QUERY_RATE_LIMIT.put(adminFailKey(ip), String(count), { expirationTtl: ADMIN_LOCKOUT_TTL_SEC }));
+async function recordAdminFailure(env, ctx, ipKey) {
+  const count = (await getAdminFailCount(env, ipKey)) + 1;
+  ctx.waitUntil(env.QUERY_RATE_LIMIT.put(adminFailKey(ipKey), String(count), { expirationTtl: ADMIN_LOCKOUT_TTL_SEC }));
 }
-function clearAdminFailures(env, ctx, ip) {
-  ctx.waitUntil(env.QUERY_RATE_LIMIT.delete(adminFailKey(ip)));
+function clearAdminFailures(env, ctx, ipKey) {
+  ctx.waitUntil(env.QUERY_RATE_LIMIT.delete(adminFailKey(ipKey)));
 }
 
 // --- 端點 ---
@@ -269,7 +270,8 @@ function clearAdminFailures(env, ctx, ip) {
 //   limit     每個 IP 每 60 秒的請求上限，超過回 429
 //   admin     true = 要帶有效的後台 session token，沒帶回 403（先限流、再驗證，限流超過就不會多做驗證）
 //   logAccess true = 把這次存取（含被限流擋下的）寫進 query_access_log，只有 /issueToken 與 /queryClasses 需要
-// handler 收到 { req, env, ctx, url, origin, ip }，回傳 Response。
+// handler 收到 { req, env, ctx, url, origin, ip, ipKey }，回傳 Response。ip 是完整位址（寫存取紀錄用）；
+// ipKey 是「擋人」用的 key（IPv6 只取前 64 位），限流、登入失敗鎖定一律用 ipKey，不要拿 ip 當 key。
 
 // 公開端點的 JSON body 上限：最大的合法請求（/trackSearchEvents 最多 60 個名稱、/trackAdEvents 100 筆事件、
 // /queryClasses 的篩選條件）都在十幾 KB 以內。不設上限的話，任何人一個請求就能讓 req.json() 把上百 MB 讀進記憶體，
@@ -466,15 +468,15 @@ async function handleQueryAccessStats({ env, url, origin }) {
 }
 
 // admin.html 登入用：只驗證 token 對不對，不做任何事，讓前端可以在跑真正動作前先確認密碼正確。
-async function handleVerifyAdminToken({ req, env, ctx, origin, ip }) {
-  if ((await getAdminFailCount(env, ip)) >= ADMIN_LOCKOUT_THRESHOLD) {
+async function handleVerifyAdminToken({ req, env, ctx, origin, ipKey }) {
+  if ((await getAdminFailCount(env, ipKey)) >= ADMIN_LOCKOUT_THRESHOLD) {
     return json({ error: "locked" }, 423, origin);
   }
   if (!(await isAdminLoginRequest(req, env))) {
-    await recordAdminFailure(env, ctx, ip);
+    await recordAdminFailure(env, ctx, ipKey);
     return json({ error: "forbidden" }, 403, origin);
   }
-  clearAdminFailures(env, ctx, ip);
+  clearAdminFailures(env, ctx, ipKey);
   // 帶密碼或帶還沒過期的 session token 來驗證都會換到一張新的 session token（滑動式延長
   // 有效期）：只要 7 天內有開過後台，就不用重新輸入密碼；超過 7 天沒用才會真的過期。
   const sessionToken = await issueAdminSession(env);
@@ -972,7 +974,8 @@ export default {
 
       const name = url.pathname.slice(1);
       const ip = req.headers.get("CF-Connecting-IP") || "unknown";
-      const allowed = await checkRateLimit(env, `rl:${name}`, ip, route.limit, ctx);
+      const ipKey = ipLimitKey(ip); // 限流與登入鎖定的 key；IPv6 以 /64 為單位，攻擊者在同一段內換位址不會重置額度
+      const allowed = await checkRateLimit(env, `rl:${name}`, ipKey, route.limit, ctx);
       if (route.logAccess) logQueryAccess(env, ctx, name, ip, req.headers.get("User-Agent") || "", !allowed);
       if (!allowed) return json({ error: "rate_limited" }, 429, origin);
       if (route.admin && !(await isAdminRequest(req, env))) {
@@ -982,7 +985,7 @@ export default {
         const verification = await verifyQueryToken(env, req.headers.get("X-Query-Token"));
         if (!verification.ok) return json({ error: verification.reason }, 401, origin);
       }
-      return await route.handler({ req, env, ctx, url, origin, ip });
+      return await route.handler({ req, env, ctx, url, origin, ip, ipKey });
     } catch (e) {
       if (e instanceof HttpError) return json({ error: e.message }, e.status, origin);
       console.error("worker error", e);

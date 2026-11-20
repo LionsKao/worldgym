@@ -62,6 +62,32 @@ export function fnv1aHex(str) {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
+// 限流與登入失敗鎖定用的「IP key」：IPv4 原樣；IPv6 只取前 64 位（/64，例如 2001:db8:1:2::）。
+// 一般家用網路與手機會拿到一整段 /64（2^64 個位址），攻擊者在段內隨便換位址，只用完整位址當 key 的話
+// 每換一個就是新的額度、新的鎖定計數，等於沒有限制。副作用是同一個 /64 底下的人共用額度（實務上就是同一戶或同一支手機）。
+// 只用在「擋人」的 key；存取紀錄（query_access_log）仍記完整位址，報表才看得出實際來源。
+// IPv4-mapped IPv6（::ffff:1.2.3.4）本質是 IPv4，照 IPv4 算；格式看不懂就原樣回傳（等於維持舊行為，不丟例外）。
+export function ipLimitKey(ip) {
+  if (typeof ip !== "string" || !ip.includes(":")) return ip || "unknown";
+  let addr = ip.toLowerCase().split("%")[0]; // 去掉 zone id（fe80::1%eth0）
+  const mapped = addr.match(/^::ffff:(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (mapped) return mapped.slice(1).every((n) => Number(n) <= 255) ? mapped.slice(1).join(".") : ip;
+  const dotted = addr.match(/^(.*:)(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/); // 尾巴是點分十進位（64:ff9b::1.2.3.4）
+  if (dotted) {
+    const [a, b, c, d] = dotted.slice(2).map(Number);
+    if ([a, b, c, d].some((n) => n > 255)) return ip;
+    addr = `${dotted[1]}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+  const halves = addr.split("::");
+  if (halves.length > 2) return ip;
+  const head = halves[0] ? halves[0].split(":") : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
+  if (halves.length === 1 ? head.length !== 8 : head.length + tail.length > 7) return ip;
+  const groups = halves.length === 1 ? head : [...head, ...Array(8 - head.length - tail.length).fill("0"), ...tail];
+  if (!groups.every((g) => /^[0-9a-f]{1,4}$/.test(g))) return ip;
+  return groups.slice(0, 4).map((g) => parseInt(g, 16).toString(16)).join(":") + "::";
+}
+
 // 爬官網（課表與 sitemap）時用的 User-Agent：跟舊版 C# 爬蟲打這個端點時用的一樣，
 // 沒有瀏覽器特徵的請求會被官網拒絕。
 export const SCRAPER_USER_AGENT =
