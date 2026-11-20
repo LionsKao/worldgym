@@ -67,6 +67,11 @@ export function fnv1aHex(str) {
 export const SCRAPER_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
 
+// 對官網（課表、sitemap）單次請求的逾時。爬蟲是依序逐一抓每間分店，卡住一間，後面的全部都在等，
+// 所以每個請求一定要有上限；官網正常回應（約 170KB 的 JSON）幾秒內就回來，20 秒很寬鬆。
+// 逾時會丟 TimeoutError，由呼叫端當成「這一次失敗」處理（課表是該間保留舊資料，見 scrape.js 的 runScrape）。
+export const OFFICIAL_SITE_TIMEOUT_MS = 20000;
+
 // 把一組 AdaptiveCard 區塊（body）推到 Teams 頻道 webhook，回傳 fetch 的 Response 讓呼叫端自己看 ok/status。
 // 不檢查 env.TEAMS_WEBHOOK_URL 有沒有設：沒設的處理方式由呼叫端決定（月度掃描是靜靜略過，留言是回錯誤）。
 // 有逾時：Teams 卡住時不能讓留言請求與每月掃描一路掛到平台上限。逾時會丟 AbortError（TimeoutError），由呼叫端處理。

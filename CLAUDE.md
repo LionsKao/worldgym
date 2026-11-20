@@ -166,7 +166,7 @@ worker/
   scripts/check-versions.mjs        靜態資源版號檢查（npm run check:versions，見 Commands 與「靜態資源快取」）
   scripts/test-voice.mjs            語音搜尋比對引擎的回歸測試（npm run test:voice，見「語音搜尋」）；案例在 voice-cases.mjs，
                                     課程與老師的凍結快照在 voice-fixtures.json（devDependency：jsdom）
-  schema.sql                        D1 完整 schema（重建資料庫用，會 DROP 所有表）
+  schema.sql                        D1 完整 schema（只能對全新資料庫執行，見檔頭警告）
   migrations/                       針對既有正式資料庫的單張 table migration
 ```
 
@@ -195,7 +195,9 @@ worker/
 
 **爬蟲寫入 `classes` 的方式（`worker/src/scrape.js` 的 `replaceBranchClasses`）：先 upsert 這間分店這一輪的全部列、最後在最後一批裡清掉「這間分店 `scrapedAt` 比這一輪舊」的列**，不是先整間 DELETE 再分批重寫。那樣寫入的這幾百毫秒到幾秒，這間分店是空的或只有一部分，剛好有人查詢、或 sitemap/SSR 在這時重建並快取 30 分鐘就會看到殘缺資料；寫到一半失敗更會留下殘缺資料。現在任何時刻看到的至少是舊資料（換了老師的課短暫有兩筆），中途失敗舊資料原封不動、下一輪再清。因此**同一間分店同一輪的所有列共用同一個 `scrapedAt`**（它是新舊資料的分水嶺），改這段時不要改回逐列 `nowTaiwanIso()`，也不要改回先刪光。`staleDeleted` 現在是「真正過期被清掉的筆數」，不是「整間先刪光的筆數」。upsert 用 `ON CONFLICT(id) DO UPDATE SET`，**只更新同一個 id 下還可能變的欄位**（`branchName`、`teacherName`、`teacherEmpNo`、`roomName`、`isSubstitute`、`scrapedAt`），不要改回 `INSERT OR REPLACE`（它遇到相同 id 會「先刪整列再插入」，連帶重寫每個索引項目，寫入量大好幾倍）；`className`、`date`、`startTime`、`branchSlug` 都在 id 裡、同 id 必定相同，而且 `className` 有索引，放進 SET 會每輪重寫那條索引。
 
-新增/修改 ads table 結構：`schema.sql` 只在建立全新資料庫時整份重跑（會清空所有表）；對既有正式資料庫要用 `worker/migrations/` 新增檔案 + `wrangler d1 execute --remote --file=`，不要直接改 schema.sql 後重跑。
+**官網課表 API 出錯時 HTTP 狀態仍是 200**：內容是 `{"exception":"EXCEPTION","data":"","status":false}`；正常是 `status:true`，而沒有課的分店（Express）是 `status:true`、`data` 為一排空物件 `{}`。`fetchBranchSchedule` 把前者當失敗丟錯（`runScrape` 逐間 try/catch，該間舊資料原封不動、列進 `errors`），後者才是真的沒課、會清空那間分店。**不要把錯誤回應改回當成空陣列**：那樣官網一出錯就會清空整間分店，官網整個壞掉的那一輪等於清空全站（`classes` 變 0 列，要等下一輪才恢復）。對官網的請求（課表、sitemap）一律帶逾時 `OFFICIAL_SITE_TIMEOUT_MS`：分店是依序逐一抓的，卡住一間，後面全部都在等。
+
+新增/修改 ads table 結構：`schema.sql` 只在建立全新資料庫時整份重跑（大部分的表前面有 `DROP TABLE`，另有 7 張沒有，對既有資料庫重跑會先毀資料再中途報錯，見檔頭警告）；對既有正式資料庫要用 `worker/migrations/` 新增檔案 + `wrangler d1 execute --remote --file=`，不要直接改 schema.sql 後重跑。
 
 ### 推播提醒 (PWA)
 課表頁需先加到主畫面成為 PWA 才顯示鈴鐺按鈕（`script.js` 的 `isPWAInstalled()` 判斷 `display-mode: standalone`；本機測試可在網址加 `?pwa=1` 繞過）。登記提醒流程：前端 `sw.js` 註冊 Service Worker 拿 Push 訂閱 → `/registerReminder` 存 D1 → worker cron 每 5 分鐘掃到期提醒 → `reminders.js` 用 VAPID 金鑰簽署推播內容送出 → `sw.js` 的 `push` 事件顯示通知。
@@ -226,6 +228,7 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 1. 流量限制：每 IP 每 60 秒 20 次（`/queryClasses`）/ 10 次（`/issueToken`），用 KV namespace `QUERY_RATE_LIMIT`（fixed-window，非原子，夠用不追求精確）。
 2. 短效 HMAC token：`GET /issueToken` 發 15 分鐘效期 token（payload 只有 `exp`，`QUERY_TOKEN_SECRET` 簽名）。`/queryClasses` 沒帶對 token 回 401（`token_invalid`/`token_expired`）。
 3. 結果筆數上限：`worker/src/queryClasses.js` 的 `RESULT_HARD_CAP = 600`（前端超過 `RESULT_COUNT_WARN_LIMIT = 250` 就整包不顯示，後端沒必要撈更多）。
+4. 綁定參數：D1 每個查詢最多 100 個。`queryClasses` 把條件全綁進 SQL，分店要不要下推進 `IN` 子句（`branchPushedDown`），算的是「其他條件的參數 ＋ 分店數 ＋ 每個時間窗自己的參數（日期範圍、星期幾、指定日期、LIMIT）」是否在 `D1_PARAM_SAFETY_LIMIT` 內；新增篩選條件要把它的參數數算進去，漏算的話條件塞滿時會 500。比對白名單用 `Object.hasOwn`，不要用 `obj[key]`（會吃到 `constructor` 等原型鏈）。
 前端過期自動重拿 token 重試一次，使用者無感（見 `script.js` 的 query 流程）。
 **前端查詢結果快取**（`script.js` 的 `runScheduleQueryCached`）：同一組條件 5 分鐘內重複查詢（查詢→返回→再查、點最愛、點老師名字）直接用上一次的結果，不打 `/queryClasses`，也不吃限流額度。**只存在頁面的 JS 記憶體、不寫 localStorage**——重新整理、關掉 PWA 就清空，隔了一段時間再回來（localStorage 會還原同一組篩選）超過存活時間也會真的重新要資料；課表一天只更新兩次，5 分鐘不會讓人看到過期資料。key 含台灣今天的日期（跨日要重查）與排序過的條件；只存成功且筆數 ≤ 250 的結果，失敗不存，最多 20 組。`/trackSearch` 等統計打點不受快取影響（命中也照送，查詢次數統計與以前相同）。改這段時不要把結果寫進 localStorage，也不要讓快取延長存活時間（TTL 從「抓回來」起算）。
 

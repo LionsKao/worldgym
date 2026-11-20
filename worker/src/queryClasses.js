@@ -4,8 +4,10 @@ import { todayIsoTaipei, addDaysIso } from "./util.js";
 // 判斷「現在有沒有團體課表」，所以有 export，不要在別處再寫一份。
 const NORMAL_DAYS_AHEAD = 6;
 const SUBSTITUTE_DAYS_AHEAD = 14;
-// course/teacher 走 SQL IN 子句，D1 每個查詢的綁定參數上限是 100，
-// course+teacher 兩個 IN 子句（30*2=60）加上 day(7)+room(2)+日期範圍(4) = 73，還有餘裕。
+// course/teacher 走 SQL IN 子句，D1 每個查詢的綁定參數上限是 100（見下方 D1_PARAM_SAFETY_LIMIT）。
+// 不算分店的條件最多是：課程 30 ＋ 老師 30 ＋ 教室 2 ＋ 時段的小時 18（3 個時段 × 6 小時）＝ 80，
+// 再加上每個時間窗自己的日期範圍 2、星期幾 ≤ 7、指定日期 ≤ 2、LIMIT 1，最壞 92，還在上限內；
+// 分店要不要下推進 SQL，看的是這之外還剩多少額度（見 queryClasses 裡的 branchPushedDown）。
 const IN_LIMIT = 30;
 // branch 選很多間時不會下推進 SQL（見下方 queryClasses 裡的說明），這裡只是防濫用的天花板，
 // 目前總共 111 間分店，不會真的卡到使用者。
@@ -77,7 +79,9 @@ async function queryClasses(db, rawState) {
   const course = sanitizeStringArray(rawState.course, IN_LIMIT);
   const teacher = sanitizeStringArray(rawState.teacher, IN_LIMIT);
   const room = sanitizeStringArray(rawState.room, 2).filter((v) => ROOM_VALUES.has(v));
-  const time = sanitizeStringArray(rawState.time, 3).filter((v) => TIME_SLOT_HOURS[v]);
+  // 要用 Object.hasOwn：TIME_SLOT_HOURS 是普通物件，直接 TIME_SLOT_HOURS[v] 會讀到原型鏈
+  // （"constructor"、"toString"、"__proto__" 都是真值），之後把 function／object 綁進 SQL 會變成 500。
+  const time = sanitizeStringArray(rawState.time, 3).filter((v) => Object.hasOwn(TIME_SLOT_HOURS, v));
   const day = sanitizeStringArray(rawState.day, 7)
     .map(Number)
     .filter((n) => Number.isInteger(n) && n >= 1 && n <= 7);
@@ -102,9 +106,13 @@ async function queryClasses(db, rawState) {
     baseConditions.push(inClause("startHour", hours, baseParams));
   }
 
+  // 每個時間窗的查詢，除了 baseParams（連同下推的分店）之外還有：日期範圍 2、LIMIT 1，
+  // 以及星期幾與指定日期（近窗兩種都用、遠窗只用星期幾，這裡照較大的近窗算）。
+  // 這些也要算進 D1 的 100 個參數上限，只算 baseParams 的話，條件塞很滿時會算出 101 個而讓 D1 報錯。
+  const windowParams = 3 + day.length + exactDates.length;
   const branchPushedDown = branch.length > 0
     && branch.length <= BRANCH_PUSHDOWN_LIMIT
-    && baseParams.length + branch.length <= D1_PARAM_SAFETY_LIMIT;
+    && baseParams.length + branch.length + windowParams <= D1_PARAM_SAFETY_LIMIT;
   if (branchPushedDown) baseConditions.push(inClause("branchSlug", branch, baseParams));
 
   // 星期幾/日期篩選跟其他篩選條件分開組，因為近/遠兩個時間窗要套用不同的規則（見下面）。

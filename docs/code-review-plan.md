@@ -29,7 +29,7 @@
 | G1 | 🔴 | `worker/src/index.js`（整檔） | 945 | 公開 API 與驗證核心：短效 token、每 IP 限流與全站每日額度、後台 session 與登入鎖定、CORS、各打點端點的輸入驗證、留言端點、語音端點、cron 入口。重點看驗證／限流能不能繞過、注入、資源耗盡、費用失控 | 已跑完（3 項待決定） |
 | G2 | 🔴 | `functions/`（全部）、`worker/src/crawlers.js`、`worker/src/util.js`、`_headers`、`worker/wrangler.toml` | 740 | Pages 邊緣與伺服器端注入：台灣 IP 限制與爬蟲例外、擋掉非網站檔案（路徑編碼繞過）、SSR 注入課表的跳脫與快取、動態 sitemap／llms.txt、安全標頭與 CSP、cron 設定 | 已跑完（2 項待決定） |
 | G3 | 🟠 | `admin.js`、`admin.html`、`common.js` | 1,180 | 後台頁面與共用工具：後台會渲染來自外部請求的資料，看 XSS／跳脫、登入與 session 處理、報表計算；`common.js` 是前台後台共用的工具（escapeHtml、fetchJson、圖表、時間） | 已跑完（2 項待決定） |
-| G4 | 🟠 | `worker/src/scrape.js`、`queryClasses.js`、`branchScan.js`、`branches-seed.js`、`branches-excluded.js`、`worker/schema.sql` | 1,010 | 課表資料管線：爬蟲寫入與新舊資料切換、查詢 SQL 與筆數上限、每月分店掃描、時間戳與時區、schema 與實際程式是否一致 | 未開始 |
+| G4 | 🟠 | `worker/src/scrape.js`、`queryClasses.js`、`branchScan.js`、`branches-seed.js`、`branches-excluded.js`、`worker/schema.sql` | 1,010 | 課表資料管線：爬蟲寫入與新舊資料切換、查詢 SQL 與筆數上限、每月分店掃描、時間戳與時區、schema 與實際程式是否一致 | 已跑完（2 項待決定） |
 | G5 | 🟠 | `worker/src/reminders.js`、`worker/src/analytics.js`、`sw.js`、script.js 從開頭到 `trackTeacherEventOncePerSession`（含） | 1,030 | 推播提醒與報表統計：提醒登記／取消／到期發送、每月壓縮並刪明細（資料遺失風險）、前端的儲存／廣告與統計打點／推播註冊與提醒清單 | 未開始 |
 | G6 | 🟡 | script.js 從 `showServiceErrorModal` 到 `performSearch`（含），以及 `init` 到檔尾 | 930 | 前端核心查詢與結果顯示：token 重試與查詢快取、結果列渲染的跳脫、頁面切換與競態、初始化流程、首頁公開排行的渲染 | 未開始 |
 | G7 | 🟡 | script.js 從 `isSpeechRecognitionSupported`（含它前面的語音常數）到 `submitVoiceSearch`（含）、`voice-search.js` | 940 | 語音搜尋：狀態機與逾時、麥克風是否確實釋放、iOS 錄音路徑、比對引擎誤判。`worker/scripts/test-voice.mjs` 已有回歸測試，審查時可對照 | 未開始 |
@@ -128,7 +128,29 @@
 - `admin.js` 的 `addDays` 與 `script.js` 的 `addDaysIso`（以及 Worker 的 `addDaysIso`）是三份相同功能的程式；要合併得動 `script.js`，價值低，沒做。
 
 ### G4
-（未開始）
+2026-11-20 跑完（xhigh，目標 `scrape.js`、`queryClasses.js`、`branchScan.js`、`branches-seed.js`、`branches-excluded.js`、`schema.sql`，沒有二次驗證），共 7 項：修 5 項、待決定 2 項。**這一組最重要的一項是「官網一出錯就清空整間分店」**——用官網的真實 API 實測確認過，不是推論。
+
+**已修（5 項）**
+- 官網課表 API 出錯時 HTTP 狀態仍是 200，內容是 `{"exception":"EXCEPTION","data":"","status":false}`（用壞日期實測）。舊的 `fetchBranchSchedule` 把它當成「沒有課」回 `[]`，`ingestBranchClasses` 隨後把整間分店的舊課表清掉；官網在 03:00／17:00 整個壞掉的話，111 間全被清空、`classes` 變 0 列，網站最久 12 小時查不到課（驗證腳本重現：1199 列 → 0 列，而且 `branchesOk` 還顯示 111）。→ 官網回 `status:false`、有 `exception`、或 `data` 不是陣列都丟錯，該間舊資料原封不動、列進 `errors`。沒有課的 Express 分店（`status:true`、`data` 是一排空物件 `{}`，實測確認）不受影響，仍然會清空那間分店。
+- 爬官網的 `fetch` 沒有逾時：分店是依序逐一抓，官網卡住一間，後面所有分店本輪都等不到更新。`branchScan.js` 抓 sitemap 同樣沒有。→ 兩處都加 `OFFICIAL_SITE_TIMEOUT_MS`（20 秒，定義在 `util.js`），逾時當成該間失敗。
+- `queryClasses` 判斷分店要不要下推進 SQL 時，沒把每個時間窗自己的參數（日期範圍 2、星期幾 ≤ 7、指定日期 ≤ 2、LIMIT 1）算進 D1 的 100 個綁定參數上限，檔頭註解的算式也漏了時段條件（最多 18 個小時）。課程 30＋老師 30＋教室 2＋時段 3＋分店 9＋星期 7＋指定日期 2 會綁 101 個而 500（500 組隨機條件裡 7 組重現）。→ 算進去，註解改正。
+- 時段篩選用 `TIME_SLOT_HOURS[v]` 判斷，普通物件會吃到原型鏈：`time` 帶 `"constructor"`、`"toString"`、`"__proto__"` 會通過過濾，之後把 function／object 綁進 SQL 而 500。→ 改用 `Object.hasOwn`。
+- `schema.sql` 在 README 與 CLAUDE.md 都被寫成「會 DROP 所有表」，實際上只有一部分的表有 `DROP TABLE IF EXISTS`（`ad_events`、`teacher/course/branch_search_events`、`search_events`、`favorite_events`、`query_access_log` 七張沒有）；對既有資料庫重跑，會先刪掉有 DROP 的表（含無法重建的月度彙總、`favorite_client_seen`、`voice_daily`），再在 `ad_events` 報 `already exists` 中斷。→ 只改說明：檔頭加警告、README／CLAUDE.md 的說法改成「只能對全新資料庫執行」，**沒有**替那七張表補 DROP（補了的話，誤跑在正式庫會變成全部毀掉，現在至少會中途擋住）。
+
+驗證：用真的 SQLite（`node:sqlite`）包成跟 D1 一樣的介面（100 個參數上限、不收 function／object 參數、`batch` 是一個 transaction），搭配假官網，共 53 個檢查全過；對修改前的版本跑，15 項失敗（全部對應上面的問題）。涵蓋整輪爬蟲（官網出錯／全部出錯／HTTP 503／Express 沒課／換老師／同 id 原地更新／清孤兒分店）、500 組隨機查詢條件與暴力過濾的結果比對、分店掃描與 seed 資料。另外對官網實測三次（一般分店、Express 沒課的分店、故意給壞日期）確認回應格式，並用真實回應跑 `transformRawClass`（217 列 → 171 堂有課名，id 沒有撞、教室與時間格式都正常）。`schema.sql` 在真的 SQLite 整份可執行；依序套用 `migrations/` 後的結構與 `schema.sql` 一致（`classes`、`branches`、`meta_filter_options`、`reminders` 四張在 migration 開始前就存在，比不到；`idx_query_access_log_ip` 是 migration 011 建、之後手動砍掉的，`migrations/018` 有記）。G1 89 項、G2 40 項、語音比對 91 個案例、`check:branches`、`check:versions` 重跑也全過。測試腳本沒進版控。
+
+**待使用者決定（2 項，沒修）**
+- **排程爬蟲失敗沒有任何通知**：`runScrape` 的結果（幾間失敗）只寫 `console.log`。官網改版或持續出錯時，D1 保留舊資料、網站照常運作，但課表一天比一天舊，只有打開後台手動重抓或看 Worker log 才知道。專案已有 `postTeamsCard`，可以在「失敗的分店超過某個比例」時發一則 Teams；但這是新增通知行為，要你決定門檻（例如失敗超過一半）與要不要做。
+- **`branches` 資料表只寫不讀**：全專案沒有任何地方讀它，`upsertBranches` 每輪白寫 111 列；README 與 CLAUDE.md 還把它列成「分店清單」，容易讓人誤以為分店清單在 D1。要移除得新增 migration `DROP TABLE branches` 並同步文件；不處理也沒有害處（每天約 222 列寫入）。
+
+**其他沒處理**
+- 官網回「有效但沒有課」（`status:true`、一排 `{}`）跟 Express 的真的沒課長得一模一樣，無法區分，所以仍然會清空那間分店；官網實際出錯的訊號（`status:false`）已經處理。
+- `cleanupStaleBranches` 一次要清超過約 99 間孤兒分店時會撞 100 個參數上限，實務上不會碰到（要一次從 seed 移除近百間分店）。
+
+**沒問題的部分**
+- 爬蟲新舊資料切換（先 upsert、最後一批清舊的）在整輪驗證中行為正確，中途失敗舊資料保留。`class_date` 是 `2026/11/23`（斜線）格式，用本地時間解析、本地時間讀取，在 Workers（UTC）下與日期窗一致。
+- 所有 SQL 都用綁定參數，沒有注入問題；`queryClasses` 近窗／遠窗的結果與暴力過濾逐筆一致（含分店下推與不下推兩條路）。
+- 分店 seed：slug 與名稱都不重複、`check:branches` 通過；不收清單與 seed 沒有重疊；月度掃描的新增／疑似下架判斷正確。
 
 ### G5
 （未開始）

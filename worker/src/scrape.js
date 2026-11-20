@@ -1,5 +1,5 @@
 import BRANCHES from "./branches-seed.js";
-import { nowTaiwanIso, todayIsoTaipei, pad2, fnv1aHex, SCRAPER_USER_AGENT } from "./util.js";
+import { nowTaiwanIso, todayIsoTaipei, pad2, fnv1aHex, SCRAPER_USER_AGENT, OFFICIAL_SITE_TIMEOUT_MS } from "./util.js";
 
 const SCHEDULE_DAYS_AHEAD = 13;
 // 查詢端（queryClasses.js 的 NORMAL_DAYS_AHEAD = 6）只看「今天到 +6 天」的正常班，
@@ -56,6 +56,7 @@ async function fetchBranchSchedule(slug, firstDate, lastDate) {
   });
   const res = await fetch(url, {
     method: "POST",
+    signal: AbortSignal.timeout(OFFICIAL_SITE_TIMEOUT_MS),
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
       "User-Agent": SCRAPER_USER_AGENT,
@@ -66,7 +67,14 @@ async function fetchBranchSchedule(slug, firstDate, lastDate) {
     throw new Error(`schedule request failed for ${slug}: HTTP ${res.status}`);
   }
   const json = await res.json();
-  return Array.isArray(json && json.data) ? json.data : [];
+  // 官網後端出錯時 HTTP 狀態仍然是 200，內容是 {"exception":"EXCEPTION","data":"","status":false}（實測）；
+  // 正常是 {"exception":"","data":[...],"status":true}，而沒有課的分店（Express）是 data 為一排空物件 {}、status 仍是 true。
+  // 錯誤回應一定要丟錯，不能當成「沒有課」回 []：那樣 ingestBranchClasses 會把整間分店的舊課表清掉，
+  // 官網整個壞掉的那一輪就等於清空全站。丟錯的話該間舊資料原封不動（runScrape 逐間 try/catch）。
+  if (!json || json.status === false || json.exception || !Array.isArray(json.data)) {
+    throw new Error(`schedule response invalid for ${slug}: ${json && json.exception ? json.exception : "no data array"}`);
+  }
+  return json.data;
 }
 
 // 官網教室名稱常帶樓層（例如「3F飛輪教室」「B1團體有氧教室」），不管樓層一律歸成這兩種。

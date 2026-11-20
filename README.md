@@ -48,7 +48,7 @@
 ├── docs/screenshot.png
 └── worker/                              # Cloudflare Worker API
     ├── wrangler.toml                    #   D1 / KV 綁定、cron 排程
-    ├── schema.sql                       #   D1 完整 schema（重建資料庫用，會 DROP 所有表）
+    ├── schema.sql                       #   D1 完整 schema（只能對全新資料庫執行，見檔頭警告）
     ├── migrations/                      #   針對既有正式資料庫的單張 table migration
     ├── scripts/check-branches.mjs       #   分店清單一致性檢查（npm run check:branches）
     ├── scripts/check-versions.mjs       #   靜態資源 ?v= 版號檢查（npm run check:versions）
@@ -302,7 +302,7 @@ cd worker
 npx wrangler d1 execute worldgym-schedule --remote --file=migrations/xxx.sql
 ```
 
-`worker/schema.sql` 是重建整個資料庫用的完整版本（會 `DROP TABLE` 所有表，只在建立全新資料庫時執行）；要對既有正式資料庫追加改動，請新增 `worker/migrations/` 底下的檔案。
+`worker/schema.sql` 是建立全新資料庫用的完整版本（大部分的表前面有 `DROP TABLE`，另有 7 張沒有，**只能對全新資料庫執行**，對既有資料庫重跑會先刪掉資料再中途報錯）；要對既有正式資料庫追加改動，請新增 `worker/migrations/` 底下的檔案。
 
 ### 手動部署（不經 push）
 

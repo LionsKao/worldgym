@@ -1,12 +1,13 @@
 import BRANCHES from "./branches-seed.js";
 import { EXCLUDED_BRANCHES, EXPECTED_MISSING_FROM_SITEMAP } from "./branches-excluded.js";
-import { SCRAPER_USER_AGENT, postTeamsCard } from "./util.js";
+import { SCRAPER_USER_AGENT, OFFICIAL_SITE_TIMEOUT_MS, postTeamsCard } from "./util.js";
 
 // 官網分店清單的 AJAX（qryBranchMark，branches-seed.js 開頭有說明）擋在 Cloudflare bot 防護後面，
 // 伺服器端要不到，改成拿 sitemap.xml 比對 find-a-club/{slug} 網址。sitemap 更新可能會比新分店上線
 // 晚幾天，抓不到「剛開幕」的分店，但不用處理 bot 防護，夠用來每月抓一次「有沒有新分店/分店下架」的訊號。
 async function fetchSitemapSlugs() {
   const res = await fetch("https://www.worldgymtaiwan.com/sitemap.xml", {
+    signal: AbortSignal.timeout(OFFICIAL_SITE_TIMEOUT_MS),
     headers: { "User-Agent": SCRAPER_USER_AGENT },
   });
   if (!res.ok) throw new Error(`sitemap.xml 讀取失敗：HTTP ${res.status}`);

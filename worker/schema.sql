@@ -1,6 +1,12 @@
 -- worldgym-schedule D1 schema
 -- 資料表：classes（課表）、branches（分店）、meta_filter_options（篩選選項快取）與各種打點/統計表。
 -- SQL 的 IN 子句可以同時下好幾個條件，所以不需要為每種篩選組合各建一個複合索引。
+--
+-- ⚠ 只能對「全新的空資料庫」執行。大部分的表前面有 DROP TABLE IF EXISTS，會把既有資料整張刪掉
+-- （包括無法重建的月度彙總 *_monthly、favorite_client_seen、voice_daily）；另外有 7 張沒有 DROP
+-- （ad_events、teacher/course/branch_search_events、search_events、favorite_events、query_access_log），
+-- 所以對既有資料庫重跑，會先刪掉前者、再在第一張沒有 DROP 的表（ad_events）報 already exists 中斷。
+-- 要改既有資料庫，一律新增 migrations/ 底下的檔案。
 
 DROP TABLE IF EXISTS classes;
 CREATE TABLE classes (
