@@ -34,7 +34,7 @@
 | G6 | 🟡 | script.js 從 `showServiceErrorModal` 到 `performSearch`（含），以及 `init` 到檔尾 | 930 | 前端核心查詢與結果顯示：token 重試與查詢快取、結果列渲染的跳脫、頁面切換與競態、初始化流程、首頁公開排行的渲染 | 已跑完（1 項待決定） |
 | G7 | 🟡 | script.js 從 `isSpeechRecognitionSupported`（含它前面的語音常數）到 `submitVoiceSearch`（含）、`voice-search.js` | 940 | 語音搜尋：狀態機與逾時、麥克風是否確實釋放、iOS 錄音路徑、比對引擎誤判。`worker/scripts/test-voice.mjs` 已有回歸測試，審查時可對照 | 已跑完（無待決定） |
 | G8 | 🟢 | script.js 從 `addDaysIso` 到 `renderThemeToggle`（含） | 1,000 | 篩選、最愛與主題：pill 與勾選狀態、localStorage 讀寫、我的最愛的編輯與長按、深色模式切換 | 已跑完（1 項待決定） |
-| G9 | 🟢 | script.js 從 `copyTextWithToast` 到 `startNewYearFireworks`（含）、`newyear-fireworks.js`、`index.html`、`403.html`、`404.html`、`ga-init.js`、`theme-init.js`、`css-async.js`、`manifest.json` | 1,300 | 結果頁複製與下載圖片、限時彩蛋、靜態頁面。`index.html` 有 640 行大多是標記，實際邏輯少 | 未開始 |
+| G9 | 🟢 | script.js 從 `copyTextWithToast` 到 `startNewYearFireworks`（含）、`newyear-fireworks.js`、`index.html`、`403.html`、`404.html`、`ga-init.js`、`theme-init.js`、`css-async.js`、`manifest.json` | 1,300 | 結果頁複製與下載圖片、限時彩蛋、靜態頁面。`index.html` 有 640 行大多是標記，實際邏輯少 | 已跑完（1 項待決定） |
 
 建議節奏（可自行調整）：G1 分量最重又最重要，單獨一次；之後 G2＋G3、G4＋G5、G6＋G7、G8＋G9 各配一次。
 
@@ -265,4 +265,24 @@
 - 最愛晶片的名稱與圖示用 `escapeHtml` 後才放進 `innerHTML`（引號也跳脫），顏色走 `style.background` 賦值；老師與課程名稱用 `textContent`（`makePill`）。
 
 ### G9
-（未開始）
+2026-11-20 跑完（xhigh，目標 `script.js` 的 `copyTextWithToast`～`startNewYearFireworks`、`newyear-fireworks.js`、`index.html`、`403.html`、`404.html`、`ga-init.js`、`theme-init.js`、`css-async.js`、`manifest.json`，沒有二次驗證），共 6 項：修 2 項、待決定 1 項、不處理 3 項。結果頁複製與下載圖片、三個限時彩蛋的日期邊界、煙火動畫本身、靜態頁面的主線都沒有問題；修的兩項都是「等待沒有上限」與「少一層保護」。
+
+**已修（2 項）**
+- 跨年煙火：`newYearPrepare()` 在載入遮罩還蓋著時 `await loadNewYearFireworks()`，**沒有任何上限**。`newyear-fireworks.js` 的請求若既不成功也不失敗（跨年夜行動網路擁塞最容易發生），`init()` 的 `finally` 就卡在這一步，載入遮罩永遠不收，整個網站用不了。跟 G6 的「遮罩蓋著時的每一步等待都要有上限」同一類，煙火只是裝飾，不該拖垮網站。→ 加 `NEWYEAR_LOAD_TIMEOUT_MS`（3 秒）用既有的 `withTimeout` 包起來，等不到就放棄、照常收遮罩（腳本載入失敗、載入完卻沒有 `WGFireworks` 本來就會走 catch，沒有問題）。
+- `copyTextWithToast`（結果頁複製文字、複製連結）直接呼叫 `navigator.clipboard.writeText`：沒有剪貼簿 API（舊的 WebView、非安全環境）時它會**同步**丟 `TypeError`，接不到後面的 `.catch`，使用者看不到「複製失敗，請手動選取」，主控台多一筆未捕捉例外。→ 包進 `try` 轉成失敗的 Promise；刻意不改成 `Promise.resolve().then(...)` 延後呼叫，因為 iOS Safari 要求剪貼簿寫入發生在點擊的同步呼叫鏈裡。
+
+驗證：用 jsdom 載入真正的 `index.html`、`common.js`、整份 `script.js`（假時鐘、假 `html2canvas`／`URL.createObjectURL`／`<a>.click`／煙火程式，逾時常數縮短），共 81 個檢查全過；對修改前的版本跑，2 項失敗（對應上面 2 項）。涵蓋：投票日（11/27 23:59、11/28 00:00、11/28 23:59、11/29 00:00 四個邊界與 `?vote=1`）、聖誕（12/20 23:59、12/21 00:00、12/26 23:59、12/27 00:00 四個邊界、🎄標題取代💪、分店頁標題沒有💪時補🎄、樹圖示、下雪的樣式表與腳本與雪花數量、手機寬度、減少動態效果、`?snow=1`）、`taipeiNowStamp` 的邊界（午夜是 00 不是 24、結束時間不含）、跨年流程（淺色使用者先變深色再放再換回、不寫 `wg_theme`、深色使用者不換色、放的過程中使用者手動切主題不被蓋掉、減少動態效果不做、期間內自動進入與 01:59／02:00 邊界、手機的 `small`、分享網址自動查詢加跨年、腳本卡住／失敗／載入完沒有物件）、複製選單（開關、Esc、點外面、aria）、複製文字與連結的內容與提示、複製失敗、下載圖片（一般瀏覽器的完整流程與鎖定／還原、`ignoreElements`、`onclone`、lazy 圖片、鎖住期間第二次點擊進不來、iOS 的預覽視窗與 revoke、html2canvas 丟錯、截圖／轉檔／載入逾時、`toBlob` 回 null）、`theme-init`／`ga-init`／`css-async`／`manifest.json`／`403.html`／`404.html`。`index.html` 另用腳本靜態檢查：280 個 id 沒有重複、所有 `label for`／`aria-*` 指向的 id 存在、`script.js`／`common.js`／`voice-search.js` 用 `getElementById` 取的 id 都存在、沒有 inline 事件處理器與 inline script（`ld+json` 除外）、`target="_blank"` 都帶 `noopener`、圖片都有 `alt`。另在內建瀏覽器（本機伺服器）用 `?newyear=1` 完整跑了一次跨年流程：遮罩收掉、煙火 canvas 放完自己移除、深色換回淺色、`wg_theme` 沒被寫；`css-async.js` 動態插入的 Font Awesome 樣式表保留了 `integrity` 與 `crossorigin`（jsdom 不反映 `integrity`，這點只能在真的瀏覽器看）。G5 前端 35 項、G6 62 項、G7 52 項、G8 131 項、`test:voice` 91 案例、`check:versions` 重跑也全過。`script.js` 版號 254 → 255。測試腳本沒進版控。**限制**：沒有在真的 iPhone 上驗證下載圖片的預覽視窗與長按儲存（只驗了程式流程）；煙火實際畫面沒有重看（只改了載入的等待）。
+
+**待使用者決定（1 項，沒修）**
+- `#loadingOverlay` 是不透明的全螢幕遮罩，只有 `script.js` 的 `init()` 會把它拿掉。`script.js` 載不到，或在頂層丟例外（舊瀏覽器不認得語法、儲存空間壞掉等），使用者會看到永遠不停的載入動畫，沒有任何訊息可以重新整理或更新瀏覽器。要補的話得在外部小腳本（CSP 不允許 inline script，例如 `theme-init.js` 旁邊另開一支）加一個看門狗計時器，過一段時間遮罩還在就換成提示文字。要不要做、等多久、顯示什麼字，是產品決定；目前頂層例外的已知來源（壞掉的 `wg_favorites`）已在 G8 修掉。
+
+**不處理（3 項）**
+- 下載圖片的「轉檔」階段逾時（10 秒）後，晚到的 `canvas.toBlob` 回呼仍會觸發下載或打開 iOS 預覽視窗，使用者先看到失敗提示、之後圖片卻自己出現。要處理得在逾時時設旗標讓回呼什麼都不做；手機卡到 10 秒又自己回來的情況很罕見，而且結果是使用者得到他要的圖片。
+- 跨年煙火放完時用 `readStored("wg_theme") !== "dark"` 判斷「使用者有沒有自己選深色」：無痕模式（儲存空間寫入失敗）的使用者在放煙火期間手動切成深色，放完仍會被換回淺色。只發生在跨年那幾個小時、無痕、且手動切了主題。
+- `manifest.json` 的 `background_color` 寫死 `#ffffff`：選了深色模式的 PWA 使用者在 Android 的啟動畫面會先看到白底。主題是使用者在網頁裡切的，靜態的 manifest 無法依使用者變化。
+
+**沒問題的部分**
+- 三個限時彩蛋（投票日 11/28 當天、聖誕 12/21～12/26、跨年 12/31 00:00～1/1 02:00）的起訖都跟 CLAUDE.md 一致，結束時間「不含」那一刻；`todayIso()`／`taipeiNowStamp()` 用台灣時區；網址參數預覽（`?vote=1`、`?xmas=1`、`?snow=1`、`?newyear=1`）都能在期間外觸發。
+- `newyear-fireworks.js`：`running` 旗標防重複啟動、`dt` 上限避免分頁回前景一次補放、`resize` 監聽在 `finish()` 移除、canvas 放完自己移除並呼叫 `onDone`、減少動態效果時不啟動；`script.js` 的 `onDone` 只換回「自己暫時切的深色」。
+- 下載圖片每個階段（載入、截圖、轉檔）都有逾時，`finally` 一定把下載鈕、返回鈕、`.page` 的點擊與圖示還原；鎖住期間第二次點擊進不來。
+- `index.html`：CSP 要求的外部腳本載入順序（`ga-init.js`、`theme-init.js` 在 `css-async.js` 前面且都同步）、JSON-LD 與 title／description／og／twitter 一致、`403.html`／`404.html` 是 noindex 且帶 `style.css` 版號。

@@ -2891,7 +2891,13 @@ document.getElementById("backBtn").addEventListener("click", showFilterView);
 
 // 複製文字到剪貼簿，成功/失敗都在按鈕上方顯示提示。
 function copyTextWithToast(text, btn, successMessage){
-  navigator.clipboard.writeText(text)
+  // navigator.clipboard 不存在（舊的 WebView、非安全環境）時 writeText 會「同步」丟 TypeError，接不到 .catch，
+  // 使用者什麼提示都看不到；包進 try 轉成失敗的 Promise，才會走下面的失敗提示。
+  // 不能改成 Promise.resolve().then(() => writeText()) 延後呼叫：iOS Safari 要求剪貼簿寫入發生在點擊的同步呼叫鏈裡。
+  let write;
+  try { write = navigator.clipboard.writeText(text); }
+  catch(e){ write = Promise.reject(e); }
+  write
     .then(() => showPillWarning(btn, successMessage))
     .catch(() => showPillWarning(btn, "複製失敗，請手動選取"));
 }
@@ -3145,6 +3151,9 @@ function startSnow(){
 const NEWYEAR_START = "2026-12-31 00:00";
 const NEWYEAR_END = "2027-01-01 02:00";
 const NEWYEAR_FADE_MS = 1200; // 白↔黑漸變的秒數
+// 煙火程式最多等這麼久：這一步發生在載入遮罩還蓋著的時候（init() 收遮罩之前），沒有上限的話，跨年夜網路擁塞、
+// newyear-fireworks.js 卡住，整個網站就一直停在載入畫面；只是裝飾，等不到就放棄、照常收遮罩。
+const NEWYEAR_LOAD_TIMEOUT_MS = 3000;
 const newYearActive = xmasParams.get("newyear") === "1"
   || (taipeiNowStamp() >= NEWYEAR_START && taipeiNowStamp() < NEWYEAR_END);
 const loadNewYearFireworks = createVendorScriptLoader("newyear-fireworks.js?v=5", () => !!window.WGFireworks);
@@ -3172,7 +3181,7 @@ function newYearFadeTheme(toDark){
 async function newYearPrepare(){
   if (!newYearActive || prefersReducedMotion()) return false;
   try {
-    await loadNewYearFireworks();
+    await withTimeout(loadNewYearFireworks(), NEWYEAR_LOAD_TIMEOUT_MS, "載入煙火");
     if (!isDarkTheme()){
       await newYearFadeTheme(true);
       newYearTempDark = true;
