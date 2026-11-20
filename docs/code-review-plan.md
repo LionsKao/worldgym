@@ -27,7 +27,7 @@
 | 組 | 嚴重度 | 範圍 | 約行數 | 重點 | 狀態 |
 | --- | --- | --- | --- | --- | --- |
 | G1 | 🔴 | `worker/src/index.js`（整檔） | 945 | 公開 API 與驗證核心：短效 token、每 IP 限流與全站每日額度、後台 session 與登入鎖定、CORS、各打點端點的輸入驗證、留言端點、語音端點、cron 入口。重點看驗證／限流能不能繞過、注入、資源耗盡、費用失控 | 已跑完（3 項待決定） |
-| G2 | 🔴 | `functions/`（全部）、`worker/src/crawlers.js`、`worker/src/util.js`、`_headers`、`worker/wrangler.toml` | 740 | Pages 邊緣與伺服器端注入：台灣 IP 限制與爬蟲例外、擋掉非網站檔案（路徑編碼繞過）、SSR 注入課表的跳脫與快取、動態 sitemap／llms.txt、安全標頭與 CSP、cron 設定 | 未開始 |
+| G2 | 🔴 | `functions/`（全部）、`worker/src/crawlers.js`、`worker/src/util.js`、`_headers`、`worker/wrangler.toml` | 740 | Pages 邊緣與伺服器端注入：台灣 IP 限制與爬蟲例外、擋掉非網站檔案（路徑編碼繞過）、SSR 注入課表的跳脫與快取、動態 sitemap／llms.txt、安全標頭與 CSP、cron 設定 | 已跑完（2 項待決定） |
 | G3 | 🟠 | `admin.js`、`admin.html`、`common.js` | 1,180 | 後台頁面與共用工具：後台會渲染來自外部請求的資料，看 XSS／跳脫、登入與 session 處理、報表計算；`common.js` 是前台後台共用的工具（escapeHtml、fetchJson、圖表、時間） | 未開始 |
 | G4 | 🟠 | `worker/src/scrape.js`、`queryClasses.js`、`branchScan.js`、`branches-seed.js`、`branches-excluded.js`、`worker/schema.sql` | 1,010 | 課表資料管線：爬蟲寫入與新舊資料切換、查詢 SQL 與筆數上限、每月分店掃描、時間戳與時區、schema 與實際程式是否一致 | 未開始 |
 | G5 | 🟠 | `worker/src/reminders.js`、`worker/src/analytics.js`、`sw.js`、script.js 從開頭到 `trackTeacherEventOncePerSession`（含） | 1,030 | 推播提醒與報表統計：提醒登記／取消／到期發送、每月壓縮並刪明細（資料遺失風險）、前端的儲存／廣告與統計打點／推播註冊與提醒清單 | 未開始 |
@@ -83,7 +83,25 @@
 - G2：`worker/wrangler.toml` 的 `VAPID_SUBJECT` 是個人 email，repo 若是公開的要評估；同一個檔案有註解還寫「CLAUDE.md『語音搜尋』第十版」，已經過期。
 
 ### G2
-（未開始）
+2026-11-20 跑完（xhigh，目標 `functions/`、`worker/src/crawlers.js`、`worker/src/util.js`、`_headers`、`worker/wrangler.toml`，沒有二次驗證），共 9 項：修 7 項、待決定 2 項。這一組沒有發現能直接利用的漏洞；`_middleware.js` 的路徑封鎖（先 decode 再比對、點開頭檔案、`.md`）與 SSR 的跳脫都沒找到繞過方式。
+
+**已修（7 項）**
+- `_headers` 收回麥克風權限的規則只寫了 `/admin.html`，但它會 308 轉址到實際提供頁面的 `/admin`，後者仍帶 `microphone=(self)`（用 curl 對正式站查到的）。→ 新增 `/admin` 規則。順便發現「本機沒生效」的舊註解是誤判（當時只讀了轉址後的 `/admin`），已改正。
+- `theme-init.js` 沒有 30 天快取規則（正式站實測 `max-age=0, must-revalidate`），但它是 `<head>` 裡擋住首次繪製的腳本，CLAUDE.md 也寫它有快取。→ 補上規則，本機實測已是 `max-age=2592000`。
+- SSR 片段只快取成功的結果，「沒資料／太多／沒有固定班」每個請求都重跑 `queryClasses`（最多 2×600 列）。→ 這三種負面結果也快取 5 分鐘（存 `{ none: 狀態 }`）；D1 出錯（error）不快取。
+- 快取的片段不驗證格式，`blockHtml` 壞掉時 HTMLRewriter 會在回應送出後才丟錯、整頁壞掉。→ 格式不認得的快取一律當沒命中。
+- `postTeamsCard` 沒有逾時。→ 10 秒 `AbortSignal.timeout`；`/sendMessageToAuthor` 連不上或逾時回 502。
+- `todayIsoTaipei()` 每次呼叫都重建 `Intl.DateTimeFormat`。→ 改成 `taiwanIso().slice(0, 10)`；對 3.7 萬個時間點（含每天台灣午夜前後、跨年、閏日）比對結果與舊寫法完全一致，2 萬次呼叫從約 840 ms 降到約 13 ms。
+- `wrangler.toml` 註解指到已不存在的 CLAUDE.md 段落。→ 改指 `docs/voice-search.md`。
+
+驗證：用假 Cache API／D1 呼叫 `getFragment`、用假 `fetch` 與一個永不回應的本機伺服器測 Teams 逾時（實測 10.0 秒後丟 `TimeoutError`），共 40 個檢查全過；G1 的 89 個檢查重跑也全過。測試腳本沒進版控。
+
+**待使用者決定（2 項，沒修）**
+- `wrangler.toml` 的 `VAPID_SUBJECT` 是真實的工作 email，寫在版控裡。我查不到 repo 是不是公開的；若是公開的，可以改成角色信箱或 `https:` 網址（金鑰沒變，既有訂閱不會失效）。
+- 暫時的 `/sitemap-static.xml` 診斷路徑（`_middleware.js` 的 `PUBLIC_CRAWLER_PATHS` 加上根目錄 639 行的靜態檔）還在。只有你知道 Search Console 的「無法讀取 Sitemap」問題解決了沒；解決後連同 Search Console 裡那份 sitemap 一起刪。
+
+**留給後面組別的線索**
+- G3：`/queryAccessStats` 的 `userAgent` 是攻擊者可控字串（G1 已記），要確認後台渲染時有跳脫。另外 CSP 是全站共用（`/*`），後台頁雖然沒有載入 GA，仍允許 Google Tag Manager 等腳本來源；若想讓後台更嚴格，可以替 `/admin` 另設較窄的 CSP（要先用 `!` 拔掉繼承值再設）。
 
 ### G3
 （未開始）

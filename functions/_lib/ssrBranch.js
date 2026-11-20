@@ -69,18 +69,32 @@ async function buildFragment(env, branch) {
 // 片段快取：只快取查 D1 的結果，不快取整份 HTML，index.html 一部署就是最新的。
 // key 用正規化後的 /_ssr/v2/{slug}（見 util.js 的 cacheRequest），不同的 query 寫法（slug/短代碼、參數順序、utm）共用同一份。
 // 讀取時仍容忍快取裡的片段沒有 scrapedAt 欄位（缺的話 JSON-LD 就不輸出 dateModified）。
+// 「沒資料／太多／沒有固定班」這三種結果短時間內不會變，也短暫快取（存 { none: 狀態 }）：不快取的話，沒課表的分店、
+// 或超過上限的分店網址被爬蟲（或帶不同 utm 參數的請求）連續打，每個請求都會重跑一次 queryClasses（最多 2 x 600 列）。
+// error（D1 逾時、出錯）不快取，免得把一次暫時的故障拉長。
+const NEGATIVE_CACHE_SECONDS = 300;
+const NEGATIVE_STATUSES = new Set(["no-data", "too-many", "no-fixed"]);
+
+function putFragmentEntry(context, cacheKey, entry, seconds) {
+  const body = new Response(JSON.stringify(entry), {
+    headers: { "Content-Type": "application/json", "Cache-Control": `public, max-age=${seconds}` },
+  });
+  cachePut(context, cacheKey, body, "SSR 片段");
+}
+
 export async function getFragment(context, branch) {
   const cacheKey = cacheRequest(branch.slug);
   const cached = await cacheGet(cacheKey, "SSR 片段", (response) => response.json());
-  if (cached) return { fragment: cached, status: "hit" };
+  if (cached) {
+    // 一定要驗證格式：rewriteHtml 的 HTMLRewriter 是邊串流邊執行，blockHtml 不是字串會在回應已經送出後才丟錯，
+    // 整頁壞掉而不是退回原頁。格式不認得的快取當作沒命中，重新查。
+    if (typeof cached.blockHtml === "string") return { fragment: cached, status: "hit" };
+    if (NEGATIVE_STATUSES.has(cached.none)) return { fragment: null, status: cached.none };
+  }
   try {
     const { fragment, status } = await buildFragment(context.env, branch);
-    if (fragment) {
-      const body = new Response(JSON.stringify(fragment), {
-        headers: { "Content-Type": "application/json", "Cache-Control": `public, max-age=${FRAGMENT_CACHE_SECONDS}` },
-      });
-      cachePut(context, cacheKey, body, "SSR 片段");
-    }
+    if (fragment) putFragmentEntry(context, cacheKey, fragment, FRAGMENT_CACHE_SECONDS);
+    else if (NEGATIVE_STATUSES.has(status)) putFragmentEntry(context, cacheKey, { none: status }, NEGATIVE_CACHE_SECONDS);
     return { fragment, status };
   } catch (e) {
     console.error("SSR 片段查詢失敗，退回原頁", e);

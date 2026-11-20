@@ -26,10 +26,12 @@ export function nowTaiwanIso() {
   return taiwanIso();
 }
 
-// 台灣今天的日期（YYYY-MM-DD）。用 Asia/Taipei 而不是執行環境的 UTC，避免台北時間 00:00~08:00
+// 台灣今天的日期（YYYY-MM-DD）。用台灣牆上時鐘而不是執行環境的 UTC，避免台北時間 00:00~08:00
 // 這段區間算出「昨天」，導致查詢範圍少了今天的課、或爬蟲抓到的資料整批往前錯位一天。
+// 台灣沒有日光節約時間，直接切 taiwanIso() 的前 10 碼就是 Asia/Taipei 的日期；不用 Intl.DateTimeFormat
+// 是因為每次呼叫都要重建格式化器（/queryClasses 每個請求都會呼叫）。
 export function todayIsoTaipei() {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei" }).format(new Date());
+  return taiwanIso().slice(0, 10);
 }
 export function addDaysIso(iso, days) {
   const d = new Date(iso + "T00:00:00Z");
@@ -67,9 +69,12 @@ export const SCRAPER_USER_AGENT =
 
 // 把一組 AdaptiveCard 區塊（body）推到 Teams 頻道 webhook，回傳 fetch 的 Response 讓呼叫端自己看 ok/status。
 // 不檢查 env.TEAMS_WEBHOOK_URL 有沒有設：沒設的處理方式由呼叫端決定（月度掃描是靜靜略過，留言是回錯誤）。
+// 有逾時：Teams 卡住時不能讓留言請求與每月掃描一路掛到平台上限。逾時會丟 AbortError（TimeoutError），由呼叫端處理。
+const TEAMS_TIMEOUT_MS = 10000;
 export function postTeamsCard(env, body) {
   return fetch(env.TEAMS_WEBHOOK_URL, {
     method: "POST",
+    signal: AbortSignal.timeout(TEAMS_TIMEOUT_MS),
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       type: "AdaptiveCard",

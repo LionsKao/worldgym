@@ -519,10 +519,17 @@ async function handleSendMessageToAuthor({ req, env, origin }) {
     console.error("TEAMS_WEBHOOK_URL 未設定，無法轉發留言");
     return json({ error: "teams webhook not configured" }, 503, origin);
   }
-  const teamsRes = await postTeamsCard(env, [
-    { type: "TextBlock", text: "課表查詢網站有新留言：", weight: "bolder", wrap: true },
-    { type: "TextBlock", text: content, wrap: true },
-  ]);
+  let teamsRes;
+  try {
+    teamsRes = await postTeamsCard(env, [
+      { type: "TextBlock", text: "課表查詢網站有新留言：", weight: "bolder", wrap: true },
+      { type: "TextBlock", text: content, wrap: true },
+    ]);
+  } catch (e) {
+    // 連不上或逾時（postTeamsCard 有 10 秒上限）：回 502，不要變成含糊的 500。
+    console.error("Teams webhook request failed", e);
+    return json({ error: "teams webhook failed" }, 502, origin);
+  }
   if (!teamsRes.ok) {
     console.error("Teams webhook responded with error", teamsRes.status, await teamsRes.text());
     return json({ error: "teams webhook failed" }, 502, origin);

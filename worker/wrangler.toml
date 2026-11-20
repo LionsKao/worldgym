@@ -14,7 +14,7 @@ database_id = "ca30eeae-ed11-4952-a2e1-c8c251dada71"
 binding = "QUERY_RATE_LIMIT"
 id = "27ad85dc0a2f411fbe0bd4f31451fad3"
 
-# 語音搜尋的雲端轉文字（POST /transcribeVoice，只有 iOS／iPadOS 用，見 src/index.js 與 CLAUDE.md「語音搜尋」第十版）。
+# 語音搜尋的雲端轉文字（POST /transcribeVoice，只有 iOS／iPadOS 用，見 src/index.js 與 docs/voice-search.md）。
 # Workers AI binding 沒有本機模擬，`npm run dev` 本來就是 --remote，所以不影響本機開發。
 [ai]
 binding = "AI"

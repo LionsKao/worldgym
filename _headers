@@ -11,10 +11,14 @@
 # 不是「比較精確的路徑贏」，所以不能只在這裡設一個 microphone=() 就以為蓋得過 /* 的 microphone=(self)——
 # 要先用 "!" 把從 /* 繼承來的 Permissions-Policy 整個拔掉，再重新設一次完整的值。每個路徑各自獨立一段
 # （不要把多個路徑疊在一起共用同一組標頭——這格式下不確定那樣寫兩個路徑是不是都會生效，分開寫最保險）。
-# /403、/404 是因為 403.html／404.html 實際會被 308 轉址到不帶副檔名的網址（見 CLAUDE.md「台灣 IP 限制」），
-# 兩種路徑都要蓋到。**本機 wrangler pages dev 測過，這個 "!" 覆寫在本機沒有生效**（/admin.html 讀到的
-# Permissions-Policy 跟首頁一樣還是帶 microphone=(self)），不確定是本機模擬的限制還是語法本身有問題，
-# push 上線後要用 `curl -I https://worldgym.pages.dev/admin.html` 實際確認過一次。
+# /admin、/403、/404 是因為 admin.html／403.html／404.html 實際會被 308 轉址到不帶副檔名的網址（見 CLAUDE.md「台灣 IP 限制」），
+# 兩種路徑都要蓋到（只寫 /admin.html 的話，被轉址過去、實際提供頁面的 /admin 仍然帶 microphone=(self)，2026-11-20 用 curl 查到的）。
+# 以前以為這個 "!" 覆寫在本機沒生效，其實是只讀了轉址後的 /admin（當時沒有那條規則）；現在本機與正式站（/403、/404）都確認生效。
+# 新增或改這類規則之後，上線後用 `curl -sI https://worldgym.pages.dev/admin` 看實際回應（要看轉址後的網址，別只看 /admin.html）。
+/admin
+  ! Permissions-Policy
+  Permissions-Policy: camera=(), microphone=(), payment=(), usb=(), geolocation=(self)
+
 /admin.html
   ! Permissions-Policy
   Permissions-Policy: camera=(), microphone=(), payment=(), usb=(), geolocation=(self)
@@ -55,6 +59,9 @@
   Cache-Control: public, max-age=2592000
 
 /admin.js
+  Cache-Control: public, max-age=2592000
+
+/theme-init.js
   Cache-Control: public, max-age=2592000
 
 /ga-init.js
