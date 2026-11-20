@@ -71,7 +71,6 @@ html.xmas .hero h1 .c1, html.xmas .hero h1 .c2{ color:transparent; }
 }
 .ad-banner-text{
   color:var(--ink); font-size:13.5px; font-weight:700; line-height:1.5;
-  opacity:1; transform:translateY(0); transition:opacity .35s ease, transform .35s ease;
   display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden;
 }
 
@@ -97,14 +96,15 @@ fieldset{ border:none; margin:0 0 26px; padding:0; }
   display:flex; align-items:center; justify-content:center;
   color:var(--sub); pointer-events:none; font-size:13px; line-height:1;
 }
-.search-wrap .search-clear{
+/* 搜尋框右邊的清除鈕（篩選頁的搜尋框、最愛編輯視窗的名稱欄共用） */
+.search-wrap .search-clear, .fav-name-input-wrap .search-clear{
   position:absolute; right:10px; top:0; bottom:0;
   display:none; align-items:center; justify-content:center;
   width:22px; color:var(--sub); font-size:15px; line-height:1;
   background:none; border:none; padding:0; cursor:pointer; font-family:inherit;
 }
-.search-wrap .search-clear.visible{ display:flex; }
-.search-wrap .search-clear:hover{ color:var(--ink); }
+.search-wrap .search-clear.visible, .fav-name-input-wrap .search-clear.visible{ display:flex; }
+.search-wrap .search-clear:hover, .fav-name-input-wrap .search-clear:hover{ color:var(--ink); }
 
 .pill-grid{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; align-content:flex-start; }
 .pill{ display:inline-block; }
@@ -400,7 +400,7 @@ html[data-theme="dark"].vote #scheduleSubmitBtn.gray-btn:not(.busy){ background:
 .modal-btn-confirm{ background:var(--coral); color:#fff; border-color:var(--coral); }
 .modal-btn-confirm:hover:not(:disabled){ background:#d8543f; border-color:#d8543f; }
 
-.fav-modal-box{ position:relative; text-align:left; max-width:340px; }
+.fav-modal-box{ text-align:left; max-width:340px; } /* 一律跟 .modal-box 一起用（position:relative 在那邊） */
 .modal-close-btn{
   position:absolute; top:10px; right:10px; width:36px; height:36px;
   border:none; background:none; color:var(--sub); cursor:pointer;
@@ -437,14 +437,6 @@ html[data-theme="dark"].vote #scheduleSubmitBtn.gray-btn:not(.busy){ background:
 .fav-name-input-wrap .section-search{ padding-right:36px; margin-bottom:0; transition:border-color .2s ease, border-style .2s ease; }
 .fav-name-input-wrap .section-search:hover,
 .fav-name-input-wrap .section-search:focus{ outline:none; border-style:dashed; border-color:var(--coral); }
-.fav-name-input-wrap .search-clear{
-  position:absolute; right:10px; top:0; bottom:0;
-  display:none; align-items:center; justify-content:center;
-  width:22px; color:var(--sub); font-size:15px; line-height:1;
-  background:none; border:none; padding:0; cursor:pointer; font-family:inherit;
-}
-.fav-name-input-wrap .search-clear.visible{ display:flex; }
-.fav-name-input-wrap .search-clear:hover{ color:var(--ink); }
 .fav-icon-options, .fav-color-options{ display:flex; gap:8px; flex-wrap:wrap; justify-content:space-between; }
 .fav-icon-options input, .fav-color-options input{ position:absolute; opacity:0; width:0; height:0; }
 .fav-icon-options label{
@@ -462,8 +454,7 @@ html[data-theme="dark"].vote #scheduleSubmitBtn.gray-btn:not(.busy){ background:
 }
 .fav-color-options label:hover{ border-style:dashed; border-color:var(--ink); }
 .fav-color-options input:checked + label{ border-style:solid; border-color:var(--ink); transform:scale(1.1); }
-#favColor-xmas-stripe + label{ background:var(--xmas-stripe); }
-#favColor-xmas-stripe + label{ background-origin:border-box; }
+#favColor-xmas-stripe + label{ background:var(--xmas-stripe); background-origin:border-box; }
 /* 聖誕的「紅綠斜紋」色票同樣是限時的（2027-01-03 止）：期間內（html.xmas）放在第一格、並把最後一格的青色藏起來（維持 14 顆），過期換回來；已存成紅綠斜紋的最愛不受影響。 */
 html:not(.xmas) .fav-color-pill.xmas-only, html.xmas .fav-color-pill.xmas-replaced{ display:none; }
 .fav-item{
@@ -529,7 +520,6 @@ html:not(.xmas) .fav-color-pill.xmas-only, html.xmas .fav-color-pill.xmas-replac
 .qr-tooltip{ padding:10px; background:var(--paper); }
 .qr-tooltip img{ display:block; width:132px; height:132px; }
 .qr-tooltip::after{ border-color:var(--paper) transparent transparent transparent; }
-.mail-disclaimer span:last-child:not(.section-tag){ flex:1; min-width:0; }
 .result-row{
   display:flex; align-items:center; justify-content:space-between; gap:8px;
   padding:8px 14px; border:1.5px solid var(--line); border-radius:14px; margin-bottom:8px;
@@ -537,7 +527,6 @@ html:not(.xmas) .fav-color-pill.xmas-only, html.xmas .fav-color-pill.xmas-replac
 }
 .result-row:last-child{ margin-bottom:0; } /* 最後一列不留下方間距，免得跟外層 .sheet 的 padding 疊在一起 */
 .result-row-content{ min-width:0; }
-.result-row.flagged{ border-color:var(--line); background:var(--paper); }
 .result-flag-icon{ color:#f0b400; padding-right:6px; }
 .result-reduced-weekday{ color:var(--coral); } /* 縮課日的課：星期兩個字用最愛預設的那個紅（--coral），不是鮮紅 */
 .teacher-link{

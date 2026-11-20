@@ -1,12 +1,12 @@
-// 課表查詢、分店/課程/老師篩選選項都由 Cloudflare Worker + D1 提供。
-const WORKER_BASE = "https://worldgym-api.lions2100.workers.dev";
+// 課表查詢、分店/課程/老師篩選選項都由 Cloudflare Worker + D1 提供（API 網域 WORKER_BASE 在 common.js）。
 // 篩選後結果超過這個筆數就視為條件太寬鬆，不導到結果頁、只在查詢按鈕上提示使用者多加篩選。
 const RESULT_COUNT_WARN_LIMIT = 250;
 
 // 篩選區的六個群組（對應 input 的 name）：網址參數、分享網址、我的最愛、重設、儲存選擇都用這份順序。
 const FILTER_GROUPS = ["day", "time", "branch", "room", "course", "teacher"];
 // 各群組勾選結果存在 localStorage 的 key（wg_selected_day、wg_selected_time ...）
-const SELECTION_STORAGE_KEYS = FILTER_GROUPS.map((name) => `wg_selected_${name}`);
+const selectionKey = (name) => `wg_selected_${name}`;
+const SELECTION_STORAGE_KEYS = FILTER_GROUPS.map(selectionKey);
 
 // 打自家 Worker API 的 POST（body 一律 JSON），回傳 fetch 的 Promise。
 function postJson(path, body){
@@ -90,26 +90,26 @@ function bufferAdImpression(adId){
   adImpressionBuffer.push(adId);
 }
 
-// useBeacon: 分頁切到背景/即將卸載時呼叫，用 sendBeacon 確保即使頁面馬上關閉也送得出去。
+// 分頁切到背景/即將卸載時呼叫，優先用 sendBeacon 確保即使頁面馬上關閉也送得出去（沒有 sendBeacon 才退回 fetch）。
 // 清空 buffer 前先複製一份，避免送出中途又有新曝光被吃掉。
 // 曾經用 setInterval 每 30 秒定時 flush 一次（廣告輪播年代留下的保險機制），拿掉了：
 // 現在一個工作階段最多只有 1 筆曝光，visibilitychange／pagehide 這兩個事件已經夠涵蓋所有離開頁面
 // 的情境，不需要手機上一直醒著的計時器（省電）。
-function flushAdImpressions(useBeacon){
+function flushAdImpressions(){
   if (adImpressionBuffer.length === 0) return;
   const events = adImpressionBuffer.map((adId) => ({ adId, type: "impression" }));
   adImpressionBuffer = [];
   const payload = JSON.stringify({ events });
-  if (useBeacon && navigator.sendBeacon){
+  if (navigator.sendBeacon){
     navigator.sendBeacon(`${WORKER_BASE}/trackAdEvents`, new Blob([payload], { type: "text/plain" }));
     return;
   }
   fireAndForgetPost("/trackAdEvents", { events });
 }
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) flushAdImpressions(true);
+  if (document.hidden) flushAdImpressions();
 });
-window.addEventListener("pagehide", () => flushAdImpressions(true));
+window.addEventListener("pagehide", flushAdImpressions);
 
 // 老師/課程/分店查詢次數落地存進 D1，用來給 admin.html 統計「哪些老師/課程/分店最常被查」。
 // 同一裝置 30 分鐘內重複查同一個值只算 1 次，避免上一頁/重查造成洗次數。
@@ -223,8 +223,7 @@ function initAdBanner(){
 if (showSiteNotice){
   initAdBanner();
 } else {
-  fetch(`${WORKER_BASE}/ads`)
-    .then((res) => (res.ok ? res.json() : { ads: [] }))
+  fetchJson(`${WORKER_BASE}/ads`)
     .then((data) => { AD_BANNERS = Array.isArray(data.ads) ? data.ads.filter(hasWebUrl) : []; })
     .catch(() => { AD_BANNERS = []; })
     .finally(initAdBanner);
@@ -355,9 +354,7 @@ async function registerReminderForBell(bell, remindMinutes){
       pushSubscription: sub.toJSON(),
       clickUrl: location.href,
     };
-    const res = await postJson("/registerReminder", body);
-    if (!res.ok) throw new Error(`registerReminder failed: ${res.status}`);
-    const data = await res.json();
+    const data = await readJsonOrThrow(await postJson("/registerReminder", body));
     registeredReminders.set(reminderKeyFromBell(bell), { ...body, id: data.id, classAt: data.classAt, remindAt: data.remindAt, remindMinutes: data.remindMinutes });
     syncResultBellsToRegistered();
     trackEvent("register_reminder", { class_name: bell.dataset.className, teacher_name: bell.dataset.teacherName, lead_minutes: remindMinutes });
@@ -377,9 +374,7 @@ async function cancelReminderRequest(id){
 // 這個 push subscription 底下所有還沒發送的通知。讀取失敗要丟錯，不能回空陣列——
 // 呼叫端會把空陣列當成「沒有通知」，把畫面與登記記錄都清掉。
 async function fetchMyReminders(endpoint){
-  const res = await fetch(`${WORKER_BASE}/myReminders?endpoint=${encodeURIComponent(endpoint)}`);
-  if (!res.ok) throw new Error(`myReminders failed: ${res.status}`);
-  const data = await res.json();
+  const data = await fetchJson(`${WORKER_BASE}/myReminders?endpoint=${encodeURIComponent(endpoint)}`);
   return data.reminders || [];
 }
 async function cancelReminderForBell(bell){
@@ -512,8 +507,8 @@ let BRANCH_MAP_URLS = {};
 // 分店 slug 在網址參數裡很長，選很多間會讓網址爆長，改用這份固定順序表的位置當短代碼。
 // 順序要保持不變、只能往後附加（跟 worker/src/branches-seed.js 同一個順序），不然舊的分享網址會解碼出錯的分店。
 const BRANCH_SLUG_ORDER = ["taipei-101","taipei-minsheng","taipei-gongguan","taipei-station","taipei-dazhi","taipei-changchun","taipei-minquan-east","taipei-nanjing","taipei-daan","taipei-tonling","taipei-guangfu","taipei-ximen","taipei-songren","taipei-songlong","taipei-tienmu-dexing","taipei-shilin","taipei-tienmu","taipei-beitou-zhonghe","taipei-neihu","taipei-neihu-fuhwa","new-taipei-banqiao-shuangshi","new-taipei-banciao-chongcing","new-taipei-banqiao-fuzhong","new-taipei-banqiao-zhongshan","new-taipei-xizhi","new-taipei-xike","new-taipei-hsindian","new-taipei-yonghe","new-taipei-yonghe-minquan","new-taipei-zhonghe","new-taipei-jingping","new-taipei-tucheng","new-taipei-sanchong","new-taipei-beihsinzhuang","new-taipei-hsinzhuang","new-taipei-danshui","new-taipei-linkou","taoyuan-taimall","taoyuan-neili","taoyuan-pingzhen","taoyuan-dayou","taoyuan-fuxing","taoyuan-guoqiang","hsinchu-zhonghua","hsinchu-zhongzheng","hsinchu-zhubei","miaoli-yuanli","taichung-xuefu","taichung-meicun","taichung-e-chung","taichung-chongde","taichung-dongshan","taichung-xitun","taichung-liming","taichung-wuri","taichung-fengyuan","taichung-qingshui","taichung-dajia","nantou-caotun","changhua-heping","changhua-yuanlin","chiayi-minzu","tainan-focus","tainan-shulin","tainan-ximen","tainan-yongkang","tainan-shanhua","kaohsiung-zhonghua","kaohsiung-datong-heping","kaohsiung-sogo","kaohsiung-baocheng","kaohsiung-gangshan","kaohsiung-fengshan-zhongshan","pingtung-ziyou","pingtung-chaozhou","yilan-youai","yilan-luodong","hualian-guolian","keelung-xinyi","changhua-lukang","kaohsiung-yangming","yunlin-douliu","taichung-daya","taipei-minsheng-yuanhuan","taipei-neihu-gangqia","taichung-shalu","taoyuan-yangmei","taoyuan-zhongli-zhongyuan","taichung-taiping","miaoli-zhunan","miaoli-toufen","new-taipei-tucheng-haishan","hualien-jian","tainan-rende","tainan-yongkang-yongda","yunlin-huwei","tainan-haian","tainan-annan","tainan-xinying","tainan-anping","hsinchu-xinfeng","hsinchu-zhubei-huaxing","kaohsiung-zuoying","kaohsiung-fengshan-wujia","chiayi-xingye","hsinchu-xiangshan","tainan-zhonghua-east","taoyuan-yiwen","miaoli-zhongzheng","changhua-xihu","taoyuan-bade"];
-let BRANCH_URL_CODE = {};
-let BRANCH_URL_DECODE = {};
+const BRANCH_URL_CODE = Object.fromEntries(BRANCH_SLUG_ORDER.map((slug, i) => [slug, String(i)]));
+const BRANCH_URL_DECODE = Object.fromEntries(BRANCH_SLUG_ORDER.map((slug, i) => [String(i), slug]));
 // slug -> { lat, lng }，供依目前位置篩選分店（1km/3km/5km）使用，從 data-lat/data-lng 讀進來。
 let BRANCH_COORDS = {};
 // 分店 slug → 畫面上的分店名稱，initBranchGrid 讀 pill 時建好，branchSlugToName 查它。
@@ -546,12 +541,7 @@ let searchTriggerSource = "manual";
 let pendingVoiceTranscript = null;
 let resultVoiceTranscript = null;
 
-// 台灣今天的日期 todayIso() 在 common.js（前後台共用）。
-function addDaysIso(iso, days){
-  const d = new Date(iso + "T00:00:00");
-  d.setDate(d.getDate() + days);
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-}
+// 台灣今天的日期 todayIso()、日期加減 addDaysIso() 在 common.js（前後台共用）。
 function weekdayOfIso(iso){
   const jsDay = new Date(iso + "T00:00:00").getDay();
   return jsDay === 0 ? 7 : jsDay;
@@ -573,9 +563,9 @@ function resolveQueryState(state){
 }
 
 const TIME_OPTIONS = [
-  { name: "time", value: "0600", label: "06 - 11" },
-  { name: "time", value: "1200", label: "12 - 17" },
-  { name: "time", value: "1800", label: "18 - 23" },
+  { value: "0600", label: "06 - 11" },
+  { value: "1200", label: "12 - 17" },
+  { value: "1800", label: "18 - 23" },
 ];
 const TIME_LABEL = Object.fromEntries(TIME_OPTIONS.map(o => [o.value, o.label]));
 let pillIdSeq = 0;
@@ -600,7 +590,7 @@ function makePill(name, value, label, checked){
   return wrap;
 }
 
-function renderGrid(containerId, defaultName, options){
+function renderGrid(containerId, name, options){
   const grid = document.getElementById(containerId);
   grid.querySelectorAll(".pill, .empty-hint").forEach(el => el.remove());
   if (options.length === 0){
@@ -609,7 +599,7 @@ function renderGrid(containerId, defaultName, options){
   }
   const fragment = document.createDocumentFragment();
   options.forEach(opt => {
-    fragment.appendChild(makePill(opt.name || defaultName, opt.value, opt.label, opt.checked));
+    fragment.appendChild(makePill(name, opt.value, opt.label, opt.checked));
   });
   grid.appendChild(fragment);
 }
@@ -638,9 +628,9 @@ function incrementClickCounts(key, values) {
 function incrementClickCount(key, value) {
   incrementClickCounts(key, [value]);
 }
-function sortByClickCount(items, key, getValue = (x) => x) {
+function sortByClickCount(items, key) {
   const counts = getClickCounts(key);
-  return [...items].sort((a, b) => (counts[getValue(b)] || 0) - (counts[getValue(a)] || 0));
+  return [...items].sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
 }
 // 把 container 底下的 .pill 依點擊次數由多到少重排（常用的排前面）：搬動既有節點，不重新產生 DOM。
 // 每個 pill 只讀一次它的 input 值（排序時不再重複 querySelector；老師有一千多個 pill），順序沒變就不搬。
@@ -660,9 +650,6 @@ function reorderPillsByClicks(container, key, counts = getClickCounts(key)){
 function initBranchGrid(){
   const grid = document.getElementById("branchGrid");
   const branchSectionHead = document.getElementById("branchSectionHead");
-
-  BRANCH_URL_CODE = Object.fromEntries(BRANCH_SLUG_ORDER.map((slug, i) => [slug, String(i)]));
-  BRANCH_URL_DECODE = Object.fromEntries(BRANCH_SLUG_ORDER.map((slug, i) => [String(i), slug]));
 
   const branchInputs = [...grid.querySelectorAll('input[name="branch"]')];
   BRANCH_MAP_URLS = Object.fromEntries(
@@ -709,7 +696,7 @@ function initBranchGrid(){
 
   function selectAllAndExpand(inputs, trackLabel, zoneName){
     inputs.forEach(input => { input.checked = true; });
-    saveSelection("wg_selected_branch", ["branch"]);
+    saveSelection("branch");
     updateResetButtonState();
     updateSubmitState();
     trackEvent("select_all_branch", { city_name: trackLabel });
@@ -870,10 +857,10 @@ function showPillWarning(anchorEl, text, iconClass){
   clearTimeout(pillWarnTimer);
   pillWarnTimer = setTimeout(() => pillWarnTooltip.classList.remove("visible"), 1800);
 }
-function showHoverTooltip(anchorEl, text, wrap = true){
+function showHoverTooltip(anchorEl, text){
   hideTooltipElementImmediately(voiceTooltipEl); // 避免跟還在淡出的語音聆聽提示疊在一起
   const rect = anchorEl.getBoundingClientRect();
-  pillWarnTooltip.classList.toggle("wrap", wrap);
+  pillWarnTooltip.classList.add("wrap"); // 完整內容可能很長，允許換行（showPillWarning 的短提示會把它拿掉）
   // text 含課程/老師名稱（來自爬官網的資料），一律當純文字放，不能用 innerHTML。
   pillWarnTooltip.textContent = text;
   positionPillTooltip(rect);
@@ -949,12 +936,12 @@ function checkedValues(name){
   return Array.from(document.querySelectorAll(`input[name="${name}"]:checked`)).map(i => i.value);
 }
 // 星期／分店／課程／老師：勾選後記住選擇，下次打開頁面自動套用。
-function saveSelection(key, names){
-  const state = {};
-  names.forEach(name => {
-    state[name] = checkedValues(name);
-  });
-  writeStoredJson(key, state);
+function saveSelection(name){
+  writeStoredJson(selectionKey(name), { [name]: checkedValues(name) });
+}
+// 整組取代所有篩選（最愛、語音、點老師）之後：每一組都要存，不然沒存的組重新整理後會從舊的儲存值還原。
+function saveAllSelections(){
+  FILTER_GROUPS.forEach(name => saveSelection(name));
 }
 function applyStateToInputs(state, names){
   names.forEach(name => {
@@ -964,15 +951,15 @@ function applyStateToInputs(state, names){
     });
   });
 }
-function applySavedSelection(key, names){
-  const state = readStoredJson(key, null);
+function applySavedSelection(name){
+  const state = readStoredJson(selectionKey(name), null);
   if (!state) return;
-  applyStateToInputs(state, names);
+  applyStateToInputs(state, [name]);
 }
 // 還原篩選勾選：網址帶了參數（分享連結）就用網址的，否則用上次存在 localStorage 的。
 function restoreFilterGroups(urlState, names){
   if (urlState) applyStateToInputs(urlState, names);
-  else names.forEach(name => applySavedSelection(`wg_selected_${name}`, [name]));
+  else names.forEach(name => applySavedSelection(name));
 }
 // 分享網址：把目前篩選條件編碼進網址 query string，讓別人打開網址時能直接重現同一個查詢結果。
 // room 的值（"團體教室"/"飛輪教室"）中文字很長，網址上用短代碼 1/2 表示。
@@ -985,8 +972,7 @@ function getUrlFilterState(){
   FILTER_GROUPS.forEach(name => {
     let values = params.getAll(name);
     if (name === "room") values = values.map(v => ROOM_URL_DECODE[v] || v);
-    // branch 的短代碼要等 initBranchGrid() 把 BRANCH_URL_DECODE 填好後才解得開，
-    // 這裡先留原始代碼，實際解碼發生在 init() 裡呼叫完 initBranchGrid() 之後。
+    // branch 的短代碼這裡先留原始代碼，實際用 BRANCH_URL_DECODE 解碼發生在 init() 裡。
     if (values.length) state[name] = values;
   });
   return Object.keys(state).length ? state : null;
@@ -1010,26 +996,25 @@ function updateResetButtonState(){
   btn.classList.toggle("reset-active", hasSelection);
   refreshSubmitIcon();
 }
-document.getElementById("dayGrid").addEventListener("change", () => { saveSelection("wg_selected_day", ["day"]); updateResetButtonState(); });
-document.getElementById("timeGrid").addEventListener("change", () => { saveSelection("wg_selected_time", ["time"]); updateResetButtonState(); });
-
-document.getElementById("roomGrid").addEventListener("change", () => { saveSelection("wg_selected_room", ["room"]); updateResetButtonState(); });
+["day", "time", "room"].forEach(name => {
+  document.getElementById(`${name}Grid`).addEventListener("change", () => { saveSelection(name); updateResetButtonState(); });
+});
 document.getElementById("branchGrid").addEventListener("change", (e) => {
   const input = e.target;
   if (input.matches('input[name="branch"]') && input.checked) incrementClickCount("wg_branch_clicks", input.value);
   updateSubmitState();
-  saveSelection("wg_selected_branch", ["branch"]); updateResetButtonState();
+  saveSelection("branch"); updateResetButtonState();
 });
 document.getElementById("courseGrid").addEventListener("change", (e) => {
   if (e.target.checked) incrementClickCount("wg_course_clicks", e.target.value);
-  saveSelection("wg_selected_course", ["course"]); updateResetButtonState();
+  saveSelection("course"); updateResetButtonState();
 });
 document.getElementById("teacherGrid").addEventListener("change", (e) => {
   if (e.target.checked){
     incrementClickCount("wg_teacher_clicks", e.target.value);
     trackTeacherEventOncePerSession("select_teacher_filter", e.target.value);
   }
-  saveSelection("wg_selected_teacher", ["teacher"]); updateResetButtonState(); updateSubmitState();
+  saveSelection("teacher"); updateResetButtonState(); updateSubmitState();
 });
 
 document.getElementById("resetFiltersBtn").addEventListener("click", (e) => {
@@ -1133,7 +1118,7 @@ function favoriteLabel(state){
 function applyFavorite(fav){
   applyFilterState(fav.state);
   SELECTION_STORAGE_KEYS.forEach(removeStored);
-  FILTER_GROUPS.forEach(name => saveSelection(`wg_selected_${name}`, [name]));
+  saveAllSelections();
   updateResetButtonState();
   // 最愛名稱是使用者自己打的自由文字，不送進 GA（隱私說明寫「不收集個人資料」）；fav.label 只用來在本機去重。
   trackEventOncePerSession("apply_favorite", fav.label);
@@ -2155,7 +2140,7 @@ function startVoiceSearch(){
 // 會依這些次數重排，被講到的項目就會排到前面。
 function applyVoiceFilters(state, named){
   applyFilterState(state); // 內部已呼叫 updateSubmitState()
-  FILTER_GROUPS.forEach(name => saveSelection(`wg_selected_${name}`, [name]));
+  saveAllSelections();
   updateResetButtonState();
   if (named){
     incrementClickCounts("wg_branch_clicks", named.branch);
@@ -2286,7 +2271,7 @@ function runGeoFilter(radiusKm){
       document.querySelectorAll('input[name="branch"]').forEach(input => {
         if (matchedSlugs.has(input.value)) input.checked = true;
       });
-      saveSelection("wg_selected_branch", ["branch"]);
+      saveSelection("branch");
       updateResetButtonState();
       updateSubmitState();
       trackEvent("geo_filter_apply", { radius_km: radiusKm, matched_count: matchedSlugs.size });
@@ -2627,7 +2612,7 @@ function renderScheduleResults(rows, onlyTeacher){
   rows.forEach(row => {
     const { c } = row;
     const line = document.createElement("div");
-    line.className = "result-row" + (row.flagged ? " flagged" : "");
+    line.className = "result-row" + (row.flagged ? " flagged" : ""); // flagged（代課）目前沒有專屬樣式，只是留作辨識用的 class
     const content = document.createElement("span");
     content.className = "result-row-content";
     if (row.flagged){
@@ -2690,9 +2675,8 @@ document.getElementById("resultArea").addEventListener("click", async (e) => {
   applyFilterState({ teacher: [teacherName] });
   trackTeacherEventOncePerSession("filter_by_teacher", teacherName);
   incrementClickCount("wg_teacher_clicks", teacherName);
-  // applyFilterState 會把「所有」篩選組重設成只剩這位老師，所以每一組都要存，不然沒存的組（時間、教室）
-  // 重新整理後會從舊的儲存值還原，跟畫面當時的篩選對不上。
-  FILTER_GROUPS.forEach(name => saveSelection(`wg_selected_${name}`, [name]));
+  // applyFilterState 會把「所有」篩選組重設成只剩這位老師，所以每一組都要存（見 saveAllSelections）。
+  saveAllSelections();
   updateResetButtonState();
   // 正常不會發生（選了老師後 hasTeacherSelected() 一定是 true），只防老師資料跟目前清單對不上的冷門情況；
   // 保留這層檢查才能在那種情況下維持原本「安靜地什麼都不做」，不會變成在隱藏的 submitBtn 上彈提示。
@@ -3243,7 +3227,7 @@ async function init(){
   restoreFilterGroups(urlState, ["time"]);
 
   if (urlState) applyStateToInputs(urlState, ["room"]);
-  else if (readStored("wg_selected_room")) applySavedSelection("wg_selected_room", ["room"]);
+  else if (readStored(selectionKey("room"))) applySavedSelection("room");
   else {
     const defaultRoomInput = document.querySelector('input[name="room"][value="團體教室"]');
     if (defaultRoomInput) defaultRoomInput.checked = true;
@@ -3380,8 +3364,7 @@ function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint
 
   function populateMonthOptions(selected){
     const options = Array.from({ length: 12 }, (_, i) => {
-      const m = String(i + 1).padStart(2, "0");
-      return { value: m, html: `${i + 1} 月` };
+      return { value: pad2(i + 1), html: `${i + 1} 月` };
     });
     monthSelect.setOptions(options, selected);
   }
@@ -3394,8 +3377,11 @@ function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint
     const year = yearSelect.value || nowYear;
     const month = monthSelect.value || nowMonth;
     try{
-      await loadChartJs();
-      const data = await fetchJson(`${WORKER_BASE}/${endpoint}?year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}`);
+      // Chart.js 的載入與資料請求互不依賴，同時進行（以前是載完 Chart.js 才發請求，總等待變成兩者相加）。
+      const [, data] = await Promise.all([
+        loadChartJs(),
+        fetchJson(`${WORKER_BASE}/${endpoint}?year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}`),
+      ]);
       if (seq !== loadSeq) return;
       const years = Array.isArray(data.years) && data.years.length ? data.years : [nowYear];
       if (!yearSelect.value){
@@ -3437,8 +3423,7 @@ function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint
 
   async function load(){
     try{
-      await loadChartJs();
-      const data = await fetchJson(`${WORKER_BASE}/publicSearchStats`);
+      const [, data] = await Promise.all([loadChartJs(), fetchJson(`${WORKER_BASE}/publicSearchStats`)]);
       const chartData = buildWindow(data.monthly || {}, data.monthlyResults || {}, currentMonthKey());
       wrapEl.innerHTML = "<canvas></canvas>";
       const canvas = wrapEl.querySelector("canvas");

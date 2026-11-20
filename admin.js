@@ -1,4 +1,4 @@
-const WORKER_BASE = "https://worldgym-api.lions2100.workers.dev";
+// WORKER_BASE、pad2、addDaysIso 在 common.js（前後台共用）。
 const TOKEN_STORAGE_KEY = "worldgym_admin_token";
 const ADMIN_TOKEN_HEADER = "X-Admin-Token";
 
@@ -48,7 +48,6 @@ const adminBackBtnWrap = document.getElementById("adminBackBtnWrap");
 const adminLoginBackBtnWrap = document.getElementById("adminLoginBackBtnWrap");
 const passwordInput = document.getElementById("adminPasswordInput");
 const loginError = document.getElementById("adminLoginError");
-const loginBtn = document.getElementById("adminLoginBtn");
 
 function showAdminPage(){
   loginOverlay.classList.add("hidden");
@@ -133,7 +132,6 @@ function hideLoginError(){
 async function attemptLogin(){
   const token = passwordInput.value;
   if (!token){ showLoginError("沒有輸入密碼"); return; }
-  loginBtn.disabled = true;
   hideLoginError();
   try{
     const result = await verifyToken(token);
@@ -150,12 +148,10 @@ async function attemptLogin(){
   } catch(e){
     console.error(e);
     showLoginError("連線失敗，請稍後再試");
-  } finally {
-    loginBtn.disabled = false;
   }
 }
 
-loginBtn.addEventListener("click", attemptLogin);
+// 登入只靠密碼欄按 Enter（沒有登入按鈕）。
 passwordInput.addEventListener("keydown", (e) => { if (e.key === "Enter") attemptLogin(); });
 const adminBackBtn = document.getElementById("adminBackBtn");
 const adminBackTooltip = document.getElementById("adminBackTooltip");
@@ -347,6 +343,11 @@ function renderTrendChart(wrapEl, previousChart, chartOptions){
   return createLineChart(wrapEl.querySelector("canvas"), { aspectRatio: CHART_ASPECT_RATIO, ...chartOptions });
 }
 
+// 面板上方「一個大數字加說明」的小卡（最愛、提醒、語音三個面板共用）。
+function statItem(num, label){
+  return `<div class="favorite-stats-item"><div class="favorite-stats-num">${num}</div><div class="favorite-stats-label">${label}</div></div>`;
+}
+
 // --- 最愛統計：累積人數/次數用兩個大數字顯示，近 12 個月「建立人數/使用次數」跟其他雙數列折線圖同一套。 ---
 const favoriteStatsSummary = document.getElementById("favoriteStatsSummary");
 const favoriteTrendWrap = document.getElementById("favoriteTrendWrap");
@@ -359,10 +360,7 @@ function buildFavoriteTrendWindow(monthlyAdders, monthlyApplies, endMonth){
 async function loadFavoriteStats(){
   try{
     const data = await adminJson("/favoriteStats");
-    favoriteStatsSummary.innerHTML = `
-      <div class="favorite-stats-item"><div class="favorite-stats-num">${data.totalAdders || 0}</div><div class="favorite-stats-label">累積建立人數</div></div>
-      <div class="favorite-stats-item"><div class="favorite-stats-num">${data.totalApplies || 0}</div><div class="favorite-stats-label">累積使用次數</div></div>
-    `;
+    favoriteStatsSummary.innerHTML = statItem(data.totalAdders || 0, "累積建立人數") + statItem(data.totalApplies || 0, "累積使用次數");
     const data12 = buildFavoriteTrendWindow(data.monthlyAdders || {}, data.monthlyApplies || {}, currentMonthKey());
     favoriteTrendChartInstance = renderTrendChart(favoriteTrendWrap, favoriteTrendChartInstance, {
       data: data12,
@@ -395,9 +393,7 @@ function buildReminderMonthlyWindow(monthly, endMonth){
 async function loadReminderStats(){
   try{
     const data = await adminJson("/reminderStats");
-    reminderStatsSummary.innerHTML = `
-      <div class="favorite-stats-item"><div class="favorite-stats-num">${data.total || 0}</div><div class="favorite-stats-label">累積登記次數</div></div>
-    `;
+    reminderStatsSummary.innerHTML = statItem(data.total || 0, "累積登記次數");
     const data12 = buildReminderMonthlyWindow(data.monthly || [], currentMonthKey());
     reminderTrendChartInstance = renderTrendChart(reminderTrendWrap, reminderTrendChartInstance, {
       data: data12,
@@ -430,12 +426,6 @@ const VOICE_OUTCOMES = [
 // 真的送進 Workers AI 的結果：只有這些才花 Neurons、才有意義的音檔大小與耗時，也是計入每日額度的那些。
 const VOICE_AI_OUTCOMES = ["ok", "empty", "ai_error"];
 
-function addDays(dateStr, delta){
-  const d = new Date(`${dateStr}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + delta);
-  return d.toISOString().slice(0, 10);
-}
-
 // 由舊到新的每日視窗（以 endDay 為最右邊），沒紀錄的日期補 0，跟月度圖一樣不會因為沒資料就整個面板空著。
 // month 欄位放日期（YYYY-MM-DD）：createLineChart 的資料格式叫 month，見 common.js 的 monthTickLabel。
 function buildVoiceDayWindow(rows, endDay, days){
@@ -445,7 +435,7 @@ function buildVoiceDayWindow(rows, endDay, days){
   }
   const entries = [];
   for (let i = days - 1; i >= 0; i--){
-    const day = addDays(endDay, -i);
+    const day = addDaysIso(endDay, -i);
     const outcomes = byDay[day] || {};
     const count = (key) => outcomes[key]?.cnt || 0;
     const total = VOICE_OUTCOMES.reduce((sum, o) => sum + count(o.key), 0);
@@ -456,10 +446,6 @@ function buildVoiceDayWindow(rows, endDay, days){
 
 function sumVoiceWindow(entries, pick){
   return entries.reduce((sum, d) => sum + pick(d), 0);
-}
-
-function voiceStatItem(num, label){
-  return `<div class="favorite-stats-item"><div class="favorite-stats-num">${num}</div><div class="favorite-stats-label">${label}</div></div>`;
 }
 
 function renderVoiceStats(data){
@@ -479,12 +465,12 @@ function renderVoiceStats(data){
   const todayAi = sumVoiceWindow([todayEntry], (d) => VOICE_AI_OUTCOMES.reduce((s, k) => s + d.count(k), 0));
 
   voiceStatsSummary.innerHTML = [
-    voiceStatItem(todayEntry.total, "今日請求"),
-    voiceStatItem(total7, "近 7 天請求"),
-    voiceStatItem(total7 ? `${Math.round((ok7 / total7) * 100)}%` : "—", "近 7 天成功率"),
-    voiceStatItem(aiCnt ? `${(aiBytes / aiCnt / 1024).toFixed(0)} KB` : "—", `平均音檔（近 ${days} 天）`),
-    voiceStatItem(aiCnt ? `${(aiMs / aiCnt / 1000).toFixed(1)} 秒` : "—", `平均耗時（近 ${days} 天）`),
-    voiceStatItem(`${todayAi}／${data.dailyLimit}`, "今日額度"),
+    statItem(todayEntry.total, "今日請求"),
+    statItem(total7, "近 7 天請求"),
+    statItem(total7 ? `${Math.round((ok7 / total7) * 100)}%` : "—", "近 7 天成功率"),
+    statItem(aiCnt ? `${(aiBytes / aiCnt / 1024).toFixed(0)} KB` : "—", `平均音檔（近 ${days} 天）`),
+    statItem(aiCnt ? `${(aiMs / aiCnt / 1000).toFixed(1)} 秒` : "—", `平均耗時（近 ${days} 天）`),
+    statItem(`${todayAi}／${data.dailyLimit}`, "今日額度"),
   ].join("");
 
   voiceTrendChartInstance = renderTrendChart(voiceTrendWrap, voiceTrendChartInstance, {
@@ -581,13 +567,11 @@ async function loadQueryAccessStats(){
 accessLogDaysFilter.addEventListener("change", loadQueryAccessStats);
 
 const modal = document.getElementById("rescrapeModal");
-const modalText = document.getElementById("rescrapeModalText");
 const confirmBtn = document.getElementById("rescrapeConfirmBtn");
 const cancelBtn = document.getElementById("rescrapeCancelBtn");
 const terminalLog = document.getElementById("terminalLog");
 
 // --- 終端機面板：所有操作的進度/結果統一顯示在這裡，不再另外用 modal 顯示結果文字 ---
-function pad2(n){ return String(n).padStart(2, "0"); }
 function nowHms(){
   const d = new Date();
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
@@ -643,7 +627,6 @@ async function rescrapeViaCloudflare(onLog){
     }
   }
   if (!result) throw new Error("未收到重抓結果");
-  return { classesWritten: result.classesWritten || 0, staleDeleted: result.staleDeleted || 0, errors: result.errors || [] };
 }
 
 // 刪除不在目前分店清單（branches-seed.js）裡的舊課表資料。只是單一次查詢+刪除，不像重抓要跑
@@ -658,7 +641,6 @@ async function cleanupStaleBranches(onLog){
   }
   onLog(`📊 一共刪除 ${data.deleted} 筆課程`);
   onLog("🎉 清除完成！");
-  return data;
 }
 
 // 執行一個會即時輸出進度的動作：清空終端機、跑 action、有錯誤的話印一行紅字。
@@ -688,7 +670,6 @@ async function runAction(action){
 // 其他動作（清除孤兒資料、開啟外部連結）直接執行，結果都看終端機就好。
 function openConfirmModal(){
   if (actionRunning) return;
-  modalText.textContent = "確定要重抓全部分店的課表嗎？";
   modal.classList.remove("hidden");
 }
 function closeConfirmModal(){

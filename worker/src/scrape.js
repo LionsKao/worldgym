@@ -1,5 +1,5 @@
 import BRANCHES from "./branches-seed.js";
-import { nowTaiwanIso, todayIsoTaipei, pad2, fnv1aHex, SCRAPER_USER_AGENT, OFFICIAL_SITE_TIMEOUT_MS, postTeamsCard } from "./util.js";
+import { nowTaiwanIso, todayIsoTaipei, addDaysIso, pad2, fnv1aHex, SCRAPER_USER_AGENT, OFFICIAL_SITE_TIMEOUT_MS, postTeamsCard } from "./util.js";
 
 const SCHEDULE_DAYS_AHEAD = 13;
 // 查詢端（queryClasses.js 的 NORMAL_DAYS_AHEAD = 6）只看「今天到 +6 天」的正常班，
@@ -20,24 +20,10 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function formatDateSlash(date) {
-  return `${date.getFullYear()}/${pad2(date.getMonth() + 1)}/${pad2(date.getDate())}`;
-}
-
+// 解析官網回傳的 class_date（例如 "2026/11/20"，沒帶時區 → 本地時間的 00:00）用的：
+// 建出來的 Date 與下面兩個函式都讀「本地」欄位，所以不管執行環境的時區是什麼都對得上。
 function formatDateIso(date) {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
-}
-
-function addDays(date, days) {
-  const d = new Date(date);
-  d.setDate(d.getDate() + days);
-  return d;
-}
-
-// 台灣今天的 00:00（用 todayIsoTaipei，不是執行環境的 UTC 日期），避免台北時間 00:00~08:00
-// 這段區間算出「昨天」，導致這次抓到的資料整批往前錯位一天（近 7 天/13 天視窗的邊界也跟著錯位）。
-function todayAtMidnight() {
-  return new Date(`${todayIsoTaipei()}T00:00:00Z`);
 }
 
 // Chinese convention: Monday=1 ... Sunday=7 (JS getDay() is Sunday=0 ... Saturday=6).
@@ -46,13 +32,14 @@ function chineseWeekday(date) {
   return jsDay === 0 ? 7 : jsDay;
 }
 
-async function fetchBranchSchedule(slug, firstDate, lastDate) {
+// firstDateIso／lastDateIso 是 YYYY-MM-DD；官網要的是斜線格式。
+async function fetchBranchSchedule(slug, firstDateIso, lastDateIso) {
   const url = `https://www.worldgymtaiwan.com/find-a-club/${slug}/aerobics-class-schedule`;
   const body = new URLSearchParams({
     func: "queryWeekSchedule",
     scheduleType: "week",
-    first_date: formatDateSlash(firstDate),
-    last_date: formatDateSlash(lastDate),
+    first_date: firstDateIso.replaceAll("-", "/"),
+    last_date: lastDateIso.replaceAll("-", "/"),
   });
   const res = await fetch(url, {
     method: "POST",
@@ -184,12 +171,11 @@ async function replaceBranchClasses(db, branchSlug, transformed, scrapedAt) {
 // 每間分店各自負責自己的資料：寫入這次抓到的新資料、清掉這間分店的舊資料（寫法見 replaceBranchClasses），
 // 不影響其他分店；只有官網資料真的抓到才會走到這裡，抓取失敗的話該分店舊資料原封不動。
 async function ingestBranchClasses(db, branchSlug, branchName, rawClasses) {
-  const firstDate = todayAtMidnight();
-  const lastDate = addDays(firstDate, SCHEDULE_DAYS_AHEAD);
-  const nearDate = addDays(firstDate, NEAR_DAYS_AHEAD);
-  const todayIso = formatDateIso(firstDate);
-  const lastDateIso = formatDateIso(lastDate);
-  const nearDateIso = formatDateIso(nearDate);
+  // 用台灣今天的日期（todayIsoTaipei，不是執行環境的 UTC 日期），避免台北時間 00:00~08:00 這段區間算出「昨天」，
+  // 導致這次抓到的資料整批往前錯位一天（近 7 天／13 天視窗的邊界也跟著錯位）。
+  const todayIso = todayIsoTaipei();
+  const lastDateIso = addDaysIso(todayIso, SCHEDULE_DAYS_AHEAD);
+  const nearDateIso = addDaysIso(todayIso, NEAR_DAYS_AHEAD);
 
   // 這一輪這間分店所有列共用同一個 scrapedAt（replaceBranchClasses 靠它分辨新舊資料）。
   const scrapedAt = nowTaiwanIso();
@@ -274,9 +260,9 @@ async function runScrape(db, { logger = console, onProgress = () => {} } = {}) {
   await upsertBranches(db, BRANCHES);
   logger.log(`[worldgym] using ${BRANCHES.length} seeded branches`);
 
-  const firstDate = todayAtMidnight();
-  const lastDate = addDays(firstDate, SCHEDULE_DAYS_AHEAD);
-  onProgress(`📅 日期範圍: ${formatDateSlash(firstDate)} ~ ${formatDateSlash(lastDate)}`);
+  const firstDate = todayIsoTaipei();
+  const lastDate = addDaysIso(firstDate, SCHEDULE_DAYS_AHEAD);
+  onProgress(`📅 日期範圍: ${firstDate.replaceAll("-", "/")} ~ ${lastDate.replaceAll("-", "/")}`);
   onProgress(`🏪 預計抓取分店數: ${BRANCHES.length}`);
 
   let i = 0;

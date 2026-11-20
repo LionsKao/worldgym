@@ -90,6 +90,10 @@ async function takeKvQuota(env, ctx, key, limit, ttlSeconds) {
   ctx.waitUntil(env.QUERY_RATE_LIMIT.put(key, String(current + 1), { expirationTtl: ttlSeconds }));
   return true;
 }
+// 全站每日額度（留言、語音轉錄各一個）：台灣日期當 key，TTL 兩天讓它自己過期。name 是 key 前綴（message、voice）。
+function takeDailyBudget(env, ctx, name, limit) {
+  return takeKvQuota(env, ctx, `${name}-daily:${todayIsoTaipei()}`, limit, 172800);
+}
 // 每 IP 每 60 秒窗口的請求次數上限打點。ipKey 是 util.js 的 ipLimitKey() 的結果（IPv6 以 /64 為單位），不是原始位址。
 async function checkRateLimit(env, kvKeyPrefix, ipKey, limit, ctx) {
   const windowBucket = Math.floor(Date.now() / 60000);
@@ -300,14 +304,18 @@ async function readBodyText(req) {
   if (!buf) throw new HttpError(413, "payload too large");
   return buf.toString("utf8");
 }
-// 內容不是合法 JSON（或是空的）當成空物件，由各 handler 自己檢查欄位；太大才是 413。
+// 一律回傳物件：內容不是合法 JSON、是空的、或是 null／數字／字串這類不是物件的 JSON，都當成空物件，
+// 各 handler 可以直接讀欄位（body.x），由它們自己檢查欄位值；太大才是 413。
+// 不看 Content-Type（sendBeacon 送的是 text/plain），所以 fetch 與 beacon 兩種來源都吃得到。
 async function readJson(req) {
+  let body;
   try {
-    return JSON.parse(await readBodyText(req));
+    body = JSON.parse(await readBodyText(req));
   } catch (e) {
     if (e instanceof HttpError) throw e;
     return {};
   }
+  return body !== null && typeof body === "object" ? body : {};
 }
 // /trackSearch 的 resultCount 上限：/queryClasses 兩個時間窗各最多 RESULT_HARD_CAP（600）筆，真實值不可能超過 1200。
 // 沒有上限的話，幾千次灌 Number.MAX_SAFE_INTEGER 就能讓 SQLite 的 SUM(resultCount) 整數溢位而丟錯，
@@ -342,13 +350,11 @@ function rankingHandler({ rawTable, nameColumn, monthlyTable, itemsKey, limit })
 
 // 廣告曝光打點的 batch 版本：前端曝光先攢在記憶體，離開頁面時才一次送一批
 // （見 script.js 的 flushAdImpressions），避免每次都各自發一個 request + D1 寫入。
-// sendBeacon 送出的 body 是 text/plain，這裡用 req.text() 手動 parse 才能同時吃 fetch 跟 beacon 兩種來源。
+// sendBeacon 送出的 body 是 text/plain，readJson 不看 Content-Type，所以同時吃 fetch 跟 beacon 兩種來源。
 const MAX_BATCH_EVENTS = 100;
 async function handleTrackAdEvents({ req, env, origin }) {
-  const raw = await readBodyText(req);
-  let body;
-  try { body = JSON.parse(raw); } catch { body = {}; }
-  const events = Array.isArray(body && body.events) ? body.events : [];
+  const body = await readJson(req);
+  const events = Array.isArray(body.events) ? body.events : [];
   const valid = events
     .filter((e) => e && (e.type === "impression" || e.type === "click") && typeof e.adId === "string" && e.adId)
     .slice(0, MAX_BATCH_EVENTS);
@@ -406,12 +412,12 @@ async function getKnownTeacherCourseNames(env) {
 async function handleTrackSearchEvents({ req, env, origin }) {
   const body = await readJson(req);
   // 只有真的帶了老師/課程時才需要讀名單（只有分店的請求完全不碰 D1 讀取）。
-  const hasTeacherOrCourse = (Array.isArray(body && body.teachers) && body.teachers.length > 0)
-    || (Array.isArray(body && body.courses) && body.courses.length > 0);
+  const hasTeacherOrCourse = (Array.isArray(body.teachers) && body.teachers.length > 0)
+    || (Array.isArray(body.courses) && body.courses.length > 0);
   const known = hasTeacherOrCourse ? await getKnownTeacherCourseNames(env) : { teachers: new Set(), courses: new Set() };
-  const teachers = sanitizeNameList(body && body.teachers, known.teachers);
-  const courses = sanitizeNameList(body && body.courses, known.courses);
-  const branches = sanitizeNameList(body && body.branches, KNOWN_BRANCH_NAMES);
+  const teachers = sanitizeNameList(body.teachers, known.teachers);
+  const courses = sanitizeNameList(body.courses, known.courses);
+  const branches = sanitizeNameList(body.branches, KNOWN_BRANCH_NAMES);
   if (teachers.length === 0 && courses.length === 0 && branches.length === 0) {
     return json({ ok: true, written: 0 }, 200, origin);
   }
@@ -537,12 +543,9 @@ function handleScrapeManual({ env, ctx, origin }) {
 // 計數用 takeKvQuota（非原子、爆量時可能少算），是「大致的」上限、不是硬性保證。
 // 缺點：有人刻意灌滿額度，正常人當天就留不了言（回 429 message_daily_limit，前端會顯示「今天的留言額度已滿」）。
 const MESSAGE_DAILY_LIMIT = 50;
-function takeMessageDailyBudget(env, ctx) {
-  return takeKvQuota(env, ctx, `message-daily:${todayIsoTaipei()}`, MESSAGE_DAILY_LIMIT, 172800);
-}
 async function handleSendMessageToAuthor({ req, env, ctx, origin }) {
   const body = await readJson(req);
-  const content = String(body?.content || "").trim();
+  const content = String(body.content || "").trim();
   if (!content || content.length > 500) {
     return json({ error: "invalid content" }, 400, origin);
   }
@@ -552,7 +555,7 @@ async function handleSendMessageToAuthor({ req, env, ctx, origin }) {
     return json({ error: "teams webhook not configured" }, 503, origin);
   }
   // 放在內容檢查與 webhook 設定檢查之後：內容不合法或根本送不出去的請求不會吃掉每日額度。
-  if (!(await takeMessageDailyBudget(env, ctx))) {
+  if (!(await takeDailyBudget(env, ctx, "message", MESSAGE_DAILY_LIMIT))) {
     return json({ error: "message_daily_limit" }, 429, origin);
   }
   let teamsRes;
@@ -600,7 +603,7 @@ function isValidClickUrl(clickUrl) {
 // remindMinutes 選填，沒帶（舊前端）當 30；有帶就必須在白名單內，公開端點不收任意數字。
 async function handleRegisterReminder({ req, env, ctx, origin }) {
   const body = await readJson(req);
-  const { branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, pushSubscription, clickUrl, remindMinutes } = body || {};
+  const { branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, pushSubscription, clickUrl, remindMinutes } = body;
   if (
     typeof branchSlug !== "string" || !KNOWN_BRANCH_SLUGS.has(branchSlug) ||
     !isBoundedText(branchName, true) || !isBoundedText(className, true) || !isBoundedText(teacherName, true) || !isBoundedText(roomName) ||
@@ -676,10 +679,6 @@ async function readBodyCapped(req, maxBytes) {
   }
   return Buffer.concat(chunks, total);
 }
-// 全站每日轉錄次數（台灣日期當 key，TTL 兩天讓它自己過期）。
-function takeVoiceDailyBudget(env, ctx) {
-  return takeKvQuota(env, ctx, `voice-daily:${todayIsoTaipei()}`, VOICE_DAILY_LIMIT, 172800);
-}
 // 每日計數（給後台「語音」面板，見 migrations/022_voice_daily.sql）：只記次數、音檔位元組與 Whisper 耗時，
 // 不記 IP、轉錄文字、音檔、clientId。放 waitUntil 背景寫入，而且寫入失敗（例如還沒跑 migration、D1 暫時出錯）
 // 只記 log、絕不影響使用者的轉錄結果。遞增用 ON CONFLICT DO UPDATE，是原子的。
@@ -706,7 +705,7 @@ async function handleTranscribeVoice({ req, env, ctx, origin }) {
     return json({ error: "invalid content type" }, 415, origin);
   }
   // 有 Content-Length 且明顯過大就直接擋，不用讀 body；沒有（chunked）或不可信時不拒絕，
-  // 改成邊讀邊算、超過上限就中止（readBodyCapped）。只量到位元組、量不到秒數，所以另有每日上限（takeVoiceDailyBudget）。
+  // 改成邊讀邊算、超過上限就中止（readBodyCapped）。只量到位元組、量不到秒數，所以另有每日上限（takeDailyBudget）。
   const declaredLength = parseInt(req.headers.get("Content-Length") || "", 10);
   if (Number.isFinite(declaredLength) && declaredLength > VOICE_MAX_BYTES) {
     recordVoiceOutcome(env, ctx, "too_large", declaredLength);
@@ -722,7 +721,7 @@ async function handleTranscribeVoice({ req, env, ctx, origin }) {
     return json({ error: "too small" }, 400, origin);
   }
   // 放在大小／格式檢查之後：格式不對或太小的請求不會吃掉每日額度。
-  if (!(await takeVoiceDailyBudget(env, ctx))) {
+  if (!(await takeDailyBudget(env, ctx, "voice", VOICE_DAILY_LIMIT))) {
     recordVoiceOutcome(env, ctx, "daily_limit", audio.length);
     return json({ error: "voice_daily_limit" }, 429, origin);
   }
@@ -759,7 +758,7 @@ const ROUTES = {
     limit: 20, logAccess: true, queryToken: true,
     handler: async ({ req, env, origin }) => {
       const body = await readJson(req);
-      return json(await queryClasses(env.DB, body || {}), 200, origin);
+      return json(await queryClasses(env.DB, body), 200, origin);
     },
   },
 
@@ -782,7 +781,7 @@ const ROUTES = {
     limit: 60,
     handler: async ({ req, env, origin }) => {
       const body = await readJson(req);
-      const { adId, type } = body || {};
+      const { adId, type } = body;
       if (type !== "impression" && type !== "click") {
         return json({ error: "invalid type" }, 400, origin);
       }
@@ -814,7 +813,7 @@ const ROUTES = {
     handler: async ({ req, env, origin }) => {
       const body = await readJson(req);
       // 超出範圍（真實查詢不可能出現）當成無效值記 0，跟型別不對的處理一致。
-      const resultCount = Number.isInteger(body?.resultCount) && body.resultCount >= 0 && body.resultCount <= MAX_TRACKED_RESULT_COUNT ? body.resultCount : 0;
+      const resultCount = Number.isInteger(body.resultCount) && body.resultCount >= 0 && body.resultCount <= MAX_TRACKED_RESULT_COUNT ? body.resultCount : 0;
       await env.DB.prepare("INSERT INTO search_events (createdAt, resultCount) VALUES (?, ?)")
         .bind(nowTaiwanIso(), resultCount)
         .run();
@@ -829,7 +828,7 @@ const ROUTES = {
     limit: 60,
     handler: async ({ req, env, ctx, origin }) => {
       const body = await readJson(req);
-      const { clientId: rawClientId, type } = body || {};
+      const { clientId: rawClientId, type } = body;
       if (typeof rawClientId !== "string" || !CLIENT_ID_PATTERN.test(rawClientId.trim())) {
         return json({ error: "invalid clientId" }, 400, origin);
       }
@@ -840,14 +839,14 @@ const ROUTES = {
         return json({ error: "invalid type" }, 400, origin);
       }
       await env.DB.prepare("INSERT INTO favorite_events (clientId, type, createdAt) VALUES (?, ?, ?)")
-        .bind(clientId.trim(), type, nowTaiwanIso())
+        .bind(clientId, type, nowTaiwanIso())
         .run();
       // 全時間去重人數即時維護在 favorite_client_seen，不依賴 favorite_events 明細是否還在
       // （見 analytics.js 的說明），才能讓「累積建立人數」在明細被每月排程清掉後依然準確。
       if (type === "add") {
         ctx.waitUntil(
           env.DB.prepare("INSERT OR IGNORE INTO favorite_client_seen (clientId, firstSeenAt) VALUES (?, ?)")
-            .bind(clientId.trim(), nowTaiwanIso())
+            .bind(clientId, nowTaiwanIso())
             .run()
         );
       }
@@ -967,7 +966,7 @@ const ROUTES = {
     limit: 60,
     handler: async ({ req, env, origin }) => {
       const body = await readJson(req);
-      if (typeof body?.subscriptionEndpoint !== "string" || !body.subscriptionEndpoint || (body.id !== undefined && typeof body.id !== "string")) {
+      if (typeof body.subscriptionEndpoint !== "string" || !body.subscriptionEndpoint || (body.id !== undefined && typeof body.id !== "string")) {
         return json({ error: "invalid cancelReminder" }, 400, origin);
       }
       return json(await cancelReminder(env.DB, body), 200, origin);

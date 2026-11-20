@@ -54,9 +54,12 @@ function buildDisplayRows(rows) {
   // 依星期幾（1=一...7=日）排序，再依開始時間、最後依分店名稱排序。
   out.sort((a, b) => a.c.dayOfWeek - b.c.dayOfWeek
     || a.c.startTime.localeCompare(b.c.startTime)
-    || a.c.branchName.localeCompare(b.c.branchName, "zh-Hant"));
+    || BRANCH_NAME_COLLATOR.compare(a.c.branchName, b.c.branchName));
   return out;
 }
+// 分店名稱排序用的 collator 建一次重複用：這是整站最熱的端點，勾多間分店時同一星期同一時段平手很常見，
+// 每次比較都用 localeCompare(…, "zh-Hant") 會一直重新解析 locale。結果與 localeCompare(b, "zh-Hant") 完全相同。
+const BRANCH_NAME_COLLATOR = new Intl.Collator("zh-Hant");
 
 function inClause(column, values, params) {
   params.push(...values);

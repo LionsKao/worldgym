@@ -1,6 +1,14 @@
-// 前台（script.js）與後台（admin.js）共用的前端工具：HTML 跳脫、自製下拉選單、下拉重新整理、
-// 月份計算與折線圖。沒有 build step，所以是普通的全域函式，兩個頁面都要在自己的 script 之前載入
-// （見 index.html、admin.html 的 <script> 順序）。改了這個檔案要同步更新兩個 html 裡 common.js 的 ?v= 版號。
+// 前台（script.js）與後台（admin.js）共用的前端工具：API 網域、HTML 跳脫、自製下拉選單、下拉重新整理、
+// 日期與月份計算、折線圖。沒有 build step，所以是普通的全域函式與常數，兩個頁面都要在自己的 script 之前載入
+// （見 index.html、admin.html 的 <script> 順序；頂層 const 在傳統 script 之間共用全域，所以 script.js、admin.js
+// 不能再宣告同名的）。改了這個檔案要同步更新兩個 html 裡 common.js 的 ?v= 版號。
+
+// 打自家 Worker API 的網址：前台與後台共用這一份。改網域時還要同步改 _headers 的 CSP connect-src 與 Worker 的 ALLOWED_ORIGINS。
+const WORKER_BASE = "https://worldgym-api.lions2100.workers.dev";
+
+function pad2(n){
+  return String(n).padStart(2, "0");
+}
 
 function escapeHtml(str){
   return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -96,8 +104,14 @@ function taipeiNowStamp(){
     timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", hourCycle: "h23",
   }).formatToParts(new Date()).map((p) => [p.type, p.value]));
-  const hour = String(Number(parts.hour) % 24).padStart(2, "0");
+  const hour = pad2(Number(parts.hour) % 24);
   return `${parts.year}-${parts.month}-${parts.day} ${hour}:${parts.minute}`;
+}
+// 日期（YYYY-MM-DD）加減天數：純日曆運算，用 UTC 做，不受裝置時區與日光節約時間影響（跟 worker/src/util.js 的 addDaysIso 同一個做法）。
+function addDaysIso(iso, days){
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
 }
 // 台灣現在是哪個月（YYYY-MM），跟 Worker 用台灣時間算的月份對得上。
 function currentMonthKey(){
@@ -107,7 +121,7 @@ function currentMonthKey(){
 function addMonths(monthStr, delta){
   const [y, m] = monthStr.split("-").map(Number);
   const d = new Date(Date.UTC(y, m - 1 + delta, 1));
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}`;
 }
 
 // 由舊到新的月份視窗：以 endMonth 為最右邊，往前共 count 個月；valuesOf(月份字串) 回傳那個月的數值欄位。
