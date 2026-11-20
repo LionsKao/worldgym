@@ -29,7 +29,7 @@
 ```
 .
 ├── index.html / script.js / style.css   # 前台：課表查詢頁、首頁廣告橫幅、首頁公開排行報表
-├── common.js                            # 前後台共用：HTML 跳脫、fetchJson、自製下拉選單、月份計算、折線圖工廠、下拉重新整理
+├── common.js                            # 前後台共用：API 網域 WORKER_BASE、補零、HTML 跳脫、fetchJson、自製下拉選單、日期加減與月份計算、折線圖工廠、下拉重新整理
 ├── ga-init.js                           # GA4 初始化（只有 index.html 載入，必須同步載入；因 CSP 不允許 inline script 而獨立成檔）
 ├── theme-init.js                        # 淺色／深色主題初始化（只有 index.html 載入，必須同步載入、趕在第一次繪製前套用；同樣為了 CSP）
 ├── css-async.js                         # 非阻塞載入 Font Awesome CSS（同樣是為了 CSP；index.html、admin.html 都載入）

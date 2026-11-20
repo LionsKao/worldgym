@@ -140,7 +140,7 @@
 - 自製下拉選單沒有鍵盤操作與 ARIA（選項是沒有 tabindex 的 div）。要做好得改選單的結構與互動，而且會動到公開首頁的排行選單，這次不處理。
 
 **其他沒處理**
-- `admin.js` 的 `addDays` 與 `script.js` 的 `addDaysIso`（以及 Worker 的 `addDaysIso`）是三份相同功能的程式；要合併得動 `script.js`，價值低，沒做。
+- `admin.js` 的 `addDays` 與 `script.js` 的 `addDaysIso`（以及 Worker 的 `addDaysIso`）是三份相同功能的程式；當時判斷價值低、沒做。**後來 `/simplify` 做了前端那兩份**：合併成 `common.js` 的 `addDaysIso`（用 UTC 做純日曆運算，與舊的本地時間版本在 3,500 多組日期上完全一致），同時 `WORKER_BASE`、`pad2` 也收進 `common.js`；Worker 那份因為前後端不能共用程式，仍是獨立的。
 
 ### G4
 2026-11-20 跑完（xhigh，目標 `scrape.js`、`queryClasses.js`、`branchScan.js`、`branches-seed.js`、`branches-excluded.js`、`schema.sql`，沒有二次驗證），共 7 項：修 5 項、待決定 2 項（已處理：1 項做、1 項只修說明，見下）。**這一組最重要的一項是「官網一出錯就清空整間分店」**——用官網的真實 API 實測確認過，不是推論。
@@ -274,7 +274,7 @@
 
 **不處理（2 項）**
 - 「清除篩選記憶」靠 `location.reload()`：網址若還帶著不足以自動查詢的篩選參數（例如手動輸入的 `/?day=1`），重新整理後又被網址套回去。程式產生的分享網址都會在返回篩選頁時被 `showFilterView` 的 `replaceState` 清掉，只有手動編輯網址才碰得到。
-- `showHoverTooltip` 的 `wrap` 參數沒有呼叫端傳過非預設值：多一個分支，但拿掉沒有可量的好處。
+- `showHoverTooltip` 的 `wrap` 參數沒有呼叫端傳過非預設值：多一個分支，當時判斷拿掉沒有可量的好處。**後來 `/simplify` 還是刪掉了**（連同 `sortByClickCount` 的 `getValue`、`renderGrid` 的 `opt.name` 等同類死參數）。
 
 **不用改（1 項）**
 - 原本以為 `TIME_OPTIONS` 只用來產生 `TIME_LABEL`、可以簡化：實際上 `voice-search.js`（詞彙表）與 `worker/scripts/test-voice.mjs`（用正規表示式從 `script.js` 抽出來執行）都在用，是我只搜了 `script.js` 的誤判，沒有動。
@@ -314,3 +314,9 @@
 - `newyear-fireworks.js`：`running` 旗標防重複啟動、`dt` 上限避免分頁回前景一次補放、`resize` 監聽在 `finish()` 移除、canvas 放完自己移除並呼叫 `onDone`、減少動態效果時不啟動；`script.js` 的 `onDone` 只換回「自己暫時切的深色」。
 - 下載圖片每個階段（載入、截圖、轉檔）都有逾時，`finally` 一定把下載鈕、返回鈕、`.page` 的點擊與圖示還原；鎖住期間第二次點擊進不來。
 - `index.html`：CSP 要求的外部腳本載入順序（`ga-init.js`、`theme-init.js` 在 `css-async.js` 前面且都同步）、JSON-LD 與 title／description／og／twitter 一致、`403.html`／`404.html` 是 noindex 且帶 `style.css` 版號。
+
+## 九組跑完之後的兩輪全站檢查（2026-11-20）
+
+**全站安全審查**（三位審查員分頭看 Worker 後端、Pages 邊緣與設定、前端與後台頁，只讀不改）：沒有信心 7 以上、有實際利用路徑的漏洞，沒有改任何檔案。只留一項建議確認：正式環境的 `ADMIN_SESSION_SECRET` 有沒有設（沒設時後台 session 的簽章金鑰會退回由後台密碼衍生，攻擊者可以繞過登入鎖定直接猜密碼，只受一般限流）；使用者用 `wrangler secret list` 確認**已經設好**，風險不成立。低信心觀察（`setOptions` 要呼叫端自己跳脫、推播通知網址的 `/\t/` 小缺口只影響攻擊者自己的通知、留言內容可夾帶 Markdown 連結進 Teams 卡片）都沒有實際攻擊路徑，不處理。
+
+**全站 `/simplify`**（重用、簡化、效率、根因層級四個角度）：只套用「行為完全不變、有實際好處」的項目——`readJson` 一律回物件、每日額度合併成 `takeDailyBudget`、爬蟲改用 `util.js` 的字串日期函式、`WORKER_BASE`／`pad2`／`addDaysIso` 收進 `common.js`、`saveSelection(name)` 簽章簡化、死參數與死碼、公開排行的 Chart.js 載入與資料請求並行、後台頁永遠不顯示的登入鈕、`style.css` 的重複與無效規則。沒做的：查詢主線的 `ApiError`／`fetchWithQueryToken` 大重構、`currentView` 單一來源、查詢觸發來源改參數傳遞、語音詞彙快取（要先實測）、Google Fonts 非阻塞載入（可能造成版面位移）、`postTeamsCard` 失敗改丟錯（會改變手動掃描的回應）。
