@@ -263,9 +263,9 @@ Pages（`functions/_middleware.js`）與 Worker（`worker/src/index.js` 開頭�
 - 切換有 0.3 秒的顏色淡入淡出：`script.js` 在 `<html>` 暫時加 `theme-switching`（約 0.4 秒後移除），`style.css` 最後用 `!important` 的 transition 讓全站一起過場；不常駐（免得干擾平常的 hover 與條紋動畫），`prefers-reduced-motion` 時不做。圖表是 canvas，換色是瞬間的，不跟著淡入淡出。
 
 **語音搜尋**（使用者 2026-11-09 決定；2026-11-10 用 iPhone 實測通過後正式開放給所有人，沒有開關、沒有偏好設定）。完整設計、原因與實機數字在 [`docs/voice-search.md`](docs/voice-search.md)，**改語音相關程式（`script.js` 的語音區塊、`voice-search.js`、`/transcribeVoice`、後台語音面板）之前先讀**。改動時的地雷：
-- **入口**：篩選頁**完全沒勾選任何篩選**時（`hasAnyFilterSelected()`），查詢鈕的放大鏡換成麥克風；比對出條件後**沒有確認畫面**，直接勾選並送出查詢。聖誕樹、投票日印章兩個彩蛋優先。
+- **入口**：篩選頁**完全沒勾選任何篩選**時（`hasAnyFilterSelected()`），查詢鈕的放大鏡換成麥克風；比對出條件後**沒有確認畫面**，直接勾選並送出查詢。聖誕樹、投票日印章兩個彩蛋優先。**`#filterForm` 裡的文字輸入按 Enter 會觸發表單送出，沒勾篩選時就等於按下麥克風**，所以搜尋老師框的 `keydown` 在 `micEligible()` 時攔下 Enter 只收鍵盤（輸入法組字中的 Enter 不攔）；表單裡新增任何文字輸入都要照辦。
 - **雙軌**：桌面／Android 用原生 `SpeechRecognition`；iOS／iPadOS 完全不走它，改成錄音（上限 7 秒）上傳 Worker 的 `POST /transcribeVoice`、用 Workers AI（whisper-large-v3-turbo）轉文字，原因是 iOS 第二次之後底層音訊送不到辨識引擎（平台問題，JS 繞不過）。分流點是 `useRecorderVoice()`；兩條路徑的比對流程完全共用（`runVoiceProcessing()`）。
-- **狀態機**：`voiceRecognitionState` 四態（`idle`／`starting`／`listening`／`processing`），`starting` 起就鎖住重置鈕、通知鈕與六組篩選 checkbox；任何出口都要走 `resetVoiceUI()`，iOS 錄音的麥克風（每條 track 都要 `stop()`，橘點才會消失）也靠它放開。
+- **狀態機**：`voiceRecognitionState` 四態（`idle`／`starting`／`listening`／`processing`），`starting` 起就鎖住重置鈕、通知鈕與六組篩選 checkbox；任何出口都要走 `resetVoiceUI()`，iOS 錄音的麥克風（每條 track 都要 `stop()`，橘點才會消失）也靠它放開。**`starting`／`processing` 期間的每一個等待都要有上限**（等麥克風、上傳含讀回應內容 `VOICE_TRANSCRIBE_TIMEOUT_MS`、載入比對引擎 `VOICE_ENGINE_LOAD_TIMEOUT_MS`），不然一卡住就停在這個狀態、篩選全被鎖住，只能重新整理；新增等待步驟比照辦理。
 - **SpeechRecognition 路徑的三條硬規定**：①點擊到 `recognition.start()` 之間不能有任何 `await`／`.then()`（iOS Safari 會悄悄收不到音、而且沒有錯誤訊息）；②已拿到結果的 session 不要手動 `abort()`／`stop()`（會讓整個分頁的音訊狀態卡住）；③收尾一律先 `detachRecognitionHandlers()` 再 abort。
 - **`/transcribeVoice`**：要帶 `/issueToken` 的 `X-Query-Token`；大小 200 byte～256KB（成本照音訊秒數算、Worker 只量得到位元組，上限不要放寬）；全站每日 2000 次；**音檔只存在這次請求的記憶體，不寫 D1／KV、不進 log**；`initial_prompt` 刻意不放任何具體分店／星期／課程（Whisper 遇到太短太吵的音訊會把提示語吐回來，而語音比對到完整條件會直接送出查詢）。
 - **隱私**：`index.html` 的 `#privacyTooltip` 有一句「語音會離開使用者裝置」的揭露，**改變音檔處理方式時要同步改這句**。

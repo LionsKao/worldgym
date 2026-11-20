@@ -32,7 +32,7 @@
 | G4 | 🟠 | `worker/src/scrape.js`、`queryClasses.js`、`branchScan.js`、`branches-seed.js`、`branches-excluded.js`、`worker/schema.sql` | 1,010 | 課表資料管線：爬蟲寫入與新舊資料切換、查詢 SQL 與筆數上限、每月分店掃描、時間戳與時區、schema 與實際程式是否一致 | 已跑完（2 項待決定） |
 | G5 | 🟠 | `worker/src/reminders.js`、`worker/src/analytics.js`、`sw.js`、script.js 從開頭到 `trackTeacherEventOncePerSession`（含） | 1,030 | 推播提醒與報表統計：提醒登記／取消／到期發送、每月壓縮並刪明細（資料遺失風險）、前端的儲存／廣告與統計打點／推播註冊與提醒清單 | 已跑完（無待決定） |
 | G6 | 🟡 | script.js 從 `showServiceErrorModal` 到 `performSearch`（含），以及 `init` 到檔尾 | 930 | 前端核心查詢與結果顯示：token 重試與查詢快取、結果列渲染的跳脫、頁面切換與競態、初始化流程、首頁公開排行的渲染 | 已跑完（1 項待決定） |
-| G7 | 🟡 | script.js 從 `isSpeechRecognitionSupported`（含它前面的語音常數）到 `submitVoiceSearch`（含）、`voice-search.js` | 940 | 語音搜尋：狀態機與逾時、麥克風是否確實釋放、iOS 錄音路徑、比對引擎誤判。`worker/scripts/test-voice.mjs` 已有回歸測試，審查時可對照 | 未開始 |
+| G7 | 🟡 | script.js 從 `isSpeechRecognitionSupported`（含它前面的語音常數）到 `submitVoiceSearch`（含）、`voice-search.js` | 940 | 語音搜尋：狀態機與逾時、麥克風是否確實釋放、iOS 錄音路徑、比對引擎誤判。`worker/scripts/test-voice.mjs` 已有回歸測試，審查時可對照 | 已跑完（無待決定） |
 | G8 | 🟢 | script.js 從 `addDaysIso` 到 `renderThemeToggle`（含） | 1,000 | 篩選、最愛與主題：pill 與勾選狀態、localStorage 讀寫、我的最愛的編輯與長按、深色模式切換 | 未開始 |
 | G9 | 🟢 | script.js 從 `copyTextWithToast` 到 `startNewYearFireworks`（含）、`newyear-fireworks.js`、`index.html`、`403.html`、`404.html`、`ga-init.js`、`theme-init.js`、`css-async.js`、`manifest.json` | 1,300 | 結果頁複製與下載圖片、限時彩蛋、靜態頁面。`index.html` 有 640 行大多是標記，實際邏輯少 | 未開始 |
 
@@ -209,7 +209,28 @@
 - `newYearPrepare()` 內部有 try/catch，不會讓 `init()` 在收遮罩前丟例外。
 
 ### G7
-（未開始）
+2026-11-20 跑完（xhigh，目標 `script.js` 的 `isSpeechRecognitionSupported`（含前面的語音常數）到 `submitVoiceSearch`、`voice-search.js`，沒有二次驗證），共 8 項：修 4 項、不處理 3 項、不用改 1 項。語音的主線（三條硬規定、麥克風是否放開、逾時、第二次點擊的擋法、比對引擎）都沒有問題，修的都是邊角：「不該開始錄音的時候開始錄音」與「卡住就鎖死」。
+
+**已修（4 項）**
+- 「搜尋老師」是 `#filterForm` 裡唯一的文字輸入，在裡面按 Enter（手機鍵盤的「前往」）會觸發表單送出；沒勾任何篩選時，送出的處理等於按下麥克風，使用者只是想搜名字，卻突然開始錄音或跳出麥克風權限視窗。用內建瀏覽器按真的 Enter 鍵實測：修改前 `startVoiceSearch()` 被呼叫 1 次、修改後 0 次。→ 搜尋框的 `keydown` 在 `micEligible()` 時攔下 Enter、只收起鍵盤；已經有勾選時維持原本的 Enter 就查詢；輸入法組字中的 Enter（確認選字）不攔。
+- SpeechRecognition 的 `onerror` 把 `no-speech` 當一般錯誤，顯示「語音辨識發生錯誤」、GA reason 記 `recognition-error`；`onend` 那條路才是「沒聽到聲音」。使用者按了麥克風卻沒講話，Android 的辨識服務會比我們的 6 秒逾時更早用 error 事件回報。→ `no-speech` 另外處理，提示「沒聽到聲音」、reason `no-speech`。
+- iOS 上傳辨識：`res.json()` 在 `finally` 清掉逾時之後才讀。回應標頭來了、body 卻一直讀不完時沒有任何逾時，也不能被取消，狀態一直停在「辨識中」、篩選全被鎖住，只能重新整理。→ 讀 body 移進逾時保護裡（abort 會中止它）。
+- `runVoiceProcessing` 的 `await loadVoiceSearch()` 沒有上限：`voice-search.js` 的 `<script>` 一直載不進來、也沒失敗的話，同樣鎖死。→ 用既有的 `withTimeout` 加 `VOICE_ENGINE_LOAD_TIMEOUT_MS`（10 秒）。
+
+驗證：用 jsdom 載入真正的 `index.html`、`common.js`、整份 `script.js`、`vendor/pinyin-pro.min.js`、`voice-search.js`，搭配假的 SpeechRecognition、MediaRecorder、getUserMedia、fetch（逾時常數縮短），共 52 個檢查全過；對修改前的版本跑，6 項失敗（對應上面 4 項）。涵蓋兩條路徑的完整狀態機：SpeechRecognition 路徑（`start()` 在點擊的同一個同步呼叫鏈裡被呼叫、拿到結果後不手動 abort、沒講話、逾時 abort 且先拔處理器、權限被拒、network 錯誤、aborted 事件被忽略、麥克風叫不醒提早判斷、上一個 session 沒收尾就再點被擋下並在 onend 與冷卻後恢復、切到背景收畫面不碰 recognition、只講星期不夠不送出、聽不懂、空白、比對引擎載入卡住）；iOS 路徑（`getUserMedia` 在點擊的同步呼叫鏈裡第一個被呼叫、錄完每條音軌都 `stop()`、再點一下提前結束、到錄音上限自動結束、取消與切到背景不上傳並放開麥克風、拒絕權限、權限視窗沒人理且逾時後才按允許時麥克風立刻放掉、429／500／斷線／空結果／非 JSON、401 換 token 重試、錄音太小不上傳、body 卡住）。比對引擎的 91 個回歸案例、G6 的 62 項、G5 前端 35 項、`check:versions` 重跑也全過。`script.js` 版號 252 → 253。測試腳本沒進版控。**限制**：沒有在真的 iPhone 或 Android 上驗證；`no-speech` 在 Android 上實際何時觸發沒量過（這項修正只是把訊息對應好，不依賴時間）。
+
+**不處理（3 項）**
+- `COURSE_ALIASES` 的 `bc`、`bp`、`bb` 這類兩個字母的英文別名，會比到英文單字的內部（實測「abc」會選到 BODYCOMBAT）。比對前會把空白全部拿掉，已經分不出英文字的邊界，要處理得重做英文詞的比對方式；Whisper 轉出來的內容幾乎都是中文，英文單字夾 `bc` 的機率很低。
+- 聆聽中切到背景只收畫面、不 abort recognition：這是使用者實機驗證後刻意的取捨（手動 abort 疑似會讓整個分頁的音訊狀態卡住），代價是回來時可能看到遲到的訊息，程式註解與 CLAUDE.md 都有記。
+- `/transcribeVoice` 的每日額度（2000 次）用完回的也是 429，畫面顯示「操作太頻繁，請稍後再試」，實際要等到明天。額度很寬、目前用量遠低於它，分不出兩種 429 也沒有可行的提示可以給。
+
+**不用改（1 項）**
+- 整區全選詞（「台中」「高屏」…）判斷「這句話有沒有講到該區的單一分店」時，會看到其他整區詞先加進去的分店，理論上處理順序會影響結果；實測「彰化台中」「台中彰化」「嘉義台南」「台南嘉義」結果與順序無關：整區詞長度都一樣，詞彙表的排列先放分區按鈕詞、再放縣市詞。目前沒有重現，改了反而動到比對引擎。
+
+**沒問題的部分**
+- CLAUDE.md「語音搜尋」的三條硬規定都符合：`start()` 之前沒有 `await`（測試 A1，iOS 的 `getUserMedia` 是測試 B1）、拿到結果後不手動 `abort()`（A7）、收尾先拔處理器再 abort（A13、A14）。
+- 麥克風放開：正常結束、取消、切到背景、拒絕權限、逾時後才允許，每條路徑的音軌都被 `stop()`（B5、B11、B12、B22）。
+- 比對引擎：`pinyin-pro` 對空字串、表情符號、孤立代理字元、2000 字長句都不丟例外；表情符號會讓逐字拼音長度和句子不一致，程式已經檢查長度相同才換算標色範圍。`npm run test:voice` 91 個案例全過。
 
 ### G8
 （未開始）

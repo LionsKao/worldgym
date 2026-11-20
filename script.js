@@ -767,6 +767,14 @@ function setSectionExpanded(wrap, btn, expanding){
 document.querySelectorAll(".section-search").forEach(input => {
   if (!input.dataset.searchFor) return;
   const clearBtn = input.closest(".search-wrap")?.querySelector(".search-clear");
+  // 這個搜尋框在 #filterForm 裡，按 Enter（手機鍵盤的「前往」）會觸發表單送出；沒勾任何篩選時，送出等於按下麥克風
+  // （見 filterForm 的 submit 監聽器），使用者只是想搜尋名字，卻突然開始錄音／跳出麥克風權限視窗。這時改成只收起鍵盤；
+  // 已經有勾選時維持原本的 Enter 就查詢。輸入法組字中的 Enter 是「確認選字」，不能攔。
+  input.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || e.isComposing || e.keyCode === 229 || !micEligible()) return;
+    e.preventDefault();
+    input.blur();
+  });
   input.addEventListener("input", () => {
     const grid = document.getElementById(input.dataset.searchFor);
     const text = input.value.trim().toLowerCase();
@@ -1646,6 +1654,7 @@ const VOICE_RECOGNITION_TIMEOUT_MS = 6000;
 const VOICE_RECORD_MAX_MS = 7000;
 const VOICE_RECORD_START_TIMEOUT_MS = 10000;
 const VOICE_TRANSCRIBE_TIMEOUT_MS = 15000;
+const VOICE_ENGINE_LOAD_TIMEOUT_MS = 10000; // 拿到文字後等 voice-search.js 載入的上限（它在點麥克風時就開始平行載入）
 let activeRecorderSession = null; // iOS 錄音路徑目前這一次的 session（見 startRecorderVoiceSearch）
 let activeTranscribeController = null; // 正在上傳辨識的那一個請求（cancelVoiceSearch 要能中止它，不讓它白白跑完耗 Workers AI 額度）
 // 上一個 session 真的被瀏覽器收尾完（麥克風資源釋放）了嗎——下一次點麥克風要先確認這個是 true
@@ -1842,7 +1851,9 @@ async function runVoiceProcessing(getTranscript){
     const transcript = ((await getTranscript()) || "").trim();
     if (!isCurrent()) return;
     if (!transcript){ reportVoiceFailure("empty", "沒聽清楚，請再試一次"); return; }
-    await loadVoiceSearch();
+    // 載入比對引擎（通常在錄音期間就載好了）加上限：<script> 一直載不進來、也沒失敗的話，
+    // 狀態會停在 "processing"、篩選全被鎖住，只能重新整理頁面。
+    await withTimeout(loadVoiceSearch(), VOICE_ENGINE_LOAD_TIMEOUT_MS, "載入語音比對");
     // isCurrent 傳進去：載入引擎之後、applyTranscript 內部等篩選選項／建詞彙表還有一段非同步，取消可能發生在那裡
     // （例如被取消後又馬上開始新的一輪），voice-search.js 在那段之後檢查一次，過期就什麼都不套用、不送出。
     // 聽懂的範圍（spans）由 applyTranscript 在送出之前交過來，結果頁用它把原句裡的關鍵字標色。
@@ -1976,9 +1987,16 @@ async function transcribeVoiceBlob(blob){
     signal: controller.signal,
   });
   let res;
+  let data = null;
   try{
     res = await post(await getQueryToken());
     if (res.status === 401) res = await post((await fetchFreshQueryToken()).token); // token 過期：換新的重試一次
+    // 讀回應內容也要留在逾時（abort signal）的保護裡：回應標頭來了、body 卻一直讀不完的話，
+    // 放在 finally 之後讀就沒有任何逾時，語音會一直停在「辨識中」、篩選全被鎖住，只能重新整理頁面。
+    if (res.ok){
+      try{ data = await res.json(); }
+      catch(e){ if (e?.name === "AbortError") throw e; /* 不是 JSON：當成沒有文字，下面回空字串 */ }
+    }
   } catch(e){
     console.error("語音上傳失敗", e);
     throw new VoiceFailure("upload-failed", "網路連線異常，請再試一次");
@@ -1988,7 +2006,6 @@ async function transcribeVoiceBlob(blob){
   }
   if (res.status === 429) throw new VoiceFailure("rate-limited", "操作太頻繁，請稍後再試");
   if (!res.ok) throw new VoiceFailure("transcribe-failed", "語音辨識失敗，請再試一次");
-  const data = await res.json().catch(() => null);
   return typeof data?.text === "string" ? data.text : "";
 }
 
@@ -2074,6 +2091,10 @@ function startVoiceSearch(){
     resetVoiceUI();
     if (permissionIssue){
       reportVoiceFailure("permission-denied", "請允許麥克風權限才能使用語音搜尋");
+    } else if (event.error === "no-speech"){
+      // 一直沒人講話，瀏覽器（Android 的辨識服務會比我們的 6 秒逾時更早放棄）也是用 error 事件通知，
+      // 不是只有下面 onend 的那條路：要跟那邊一樣提示「沒聽到聲音」，不能說「發生錯誤」，GA 的 reason 也才一致。
+      reportVoiceFailure("no-speech", "沒聽到聲音，請再試一次");
     } else {
       reportVoiceFailure("recognition-error", "語音辨識發生錯誤，請再試一次");
     }
