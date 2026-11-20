@@ -62,7 +62,10 @@ const PUBLIC_STATS_CACHE_SECONDS = 300;
 // 相同的端點與年月在 TTL 內直接回上次算好的資料。代價是排行最多再晚 5 分鐘更新（加上瀏覽器那 5 分鐘）。
 // 只快取成功的結果（算失敗就丟出去、不留）；key 含使用者可控的年月，所以限制筆數、滿了先丟最舊的，避免被亂填撐大記憶體。
 const STATS_ISOLATE_TTL_MS = PUBLIC_STATS_CACHE_SECONDS * 1000;
-const STATS_ISOLATE_MAX_ENTRIES = 64;
+// 上限要大於「可能出現的 key 數」：年月在 rankingHandler 驗證過（今年往前 10 年 × 12 個月 × 3 個排行端點 = 360，再加 1 個趨勢），
+// 這樣亂填年月也洗不掉真正在用的那幾筆；每筆只有十幾列的排行，512 筆遠不到 1MB。
+const STATS_ISOLATE_MAX_ENTRIES = 512;
+const STATS_YEARS_BACK = 10;
 const statsIsolateCache = new Map(); // key -> { at, value }（Map 依插入順序，第一個就是最舊的）
 async function cachedStats(key, compute) {
   const hit = statsIsolateCache.get(key);
@@ -186,8 +189,11 @@ function verifyQueryToken(env, token) {
 // 雜湊成固定長度也順便避開 timingSafeEqual 要求兩個 buffer 長度相同的限制。
 const ADMIN_TOKEN_HEADER = "X-Admin-Token";
 function constantTimeEqual(a, b) {
-  const ha = createHash("sha256").update(String(a ?? "")).digest();
-  const hb = createHash("sha256").update(String(b ?? "")).digest();
+  // 任何一邊沒值（沒帶 header，或伺服器端的 secret 沒設／是空字串）一律不相等。
+  // 以前兩邊都用 String(x ?? "") 轉成 "" 再比，「沒帶 header ＋ secret 沒設」會變成相等而放行，後台登入就 fail-open。
+  if (typeof a !== "string" || typeof b !== "string" || a === "" || b === "") return false;
+  const ha = createHash("sha256").update(a).digest();
+  const hb = createHash("sha256").update(b).digest();
   return timingSafeEqual(ha, hb);
 }
 // 登入成功後換一張有效期限的簽章 session token，之後的請求都送這張，不用每次都把真正的密碼
@@ -202,13 +208,19 @@ const ADMIN_SESSION_TTL_MS = 7 * 24 * 3600 * 1000; // 7 天，過期要重新輸
 const ADMIN_SESSION_SECRET_MIN_LENGTH = 32;
 let warnedWeakSessionSecret = false;
 async function adminSessionKey(env) {
-  let seed = `admin-session:${env.MANUAL_SCRAPE_TOKEN}`;
+  let seed;
   const secret = env.ADMIN_SESSION_SECRET;
   if (secret && secret.length >= ADMIN_SESSION_SECRET_MIN_LENGTH) {
     seed = `admin-session-v2:${secret}`;
-  } else if (secret && !warnedWeakSessionSecret) {
-    warnedWeakSessionSecret = true; // 每個 isolate 只提醒一次，免得每個請求都洗 log
-    console.error(`ADMIN_SESSION_SECRET 少於 ${ADMIN_SESSION_SECRET_MIN_LENGTH} 字元，已忽略、退回用 MANUAL_SCRAPE_TOKEN 衍生金鑰`);
+  } else {
+    // 兩個 secret 都沒設就丟錯（fetch() 會回 500，等於後台整個關著）：以前這裡會拿字串 "undefined" 當種子，
+    // 任何人都能離線算出同一把金鑰、自己簽 session token。
+    if (!env.MANUAL_SCRAPE_TOKEN) throw new Error("ADMIN_SESSION_SECRET 與 MANUAL_SCRAPE_TOKEN 都沒設，無法簽發或驗證後台 session");
+    seed = `admin-session:${env.MANUAL_SCRAPE_TOKEN}`;
+    if (secret && !warnedWeakSessionSecret) {
+      warnedWeakSessionSecret = true; // 每個 isolate 只提醒一次，免得每個請求都洗 log
+      console.error(`ADMIN_SESSION_SECRET 少於 ${ADMIN_SESSION_SECRET_MIN_LENGTH} 字元，已忽略、退回用 MANUAL_SCRAPE_TOKEN 衍生金鑰`);
+    }
   }
   const material = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(seed));
   return crypto.subtle.importKey("raw", material, { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
@@ -259,7 +271,35 @@ function clearAdminFailures(env, ctx, ip) {
 //   logAccess true = 把這次存取（含被限流擋下的）寫進 query_access_log，只有 /issueToken 與 /queryClasses 需要
 // handler 收到 { req, env, ctx, url, origin, ip }，回傳 Response。
 
-const readJson = (req) => req.json().catch(() => ({}));
+// 公開端點的 JSON body 上限：最大的合法請求（/trackSearchEvents 最多 60 個名稱、/trackAdEvents 100 筆事件、
+// /queryClasses 的篩選條件）都在十幾 KB 以內。不設上限的話，任何人一個請求就能讓 req.json() 把上百 MB 讀進記憶體，
+// 撐爆 isolate 連帶影響同一個 isolate 上的其他請求。超過就回 413（HttpError 由 fetch() 統一轉成回應）；
+// readBodyCapped 沒有 Content-Length（chunked）時也會邊讀邊算。
+const MAX_JSON_BODY_BYTES = 32 * 1024;
+class HttpError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+async function readBodyText(req) {
+  const buf = await readBodyCapped(req, MAX_JSON_BODY_BYTES);
+  if (!buf) throw new HttpError(413, "payload too large");
+  return buf.toString("utf8");
+}
+// 內容不是合法 JSON（或是空的）當成空物件，由各 handler 自己檢查欄位；太大才是 413。
+async function readJson(req) {
+  try {
+    return JSON.parse(await readBodyText(req));
+  } catch (e) {
+    if (e instanceof HttpError) throw e;
+    return {};
+  }
+}
+// /trackSearch 的 resultCount 上限：/queryClasses 兩個時間窗各最多 RESULT_HARD_CAP（600）筆，真實值不可能超過 1200。
+// 沒有上限的話，幾千次灌 Number.MAX_SAFE_INTEGER 就能讓 SQLite 的 SUM(resultCount) 整數溢位而丟錯，
+// 公開趨勢圖（/publicSearchStats）與每月壓縮（rollupMonthlyTotals）會一起壞掉。
+const MAX_TRACKED_RESULT_COUNT = 1200;
 const CLIENT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // 老師/課程/分店查詢次數排行（首頁公開，不驗證 token）：回傳指定年月查詢次數前 limit 名，順便回傳所有有紀錄的年份，
@@ -270,6 +310,11 @@ function rankingHandler({ rawTable, nameColumn, monthlyTable, itemsKey, limit })
     const nowTW = currentTaiwanYearMonth();
     const year = url.searchParams.get("year") || nowTW.year;
     const month = (url.searchParams.get("month") || nowTW.month).padStart(2, "0");
+    // 年月會進快取 key 與 SQL 條件：先驗證，亂填的值不能各自佔一筆快取、各打一輪 D1（key 數上限見 STATS_ISOLATE_MAX_ENTRIES）。
+    const yearNum = Number(year);
+    if (!/^\d{4}$/.test(year) || yearNum > Number(nowTW.year) || yearNum <= Number(nowTW.year) - STATS_YEARS_BACK || !/^(0[1-9]|1[0-2])$/.test(month)) {
+      return json({ error: "invalid year or month" }, 400, origin);
+    }
     const tableArgs = { rawTable, nameColumn, monthlyTable };
     const data = await cachedStats(`${itemsKey}:${year}-${month}`, async () => {
       const [years, rows] = await Promise.all([
@@ -287,7 +332,7 @@ function rankingHandler({ rawTable, nameColumn, monthlyTable, itemsKey, limit })
 // sendBeacon 送出的 body 是 text/plain，這裡用 req.text() 手動 parse 才能同時吃 fetch 跟 beacon 兩種來源。
 const MAX_BATCH_EVENTS = 100;
 async function handleTrackAdEvents({ req, env, origin }) {
-  const raw = await req.text();
+  const raw = await readBodyText(req);
   let body;
   try { body = JSON.parse(raw); } catch { body = {}; }
   const events = Array.isArray(body && body.events) ? body.events : [];
@@ -320,11 +365,12 @@ async function handleTrackAdEvents({ req, env, origin }) {
 const MAX_ITEMS_PER_KIND = 20;
 function sanitizeNameList(list, allowed) {
   if (!Array.isArray(list)) return [];
-  return list
+  const cleaned = list
     .filter((v) => typeof v === "string" && v.trim() && v.length <= 50)
     .map((v) => v.trim())
-    .filter((v) => allowed.has(v))
-    .slice(0, MAX_ITEMS_PER_KIND);
+    .filter((v) => allowed.has(v));
+  // 先去重再截斷：一次請求裡同一個名稱只算一次。不然一個請求就能替同一位老師灌 20 次查詢（前端本來就是每個名稱只送一次）。
+  return [...new Set(cleaned)].slice(0, MAX_ITEMS_PER_KIND);
 }
 const KNOWN_BRANCH_NAMES = new Set(BRANCHES.map((b) => b.name));
 // 老師/課程名單一天才更新兩次（爬蟲跑完），在 isolate 裡快取幾分鐘，不用每次打點都讀 D1 與 JSON.parse。
@@ -484,6 +530,16 @@ async function handleSendMessageToAuthor({ req, env, origin }) {
   return json({ ok: true }, 200, origin);
 }
 
+// 登記提醒的欄位上限：公開端點不能收任意大小的字串（會原樣存進 D1，要等到 remindAt 才刪，最久一週）。
+// 正常值都很短：課程／老師／分店名稱不到 30 字、push endpoint 約 200～500 字、金鑰 base64url 只有 22／87 字。
+const REMINDER_MAX_TEXT_LENGTH = 100;
+const REMINDER_MAX_ENDPOINT_LENGTH = 1024;
+const REMINDER_MAX_KEY_LENGTH = 128;
+const KNOWN_BRANCH_SLUGS = new Set(BRANCHES.map((b) => b.slug));
+function isBoundedText(v, required = false, max = REMINDER_MAX_TEXT_LENGTH) {
+  return typeof v === "string" && v.length <= max && (!required || v.length > 0);
+}
+
 // 點推播通知會打開的網址（sw.js 的 notificationclick）：只接受本站自己的網址，不收 javascript:、別人的網站。
 // 允許：空字串（推播時退回首頁 "/"）、本站的相對路徑（"/" 開頭，但 "//host"、"/\host" 瀏覽器會當成別的網站，不算）、
 // 或 origin 在 ALLOWED_ORIGINS 裡的完整網址（前端實際送的是 location.href）。
@@ -503,22 +559,27 @@ async function handleRegisterReminder({ req, env, ctx, origin }) {
   const body = await readJson(req);
   const { branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, pushSubscription, clickUrl, remindMinutes } = body || {};
   if (
-    typeof branchSlug !== "string" || !branchSlug ||
-    typeof branchName !== "string" || !branchName ||
-    typeof className !== "string" || !className ||
-    typeof teacherName !== "string" || !teacherName ||
-    typeof roomName !== "string" ||
+    typeof branchSlug !== "string" || !KNOWN_BRANCH_SLUGS.has(branchSlug) ||
+    !isBoundedText(branchName, true) || !isBoundedText(className, true) || !isBoundedText(teacherName, true) || !isBoundedText(roomName) ||
     !Number.isInteger(dayOfWeek) || dayOfWeek < 1 || dayOfWeek > 7 ||
     typeof startTime !== "string" || !/^\d{4}$/.test(startTime) ||
     !pushSubscription || typeof pushSubscription.endpoint !== "string" || !pushSubscription.endpoint ||
+    pushSubscription.endpoint.length > REMINDER_MAX_ENDPOINT_LENGTH ||
     !isAllowedPushEndpoint(pushSubscription.endpoint) ||
+    !isBoundedText(pushSubscription.keys?.p256dh, true, REMINDER_MAX_KEY_LENGTH) || !isBoundedText(pushSubscription.keys?.auth, true, REMINDER_MAX_KEY_LENGTH) ||
     (clickUrl !== undefined && !isValidClickUrl(clickUrl)) ||
     (remindMinutes !== undefined && !REMIND_MINUTES_OPTIONS.includes(remindMinutes))
   ) {
     return json({ error: "invalid reminder" }, 400, origin);
   }
+  // 只存瀏覽器推播需要的三個欄位，不把呼叫端多塞的東西原樣寫進資料庫。
+  const cleanSubscription = {
+    endpoint: pushSubscription.endpoint,
+    expirationTime: typeof pushSubscription.expirationTime === "number" ? pushSubscription.expirationTime : null,
+    keys: { p256dh: pushSubscription.keys.p256dh, auth: pushSubscription.keys.auth },
+  };
   const result = await registerReminder(env.DB, {
-    branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, pushSubscription, clickUrl, remindMinutes,
+    branchSlug, branchName, className, teacherName, roomName, dayOfWeek, startTime, pushSubscription: cleanSubscription, clickUrl, remindMinutes,
   }, ctx);
   return json(result, 200, origin);
 }
@@ -709,7 +770,8 @@ const ROUTES = {
     limit: 60,
     handler: async ({ req, env, origin }) => {
       const body = await readJson(req);
-      const resultCount = Number.isInteger(body?.resultCount) && body.resultCount >= 0 ? body.resultCount : 0;
+      // 超出範圍（真實查詢不可能出現）當成無效值記 0，跟型別不對的處理一致。
+      const resultCount = Number.isInteger(body?.resultCount) && body.resultCount >= 0 && body.resultCount <= MAX_TRACKED_RESULT_COUNT ? body.resultCount : 0;
       await env.DB.prepare("INSERT INTO search_events (createdAt, resultCount) VALUES (?, ?)")
         .bind(nowTaiwanIso(), resultCount)
         .run();
@@ -724,10 +786,13 @@ const ROUTES = {
     limit: 60,
     handler: async ({ req, env, ctx, origin }) => {
       const body = await readJson(req);
-      const { clientId, type } = body || {};
-      if (typeof clientId !== "string" || !CLIENT_ID_PATTERN.test(clientId.trim())) {
+      const { clientId: rawClientId, type } = body || {};
+      if (typeof rawClientId !== "string" || !CLIENT_ID_PATTERN.test(rawClientId.trim())) {
         return json({ error: "invalid clientId" }, 400, origin);
       }
+      // crypto.randomUUID() 是小寫；統一轉小寫，同一個 UUID 大小寫不同才不會被當成兩個人
+      // （COUNT(DISTINCT clientId) 與 favorite_client_seen 的主鍵都分大小寫）。
+      const clientId = rawClientId.trim().toLowerCase();
       if (type !== "add" && type !== "apply") {
         return json({ error: "invalid type" }, 400, origin);
       }
@@ -858,7 +923,7 @@ const ROUTES = {
     limit: 60,
     handler: async ({ req, env, origin }) => {
       const body = await readJson(req);
-      if (typeof body?.subscriptionEndpoint !== "string" || !body.subscriptionEndpoint) {
+      if (typeof body?.subscriptionEndpoint !== "string" || !body.subscriptionEndpoint || (body.id !== undefined && typeof body.id !== "string")) {
         return json({ error: "invalid cancelReminder" }, 400, origin);
       }
       return json(await cancelReminder(env.DB, body), 200, origin);
@@ -912,6 +977,7 @@ export default {
       }
       return await route.handler({ req, env, ctx, url, origin, ip });
     } catch (e) {
+      if (e instanceof HttpError) return json({ error: e.message }, e.status, origin);
       console.error("worker error", e);
       return json({ error: "internal error" }, 500, origin);
     }
@@ -925,7 +991,7 @@ export default {
       ctx.waitUntil(runScrape(env.DB));
       return;
     }
-    // 每月 1 號台灣時間 04:00（UTC 20:00）：清一次 query_access_log 的舊紀錄，
+    // 每月 2 號台灣時間 04:00（cron 一律是 UTC，所以設定寫成 1 號 20:00）：清一次 query_access_log 的舊紀錄，
     // 並把分析報表明細表（teacher/course/branch 查詢次數、查詢量、最愛、廣告事件）超過保留窗口
     // 的舊月份壓縮成彙總、刪除明細（見 analytics.js 的 rollupAnalyticsEvents）。見 wrangler.toml 的 cron 設定。
     if (event.cron === "0 20 1 * *") {
@@ -933,7 +999,7 @@ export default {
       ctx.waitUntil(rollupAnalyticsEvents(env.DB));
       return;
     }
-    // 每月 2 號台灣時間 05:00（UTC 21:00）：跟官網 sitemap 比對一次分店清單有沒有新增/疑似下架，
+    // 每月 3 號台灣時間 05:00（設定寫成 UTC 2 號 21:00）：跟官網 sitemap 比對一次分店清單有沒有新增/疑似下架，
     // 有差異才發 Teams 通知，不會自動改資料，見 branchScan.js 的說明。見 wrangler.toml 的 cron 設定。
     if (event.cron === "0 21 2 * *") {
       ctx.waitUntil(scanForNewBranches(env));
