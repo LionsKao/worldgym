@@ -31,7 +31,7 @@
 | G3 | 🟠 | `admin.js`、`admin.html`、`common.js` | 1,180 | 後台頁面與共用工具：後台會渲染來自外部請求的資料，看 XSS／跳脫、登入與 session 處理、報表計算；`common.js` 是前台後台共用的工具（escapeHtml、fetchJson、圖表、時間） | 已跑完（2 項待決定） |
 | G4 | 🟠 | `worker/src/scrape.js`、`queryClasses.js`、`branchScan.js`、`branches-seed.js`、`branches-excluded.js`、`worker/schema.sql` | 1,010 | 課表資料管線：爬蟲寫入與新舊資料切換、查詢 SQL 與筆數上限、每月分店掃描、時間戳與時區、schema 與實際程式是否一致 | 已跑完（2 項待決定） |
 | G5 | 🟠 | `worker/src/reminders.js`、`worker/src/analytics.js`、`sw.js`、script.js 從開頭到 `trackTeacherEventOncePerSession`（含） | 1,030 | 推播提醒與報表統計：提醒登記／取消／到期發送、每月壓縮並刪明細（資料遺失風險）、前端的儲存／廣告與統計打點／推播註冊與提醒清單 | 已跑完（無待決定） |
-| G6 | 🟡 | script.js 從 `showServiceErrorModal` 到 `performSearch`（含），以及 `init` 到檔尾 | 930 | 前端核心查詢與結果顯示：token 重試與查詢快取、結果列渲染的跳脫、頁面切換與競態、初始化流程、首頁公開排行的渲染 | 未開始 |
+| G6 | 🟡 | script.js 從 `showServiceErrorModal` 到 `performSearch`（含），以及 `init` 到檔尾 | 930 | 前端核心查詢與結果顯示：token 重試與查詢快取、結果列渲染的跳脫、頁面切換與競態、初始化流程、首頁公開排行的渲染 | 已跑完（1 項待決定） |
 | G7 | 🟡 | script.js 從 `isSpeechRecognitionSupported`（含它前面的語音常數）到 `submitVoiceSearch`（含）、`voice-search.js` | 940 | 語音搜尋：狀態機與逾時、麥克風是否確實釋放、iOS 錄音路徑、比對引擎誤判。`worker/scripts/test-voice.mjs` 已有回歸測試，審查時可對照 | 未開始 |
 | G8 | 🟢 | script.js 從 `addDaysIso` 到 `renderThemeToggle`（含） | 1,000 | 篩選、最愛與主題：pill 與勾選狀態、localStorage 讀寫、我的最愛的編輯與長按、深色模式切換 | 未開始 |
 | G9 | 🟢 | script.js 從 `copyTextWithToast` 到 `startNewYearFireworks`（含）、`newyear-fireworks.js`、`index.html`、`403.html`、`404.html`、`ga-init.js`、`theme-init.js`、`css-async.js`、`manifest.json` | 1,300 | 結果頁複製與下載圖片、限時彩蛋、靜態頁面。`index.html` 有 640 行大多是標記，實際邏輯少 | 未開始 |
@@ -179,7 +179,34 @@
 - 每月壓縮在新舊寫法下，壓縮前後所有報表（排行、趨勢、最愛、廣告、提醒、年份選單）數字完全一致，中途失敗後下一輪補齊的最終結果也一致。
 
 ### G6
-（未開始）
+2026-11-20 跑完（xhigh，目標 `script.js` 的 `showServiceErrorModal`～`performSearch` 與 `init`～檔尾，沒有二次驗證），共 10 項：修 8 項、待決定 1 項、不處理 1 項。結果列渲染、查詢快取、token 重試、`init` 流程的主線都沒有問題；問題集中在「失敗時使用者看不到」與「兩件事同時進行」。
+
+**已修（8 項）**
+- `init()` 載入 `/filterOptions` 用 `fetch().then(r => r.json())`，不檢查 HTTP 狀態：被限流（429）或伺服器錯誤時回應本身也是 JSON（`{"error":...}`），解析成功就被當成成功，課程與老師區塊變成空的，沒有錯誤提示、也沒有重試。→ 改用 `common.js` 的 `fetchJson`，失敗走原本的「讀取失敗」文字與服務錯誤視窗。
+- `init()` 的 `finally` 無上限地等「已登記通知」（`preloadRemindersPromise`），而它沒有逾時（`/myReminders`）、Service Worker 註冊失敗時 `navigator.serviceWorker.ready` 還永遠不會 resolve：網路卡住就一直蓋著載入遮罩。`/filterOptions` 與 token 都有 6 秒上限，只有這一步沒有。→ 最多等 `QUERY_GIVE_UP_AFTER_MS`，等不到先放行；晚到時用 `syncResultBellsToRegistered()` 補上已畫出來的鈴鐺。
+- 從結果頁點老師名字觸發的查詢，所有提示（被限流、逾時、伺服器錯誤）都掛在 `#scheduleSubmitBtn`，而它在被隱藏的篩選表單裡，`getBoundingClientRect()` 全是 0，提示框被定位到畫面上方之外（內建瀏覽器 812 px 高的視窗實測：掛在隱藏的鈕上 top -39 / bottom -4，掛在返回鍵上 671～706）。使用者只看到返回鍵的轉圈圈停了，不知道失敗，而篩選條件已被改成只剩那位老師。→ 查詢鈕在隱藏區域時提示改掛返回鍵。
+- `runSearchAndShowResults` 沒有防重疊：結果頁連點兩位老師（只擋同一位）、查詢進行中又點最愛晶片（最愛列不受查詢鈕 disabled 影響），兩個查詢同時跑，誰後到誰顯示，標籤列與課程列可能對應不同條件，先結束的那個 `finally` 還會提早解開查詢鈕。→ 每次查詢編號，過時的結果不碰畫面、`finally` 只有最新的一次會恢復查詢鈕；點老師時只要有任何一位在查詢就忽略；`searchTriggerSource` 在查詢開始時先記下，不受下一次查詢改掉。
+- 等查詢期間（最久 6 秒）使用者按「⋮」進通知頁，結果回來照樣 `showResultView()`：返回鍵疊在通知頁上（跟通知頁自己的返回鍵同時出現）、網址被換成分享網址，結果列表卻在被隱藏的 `#mainFormSheet` 裡看不到。→ 結果回來時查詢畫面已被離開就什麼都不做（含錯誤提示）。
+- 首頁公開排行 `load()` 沒處理回應亂序：先選 10 月再快速選 11 月，10 月的回應較晚到就會用 10 月的資料畫圖，選單卻寫 11 月。→ 只有最後一次的回應可以畫圖。
+- `queryClassesOnce` 收到 401 `token_expired` 沒有馬上丟掉快取的 token，3 秒時的重試仍用同一張過期的，要等 6 秒放棄後 `runScheduleQuery` 才換新的（裝置時鐘比伺服器慢時客戶端會以為 token 沒過期）。→ 收到時立刻清掉，第一次重試就換新的（驗證：6 秒 → 3 秒，測試縮短版 0.62 秒 → 0.3 秒）。
+- `/issueToken` 被限流或伺服器錯誤時丟一般 `Error`，查詢畫面把它顯示成「網路連線異常，請確認網路連線」，但使用者的網路沒問題。→ 429 丟 `QueryRateLimitedError`（「查詢太頻繁了」）、其他丟 `QueryHttpError`（「伺服器發生錯誤」）。
+
+驗證：用 jsdom 載入真正的 `index.html`、`common.js`、整份 `script.js`（逾時常數縮短為 3000→300、6000→600 毫秒），搭配假 `fetch`、假 Chart、假 IntersectionObserver，共 62 個檢查全過；對修改前的版本跑，17 項失敗（對應上面 8 項）。涵蓋：載入選項（正常、429／500／純文字 403、先失敗再重試成功）、通知清單卡住與晚到、查詢主線（結果列渲染與跳脫、縮課日標紅、資料更新時間、語音原句標籤、結果數 0／超過 250／500／429／逾時／網路錯誤的提示、查詢快取的命中／過期／排序／20 組上限、連續 5 次查詢的提醒視窗）、兩個查詢同時進行、等待時離開篩選頁、token 過期與 `/issueToken` 失敗、公開排行（只畫前 10 名、年月選單、沒資料、失敗、亂序）與趨勢圖、依位置篩選分店。提示框掛在隱藏按鈕上會跑到畫面外這點，另外在內建瀏覽器（本機伺服器、手機寬度 375×812）量過位置，jsdom 沒有版面、量不出來。G5 的前端檢查（35 項）與 `check:versions` 重跑也全過。`script.js` 版號 251 → 252。測試腳本沒進版控。
+
+**待使用者決定（1 項，沒修）**
+- 「依目前位置篩選分店」（1／3／5 公里）在定位被拒絕、逾時、或附近沒有任何分店時完全沒有畫面回饋，只送 GA 事件，使用者不知道是壞了還是附近真的沒有。要不要提示、提示什麼字，是產品決定。
+
+**不處理（1 項）**
+- 首頁四張圖表各自註冊 `window` 的 `resize` 去呼叫 `chart.resize()`，而 Chart.js 設了 `responsive: true` 已經自己監聽容器大小，看起來是多餘的。但不確定當初是不是為了某個版面問題刻意加的，拿掉沒有可量的好處，沒動。
+
+**其他沒處理**
+- 用戶在結果頁點老師、查詢還沒回來時按返回，查詢回來會把結果頁再叫出來（跟手動查詢「按了就是要看結果」一致，沒有改）。
+- 分享網址帶老師或課程、而 `/filterOptions` 失敗時，那些條件被丟掉，自動查詢只帶分店，結果比網址原本的條件寬；但同時會跳服務錯誤視窗，沒處理。
+
+**沒問題的部分**
+- 結果列與篩選標籤都用 `textContent` 組出來，帶 `<img onerror>`、`<script>` 的課名與老師名沒有長出元素；唯一用 `innerHTML` 的是資料更新時間（取自 Worker 自己產生的時間戳）。
+- 查詢快取（5 分鐘、依排序後的條件與台灣日期、最多 20 組、超過 250 筆不存、失敗不存）、`withRetryTimeout`、重複查詢提醒、縮課日標紅都與文件一致。
+- `newYearPrepare()` 內部有 try/catch，不會讓 `init()` 在收遮罩前丟例外。
 
 ### G7
 （未開始）

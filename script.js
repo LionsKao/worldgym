@@ -2421,7 +2421,9 @@ function withRetryTimeout(queryFactory, retryAfterMs, giveUpAfterMs){
 let cachedQueryToken = null; // { token, exp } | null
 async function fetchFreshQueryToken(){
   const res = await fetch(`${WORKER_BASE}/issueToken`);
-  if (!res.ok) throw new Error(`issueToken failed: ${res.status}`);
+  // 跟 queryClassesOnce 一樣分開處理：被限流與伺服器錯誤不能顯示成「網路連線異常」。
+  if (res.status === 429) throw new QueryRateLimitedError();
+  if (!res.ok) throw new QueryHttpError(res.status);
   const { token } = await res.json();
   const payload = JSON.parse(atob(token.split(".")[0].replace(/-/g, "+").replace(/_/g, "/")));
   cachedQueryToken = { token, exp: payload.exp };
@@ -2442,7 +2444,12 @@ async function queryClassesOnce(state){
   if (res.status === 429) throw new QueryRateLimitedError();
   if (res.status === 401){
     const data = await res.json().catch(() => ({}));
-    if (data.error === "token_expired") throw new QueryTokenExpiredError();
+    if (data.error === "token_expired"){
+      // 馬上丟掉快取的 token：withRetryTimeout 的下一次重試（3 秒時）才會換新的，
+      // 不然要等到放棄的 6 秒才由 runScheduleQuery 清掉重來（裝置時鐘比伺服器慢時，客戶端會以為 token 還沒過期）。
+      cachedQueryToken = null;
+      throw new QueryTokenExpiredError();
+    }
     throw new QueryHttpError(res.status);
   }
   if (!res.ok) throw new QueryHttpError(res.status);
@@ -2611,7 +2618,8 @@ document.getElementById("resultArea").addEventListener("click", async (e) => {
     return;
   }
   const teacherLink = e.target.closest(".teacher-link");
-  if (!teacherLink || teacherLink.classList.contains("busy")) return;
+  // 已經有一位老師的查詢在跑就忽略（不只是同一位）：連點兩位老師會同時送出兩個查詢。
+  if (!teacherLink || document.querySelector("#resultArea .teacher-link.busy")) return;
   const teacherName = teacherLink.dataset.teacher;
   applyFilterState({ teacher: [teacherName] });
   trackTeacherEventOncePerSession("filter_by_teacher", teacherName);
@@ -2711,9 +2719,18 @@ document.getElementById("mailSendBtn").addEventListener("click", async () => {
 
 // 抽成獨立函式，讓「使用者按送出」跟「帶網址參數自動查詢」共用同一段邏輯 —
 // 後者需要在畫面切到結果視圖之前都不能露出篩選畫面，見 init() 裡的呼叫方式。
+let searchRunSeq = 0; // 第幾次查詢；同時有兩個查詢在跑時，只有最後送出的那個可以動畫面（見 runSearchAndShowResults）
 async function runSearchAndShowResults(state){
   const submitBtn = document.getElementById("scheduleSubmitBtn");
   const submitIcon = submitBtn.querySelector("i");
+  // 從結果頁點老師名字觸發的查詢，查詢鈕在被隱藏的篩選表單裡：位置會算成 0，提示框會被定位到畫面外、使用者看不到。
+  // 這時改掛在看得到的返回鍵上。
+  const warnAnchor = submitBtn.closest(".hidden") ? document.getElementById("backBtn") : submitBtn;
+  const triggerSource = searchTriggerSource; // 查詢進行中全域的 searchTriggerSource 可能被下一次查詢改掉，先記下這一次的
+  const seq = ++searchRunSeq;
+  // 這次的結果已經過時就不能碰畫面：有更新的查詢在跑（連點兩位老師、查詢中又點最愛），或使用者在等待期間離開了
+  // 查詢畫面（按了「⋮」進通知頁——這時結果頁在被隱藏的 #mainFormSheet 裡，硬叫出返回鍵只會疊在通知頁上）。
+  const isObsolete = () => seq !== searchRunSeq || document.getElementById("mainFormSheet").classList.contains("hidden");
   submitBtn.disabled = true;
   submitBtn.classList.add("busy");
   submitIcon.className = "fa-solid fa-spinner fa-spin";
@@ -2722,20 +2739,21 @@ async function runSearchAndShowResults(state){
   const queryState = resolveQueryState(state);
   try{
     const { rows, displayedCount, oldestScrapedAt } = await runScheduleQueryCached(queryState);
-    logSearchEvent(displayedCount);
+    logSearchEvent(displayedCount); // 查詢確實送出過，過時的結果也照記
+    if (isObsolete()) return;
     if (displayedCount === 0){
-      showPillWarning(submitBtn, "查無符合條件的課程，請調整篩選條件");
+      showPillWarning(warnAnchor, "查無符合條件的課程，請調整篩選條件");
     } else if (displayedCount > RESULT_COUNT_WARN_LIMIT){
-      showPillWarning(submitBtn, "結果太多，請調整篩選條件");
+      showPillWarning(warnAnchor, "結果太多，請調整篩選條件");
     } else {
       trackEvent("search_schedule", {
         branch_count: state.branch.length,
         has_teacher: state.teacher.length > 0,
         has_course: state.course.length > 0,
         day_count: state.day.length,
-        trigger_source: searchTriggerSource,
+        trigger_source: triggerSource,
       });
-      if (searchTriggerSource !== "favorite"){
+      if (triggerSource !== "favorite"){
         logSearchEvents(state.teacher, state.course, (state.branch || []).map(branchSlugToName));
       }
       showResultView();
@@ -2746,6 +2764,7 @@ async function runSearchAndShowResults(state){
     }
   } catch(err){
     console.error(err);
+    if (isObsolete()) return;
     let message;
     if (err instanceof QueryTimeoutError){
       message = "查詢逾時，請重新整理 😭";
@@ -2756,11 +2775,14 @@ async function runSearchAndShowResults(state){
     } else {
       message = "網路連線異常，請確認網路連線後再試一次。";
     }
-    showPillWarning(submitBtn, message);
+    showPillWarning(warnAnchor, message);
   } finally {
-    submitBtn.classList.remove("busy");
-    submitBtn.disabled = false;
-    updateSubmitState(); // 會透過 refreshSubmitIcon() 設回正確圖示（含麥克風條件）
+    // 有更新的查詢在跑時，查詢鈕的忙碌狀態歸它管，等它結束時再恢復。
+    if (seq === searchRunSeq){
+      submitBtn.classList.remove("busy");
+      submitBtn.disabled = false;
+      updateSubmitState(); // 會透過 refreshSubmitIcon() 設回正確圖示（含麥克風條件）
+    }
   }
 }
 // 同一個篩選條件連續手動查詢滿 5 次就跳 modal 提醒 30 分鐘去重規則，避免使用者一直查/返回白耗 D1 讀取量。
@@ -3130,6 +3152,7 @@ async function init(){
   // 這裡先讓它在背景跑，跟 /filterOptions、token 預熱同時進行，到要查詢結果、收掉載入遮罩之前才等它（見 finally）。
   // 它內部自己 try/catch，不會 reject。
   const preloadRemindersPromise = preloadRegisteredReminders();
+  preloadRemindersPromise.then(syncResultBellsToRegistered); // 晚到（超過下面的等待上限）時，補上已畫出來的鈴鐺狀態；先到的話沒有鈴鐺可補，什麼都不做
   const urlState = getUrlFilterState();
   // 星期/時段/教室類型的選項是固定的，已經寫死在 index.html（同分店清單那次的做法），
   // 不用再用 JS 重新產生 pill，避免頁面剛載入、JS 還沒跑完時 fieldset 是空的造成 CLS。
@@ -3143,7 +3166,9 @@ async function init(){
     if (defaultRoomInput) defaultRoomInput.checked = true;
   }
   // 分店資料已經寫死在 index.html，只剩 /filterOptions 需要等。
-  const filterOptionsPromise = withRetryTimeout(() => fetch(`${WORKER_BASE}/filterOptions`).then(r => r.json()), QUERY_RETRY_AFTER_MS, QUERY_GIVE_UP_AFTER_MS);
+  // fetchJson 會檢查 HTTP 狀態：被限流（429）或伺服器錯誤時，回應本身也是 JSON（{"error":...}），
+  // 直接 r.json() 會被當成成功，課程與老師清單就變成空的、沒有任何錯誤提示。
+  const filterOptionsPromise = withRetryTimeout(() => fetchJson(`${WORKER_BASE}/filterOptions`), QUERY_RETRY_AFTER_MS, QUERY_GIVE_UP_AFTER_MS);
   // 頁面載入就先預熱一張查詢用的 token，大部分情況使用者按查詢時早就備好了，不用多等。
   fetchFreshQueryToken().catch(e => console.error("issueToken 預熱失敗", e));
 
@@ -3171,7 +3196,10 @@ async function init(){
   } finally {
     updateResetButtonState();
     resolveFilterOptionsSettled(); // 語音搜尋模組判斷課程/老師清單是否已經確定就緒（成功或失敗都算）用
-    await preloadRemindersPromise; // 查詢結果的鈴鐺要靠它判斷哪些已登記（見 renderScheduleResults）
+    // 查詢結果的鈴鐺要靠它判斷哪些已登記（見 renderScheduleResults）。但最多只等 QUERY_GIVE_UP_AFTER_MS：
+    // 它要等 Service Worker 就緒再打 /myReminders，沒有自己的逾時，網路卡住或 Service Worker 註冊失敗
+    // （navigator.serviceWorker.ready 永遠不會 resolve）就會一直蓋著載入遮罩。等不到就先放行，晚到時由上面的 .then 補上鈴鐺狀態。
+    await Promise.race([preloadRemindersPromise, new Promise((resolve) => setTimeout(resolve, QUERY_GIVE_UP_AFTER_MS))]);
     // 帶網址參數進來時，遮罩要一路蓋到查詢結果準備好才收掉，
     // 不然中間會先露出篩選畫面再跳到結果畫面（分享網址的使用情境最容易看到這個閃爍）。
     // 網址只帶星期/時段/課程、沒帶分店或老師的話，isSearchValid() 會是 false，
@@ -3275,7 +3303,9 @@ function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint
     monthSelect.setOptions(options, selected);
   }
 
+  let loadSeq = 0; // 快速切換年／月時，較早送出的請求可能較晚回來，只有最後一次的回應可以畫圖
   async function load(){
+    const seq = ++loadSeq;
     // 預設年月用台灣現在（不是裝置時區，也不是 UTC），跟 Worker 沒帶參數時的預設一致
     const [nowYear, nowMonth] = currentMonthKey().split("-");
     const year = yearSelect.value || nowYear;
@@ -3283,6 +3313,7 @@ function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint
     try{
       await loadChartJs();
       const data = await fetchJson(`${WORKER_BASE}/${endpoint}?year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}`);
+      if (seq !== loadSeq) return;
       const years = Array.isArray(data.years) && data.years.length ? data.years : [nowYear];
       if (!yearSelect.value){
         const yearOptions = years.map((y) => ({ value: y, html: `${y} 年` }));
@@ -3298,6 +3329,7 @@ function setupPublicRankingStats({ wrapId, yearSelectId, monthSelectId, endpoint
       renderChart(maxItems ? items.slice(0, maxItems) : items);
     } catch(e){
       console.error(e);
+      if (seq !== loadSeq) return;
       wrapEl.textContent = "載入失敗，請稍後再試";
     }
   }
