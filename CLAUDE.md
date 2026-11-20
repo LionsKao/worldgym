@@ -51,6 +51,10 @@ World Gym 台灣課表查詢網站。純靜態前端 + Cloudflare Worker API + D
 | 靜態資源快取與版號、安全標頭與 CSP | `_headers` | 「靜態資源快取」、「安全標頭與 CSP」 |
 | 限時彩蛋：投票日印章（2026-11-28）、聖誕（12/21～12/26）、跨年煙火（12/31 00:00～1/1 02:00） | `script.js`、`style.css`、`newyear-fireworks.js`、`vendor/pure-snow.*` | 各「彩蛋：…」段落與其「過期後可刪」清單；過期整段刪 |
 
+## 進行中：全專案 code review（暫時）
+
+使用者正分組、分次重新做全專案的 code review（強度 xhigh），因為前期沒有用過。分組、每組的流程、進度與每組的發現都記在 [`docs/code-review-plan.md`](docs/code-review-plan.md)。**被要求「開始檢查第 N 組」時，先讀那份檔案並照裡面的流程做；沒被要求就不要自己開始跑。** 全部組別完成後，刪掉那個檔案與這一段。
+
 ## Commands
 
 ### Local dev
