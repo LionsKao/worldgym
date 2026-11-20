@@ -9,8 +9,15 @@ function escapeHtml(str){
 // 解析 API 回應的 JSON；狀態碼不是 2xx 就丟錯（訊息優先用回應裡的 error 欄位，沒有就用 HTTP 狀態碼）。
 // 前台與後台打 Worker API 都是這個樣板，不要各自再寫一份。
 async function readJsonOrThrow(res){
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  // 錯誤回應不一定是 JSON（Cloudflare 的 5xx 頁面、海外 IP 被擋時的純文字 Forbidden）：解析失敗時，
+  // 狀態碼不對就丟 HTTP 狀態碼，不要讓呼叫端只看到莫名其妙的 SyntaxError。
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error(res.ok ? "invalid JSON response" : `HTTP ${res.status}`);
+  }
+  if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
   return data;
 }
 async function fetchJson(url, options){
@@ -63,10 +70,11 @@ function enhanceCustomSelect(root){
   });
 
   root.setOptions = function(options, selectedValue){
-    menu.innerHTML = options
-      .map((o) => `<div class="custom-select-option${o.value === selectedValue ? " selected" : ""}" data-value="${escapeHtml(o.value)}">${o.html}</div>`)
-      .join("");
+    // 找不到 selectedValue 時退回第一項：標籤、值與選單裡高亮的列要是同一項。
     const sel = options.find((o) => o.value === selectedValue) || options[0];
+    menu.innerHTML = options
+      .map((o) => `<div class="custom-select-option${o === sel ? " selected" : ""}" data-value="${escapeHtml(o.value)}">${o.html}</div>`)
+      .join("");
     label.innerHTML = sel ? sel.html : "";
     root.dataset.value = sel ? sel.value : "";
   };
@@ -131,6 +139,27 @@ const CHART_TOOLTIP_STYLE = {
   padding: 8, cornerRadius: 8, displayColors: false,
 };
 
+// 雙軸圖的座標軸 id；兩條線時左右各一個。
+const LINE_CHART_AXIS_IDS = ["yA", "yB"];
+
+// Y 軸上限：挑「分成 4 格、每格剛好是整數、而且數字好讀」的最小上限。
+// 左右兩邊固定都是 4 格（ticks.count: 5）才能對齊同一條水平格線，但數值很小時（最大 1～3），Chart.js 會自己算出
+// 0、0.25、0.5… 這種小數刻度，標籤四捨五入成整數就變成「0 0 1 1 1」這樣重複、甚至不準的數字（1.75 標成 2）。
+// 所以上限由我們決定：步長從 1、1.2、1.5、2、2.5、3、4、5、6、8 乘 10 的次方裡，挑第一個「是整數、而且 ≥ 最大值 / 4」的。
+// 例：最大 1 → 0～4（步長 1）；最大 7 → 0～8（步長 2）；最大 110 → 0～120（步長 30）；最大 8123 → 0～10000（步長 2500）。
+const AXIS_STEP_MULTIPLIERS = [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8];
+function niceAxisMax(values){
+  const peak = Math.max(0, ...values.map((v) => Number(v) || 0));
+  const target = Math.max(peak / 4, 1);
+  if (!Number.isFinite(target)) return undefined; // 不是有限數字就交給 Chart.js 自己算，不能進下面的無窮迴圈
+  for (let power = 1; ; power *= 10){
+    for (const m of AXIS_STEP_MULTIPLIERS){
+      const step = m * power;
+      if (Number.isInteger(step) && step >= target) return step * 4;
+    }
+  }
+}
+
 function monthTickLabel(d){
   const parts = d.month.split("-");
   // 每日資料（YYYY-MM-DD，後台語音面板）只顯示「月/日」；月度資料（YYYY-MM）維持上下兩行「年／月」。
@@ -145,11 +174,11 @@ function monthTickLabel(d){
 function createLineChart(canvas, { data, series, ariaLabel, aspectRatio }){
   canvas.setAttribute("role", "img");
   canvas.setAttribute("aria-label", ariaLabel);
-  const axisIds = ["yA", "yB"];
+  const axisIds = LINE_CHART_AXIS_IDS;
   const scales = { x: { grid: { display: false }, ticks: { color: () => chartTheme().sub, font: { size: 9 } } } };
   series.forEach((s, i) => {
     scales[axisIds[i]] = {
-      position: i === 0 ? "left" : "right", beginAtZero: true,
+      position: i === 0 ? "left" : "right", beginAtZero: true, max: niceAxisMax(data.map((d) => d[s.key])),
       ticks: { color: s.color, font: { size: 9 }, count: 5, precision: 0, callback: (v) => Math.round(v) },
       grid: i === 0 ? { color: () => chartTheme().line } : { display: false },
     };
@@ -190,7 +219,10 @@ function createLineChart(canvas, { data, series, ariaLabel, aspectRatio }){
 // 換一份資料（例如左右切換月份視窗）：沿用建立時的 series，不重建圖表。
 function updateLineChart(chart, data){
   chart.data.labels = data.map(monthTickLabel);
-  chart.wgSeries.forEach((s, i) => { chart.data.datasets[i].data = data.map((d) => d[s.key]); });
+  chart.wgSeries.forEach((s, i) => {
+    chart.data.datasets[i].data = data.map((d) => d[s.key]);
+    chart.options.scales[LINE_CHART_AXIS_IDS[i]].max = niceAxisMax(data.map((d) => d[s.key])); // 換資料後上限要跟著重算
+  });
   chart.wgData = data;
   chart.update();
 }
@@ -237,4 +269,12 @@ function updateLineChart(chart, data){
       indicator.style.top = "-50px";
     }
   });
+
+  // 觸控被系統取消（邊緣手勢、來電、通知欄）時不會有 touchend，不收尾的話指示器會卡在拉到一半的位置、pulling 一直是 true。
+  document.addEventListener("touchcancel", () => {
+    if (!pulling || refreshing) return;
+    pulling = false;
+    indicator.classList.add("ptr-releasing");
+    indicator.style.top = "-50px";
+  }, { passive: true });
 })();

@@ -123,8 +123,11 @@ async function attemptLogin(){
       enterAdmin(result.sessionToken);
     } else if (result?.locked){
       showLoginError("嘗試次數過多，已暫時鎖定，請稍後再試");
-    } else {
+    } else if (result?.invalid){
       showLoginError("密碼錯誤");
+    } else {
+      // verifyToken 回 null：被流量限制（429）、伺服器暫時出錯（5xx）或回應格式不對，不是密碼錯，別讓人以為要重打。
+      showLoginError("伺服器暫時無法驗證，請稍後再試");
     }
   } catch(e){
     console.error(e);
@@ -269,9 +272,12 @@ function navigateAdChart(direction){
 adChartPrevBtn.addEventListener("click", () => navigateAdChart("prev"));
 adChartNextBtn.addEventListener("click", () => navigateAdChart("next"));
 
+// 跟 worker 的 GET /ads 同一個判斷：startAt <= 現在 <= endAt，比到時與分（不是只比日期）。
+// 只比日期的話，endAt 設成「隔天 00:00」的廣告（例如 migrations/012）會在已經下架的那一整天還顯示成上架中。
+// startAt／endAt 都是台灣時間（+08:00）字串，前 16 碼是 YYYY-MM-DDTHH:mm，跟 taipeiNowStamp() 換成 T 之後可直接比大小。
 function isAdActive(ad){
-  const today = todayIso();
-  return !!ad.enabled && ad.startAt.slice(0, 10) <= today && today <= ad.endAt.slice(0, 10);
+  const now = taipeiNowStamp().replace(" ", "T");
+  return !!ad.enabled && ad.startAt.slice(0, 16) <= now && now <= ad.endAt.slice(0, 16);
 }
 
 function renderAdStatsSelect(){
@@ -638,19 +644,32 @@ async function cleanupStaleBranches(onLog){
 }
 
 // 執行一個會即時輸出進度的動作：清空終端機、跑 action、有錯誤的話印一行紅字。
+// 同一時間只跑一個動作：重抓一輪要一兩分鐘，期間再按「刪除停用分店資料」或再確認一次重抓，
+// 會把終端機清掉、兩邊的輸出混在一起，重抓還會在 Worker 端同時跑兩輪。跑的時候把兩顆動作按鈕鎖起來。
+let actionRunning = false;
+function setActionButtonsDisabled(disabled){
+  for (const id of ["rescrapeAllCf", "cleanupStaleBtn"]) document.getElementById(id).disabled = disabled;
+}
 async function runAction(action){
+  if (actionRunning) return;
+  actionRunning = true;
+  setActionButtonsDisabled(true);
   clearTerminal();
   try{
     await action(logToTerminal);
   } catch(e){
     console.error(e);
     logToTerminal(`❌ ${e.message}`);
+  } finally {
+    actionRunning = false;
+    setActionButtonsDisabled(false);
   }
 }
 
 // 只有「重抓所有分店」需要 modal 二次確認（怕誤按、跑一次要一兩分鐘）。
 // 其他動作（清除孤兒資料、開啟外部連結）直接執行，結果都看終端機就好。
 function openConfirmModal(){
+  if (actionRunning) return;
   modalText.textContent = "確定要重抓全部分店的課表嗎？";
   modal.classList.remove("hidden");
 }

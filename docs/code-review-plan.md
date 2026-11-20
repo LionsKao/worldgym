@@ -28,7 +28,7 @@
 | --- | --- | --- | --- | --- | --- |
 | G1 | 🔴 | `worker/src/index.js`（整檔） | 945 | 公開 API 與驗證核心：短效 token、每 IP 限流與全站每日額度、後台 session 與登入鎖定、CORS、各打點端點的輸入驗證、留言端點、語音端點、cron 入口。重點看驗證／限流能不能繞過、注入、資源耗盡、費用失控 | 已跑完（3 項待決定） |
 | G2 | 🔴 | `functions/`（全部）、`worker/src/crawlers.js`、`worker/src/util.js`、`_headers`、`worker/wrangler.toml` | 740 | Pages 邊緣與伺服器端注入：台灣 IP 限制與爬蟲例外、擋掉非網站檔案（路徑編碼繞過）、SSR 注入課表的跳脫與快取、動態 sitemap／llms.txt、安全標頭與 CSP、cron 設定 | 已跑完（2 項待決定） |
-| G3 | 🟠 | `admin.js`、`admin.html`、`common.js` | 1,180 | 後台頁面與共用工具：後台會渲染來自外部請求的資料，看 XSS／跳脫、登入與 session 處理、報表計算；`common.js` 是前台後台共用的工具（escapeHtml、fetchJson、圖表、時間） | 未開始 |
+| G3 | 🟠 | `admin.js`、`admin.html`、`common.js` | 1,180 | 後台頁面與共用工具：後台會渲染來自外部請求的資料，看 XSS／跳脫、登入與 session 處理、報表計算；`common.js` 是前台後台共用的工具（escapeHtml、fetchJson、圖表、時間） | 已跑完（2 項待決定） |
 | G4 | 🟠 | `worker/src/scrape.js`、`queryClasses.js`、`branchScan.js`、`branches-seed.js`、`branches-excluded.js`、`worker/schema.sql` | 1,010 | 課表資料管線：爬蟲寫入與新舊資料切換、查詢 SQL 與筆數上限、每月分店掃描、時間戳與時區、schema 與實際程式是否一致 | 未開始 |
 | G5 | 🟠 | `worker/src/reminders.js`、`worker/src/analytics.js`、`sw.js`、script.js 從開頭到 `trackTeacherEventOncePerSession`（含） | 1,030 | 推播提醒與報表統計：提醒登記／取消／到期發送、每月壓縮並刪明細（資料遺失風險）、前端的儲存／廣告與統計打點／推播註冊與提醒清單 | 未開始 |
 | G6 | 🟡 | script.js 從 `showServiceErrorModal` 到 `performSearch`（含），以及 `init` 到檔尾 | 930 | 前端核心查詢與結果顯示：token 重試與查詢快取、結果列渲染的跳脫、頁面切換與競態、初始化流程、首頁公開排行的渲染 | 未開始 |
@@ -97,14 +97,35 @@
 驗證：用假 Cache API／D1 呼叫 `getFragment`、用假 `fetch` 與一個永不回應的本機伺服器測 Teams 逾時（實測 10.0 秒後丟 `TimeoutError`），共 40 個檢查全過；G1 的 89 個檢查重跑也全過。測試腳本沒進版控。
 
 **待使用者決定（2 項，沒修）**
-- `wrangler.toml` 的 `VAPID_SUBJECT` 是真實的工作 email，寫在版控裡。我查不到 repo 是不是公開的；若是公開的，可以改成角色信箱或 `https:` 網址（金鑰沒變，既有訂閱不會失效）。
+- `wrangler.toml` 的 `VAPID_SUBJECT` 是真實的工作 email，寫在版控裡。當時查不到 repo 是不是公開的，後來在 G3 看到 `admin.js` 開頭註解寫「repo 是公開的」，所以這個 email 是公開的；可以改成角色信箱或 `https:` 網址（金鑰沒變，既有訂閱不會失效）。
 - 暫時的 `/sitemap-static.xml` 診斷路徑（`_middleware.js` 的 `PUBLIC_CRAWLER_PATHS` 加上根目錄 639 行的靜態檔）還在。只有你知道 Search Console 的「無法讀取 Sitemap」問題解決了沒；解決後連同 Search Console 裡那份 sitemap 一起刪。
 
 **留給後面組別的線索**
 - G3：`/queryAccessStats` 的 `userAgent` 是攻擊者可控字串（G1 已記），要確認後台渲染時有跳脫。另外 CSP 是全站共用（`/*`），後台頁雖然沒有載入 GA，仍允許 Google Tag Manager 等腳本來源；若想讓後台更嚴格，可以替 `/admin` 另設較窄的 CSP（要先用 `!` 拔掉繼承值再設）。
 
 ### G3
-（未開始）
+2026-11-20 跑完（xhigh，目標 `admin.js`、`admin.html`、`common.js`，沒有二次驗證），共 10 項：修 7 項、待決定 2 項、不修 1 項。**後台渲染外部資料的 XSS 沒有問題**：存取紀錄的 `ip`、`userAgent`、`lastSeen`（含 `title` 屬性）、廣告文字、下拉選單的值都有跳脫，用帶 `<img onerror>`／`<script>` 的 User-Agent 實測沒有長出元素（這是 G1 留下的線索，已結案）。
+
+**已修（7 項）**
+- 折線圖 Y 軸在數值很小時刻度標籤重複（用真的 Chart.js 4.4.7 量到：最大 1 → `0,0,1,1,1`、最大 7 → `0,2,4,5,7` 而 1.75 被標成 2）。→ 新增 `niceAxisMax()` 決定上限，4 等分、每格整數（最大 1 → 0～4、7 → 0～8、110 → 0～120、8123 → 0～10000）；`updateLineChart()` 換資料時一併重算。前後台的折線圖都吃到。
+- 後台動作（重抓、清除孤兒資料）沒有防重複：重抓中再按別顆或再確認一次，終端機被清掉、輸出混在一起，Worker 端還會同時跑兩輪。→ `runAction` 加 `actionRunning`，跑的時候兩顆按鈕鎖住，確認視窗也不會打開。
+- 後台「上架中」只比日期，跟 Worker 的 `/ads` 不一致：`endAt` 設成隔天 00:00 的廣告（`migrations/012` 就是）在已下架的那一整天仍顯示上架中。→ 改成比到時與分。
+- 登入失敗一律顯示「密碼錯誤」，連被限流（429）、伺服器錯誤（5xx）、回應格式不對也是。→ 只有 401／403 顯示密碼錯誤，其他顯示「伺服器暫時無法驗證，請稍後再試」。
+- `readJsonOrThrow` 遇到非 JSON 的錯誤回應（Cloudflare 5xx 頁、海外 IP 的純文字 Forbidden）丟 `SyntaxError`，JSON `null` 加上錯誤狀態碼會 `TypeError`。→ 丟 `HTTP <狀態碼>`。
+- 下拉重新整理沒處理 `touchcancel`，觸控被系統取消時指示器會卡在半途。→ 補上收尾。
+- 自製下拉選單 `setOptions` 找不到選中值時退回第一項，但選單裡沒有任何一列高亮。→ 高亮與標籤是同一項。
+
+驗證：用 jsdom 載入真正的 `admin.html`、Chart.js 4.4.7、`common.js`、`admin.js`（用真的 `<script>` 元素執行，top-level `const` 跟瀏覽器一樣共用），搭配假 `fetch`，共 71 個檢查全過；G1 的 89 個、G2 的 40 個、語音比對 91 個案例、`check:versions` 重跑也全過。`common.js` 版號 8 → 9（`index.html`、`admin.html` 兩邊）、`admin.js` 46 → 47。測試腳本沒進版控。
+
+**待使用者決定（2 項，沒修）**
+- 登出只清瀏覽器裡的 token，伺服器端 7 天的 session（可滑動延長）仍然有效，沒有撤銷機制。要修得在伺服器端加撤銷清單或登出端點，是設計上的改動。
+- 公開的 `admin.html` 內嵌了 Cloudflare 帳號 ID、D1 資料庫 ID、GA 資源 ID 與 Web Analytics 的 site tag 的連結。它們不是密碼，但讓釣魚或探測更容易；可以改成登入後才由 `admin.js` 產生連結。**`admin.js` 開頭的註解寫「repo 是公開的」，所以 G2 提到的 `VAPID_SUBJECT`（真實工作 email）也是公開的**，要不要改請一併決定。
+
+**不修（1 項）**
+- 自製下拉選單沒有鍵盤操作與 ARIA（選項是沒有 tabindex 的 div）。要做好得改選單的結構與互動，而且會動到公開首頁的排行選單，這次不處理。
+
+**其他沒處理**
+- `admin.js` 的 `addDays` 與 `script.js` 的 `addDaysIso`（以及 Worker 的 `addDaysIso`）是三份相同功能的程式；要合併得動 `script.js`，價值低，沒做。
 
 ### G4
 （未開始）
